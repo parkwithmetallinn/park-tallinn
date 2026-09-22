@@ -202,8 +202,9 @@ export default function App() {
   }
 
   const tileUrl = dark
-    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-    : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
+    ? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+    : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+  const tileClassName = dark ? 'map-tiles-dark' : undefined
 
   const wazeUrl = selected
     ? `https://waze.com/ul?ll=${selected.lat},${selected.lng}&navigate=yes`
@@ -366,9 +367,15 @@ export default function App() {
           zoom={12}
           className="h-full w-full"
           zoomControl={false}
-          attributionControl={false}
+          attributionControl={true}
         >
-          <TileLayer key={tileUrl} url={tileUrl} maxZoom={19} subdomains="abcd" />
+          <TileLayer
+            key={`${tileUrl}-${dark ? 'dark' : 'light'}`}
+            url={tileUrl}
+            maxZoom={19}
+            className={tileClassName}
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+          />
           <MapLayers
             spots={filteredSpots}
             zones={PAID_ZONES}

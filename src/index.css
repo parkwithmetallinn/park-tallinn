@@ -62,6 +62,10 @@ body {
   background: #d7e2dc;
 }
 
+.map-tiles-dark {
+  filter: brightness(0.78) contrast(1.08) saturate(0.85) hue-rotate(10deg);
+}
+
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
