@@ -1,32 +1,28 @@
-# React + TypeScript + Vite
+# Park Tallinn
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Kaardipõhine app Tallinna **tasuta**, **kellaajaga** ja **Pargi & Reisi** parkimiseks — avalikud parklad, tänavaäärsed lõigud ja navigeerimine Waze’i / Google Mapsi.
 
-Currently, two official plugins are available:
+## Käivitamine
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Ava [http://127.0.0.1:43127](http://127.0.0.1:43127).
+
+## Funktsioonid
+
+- Kaart Leafletiga: tasulised tsoonid, markerid tüübi järgi
+- Filtrid: 100% tasuta, tänavaäärsed, kellaga, avalikud parklad, P&R
+- Lähima soodsa koha bänner + Waze / Google Maps
+- Parkimiskella taimer (sh automaatne kellaga kohtadelt)
+- Kasutaja saab lisada uusi kohti (salvestub brauserisse)
+
+## Andmed
+
+Kohad on orienteeruvad. Kontrolli alati kohapealseid liiklusmärke — tingimused muutuvad.
+
+## Stack
+
+Vite · React · TypeScript · Tailwind CSS · Leaflet
