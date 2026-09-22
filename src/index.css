@@ -1,0 +1,138 @@
+@import 'tailwindcss';
+@import 'leaflet/dist/leaflet.css';
+
+@theme {
+  --font-sans: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Instrument Serif', Georgia, serif;
+
+  --color-ink: #14201b;
+  --color-ink-soft: #3d5248;
+  --color-paper: #f2f6f3;
+  --color-paper-2: #e6efe9;
+  --color-moss: #0b6e4f;
+  --color-moss-deep: #084c37;
+  --color-sea: #0e7490;
+  --color-navy: #1d4e89;
+  --color-clay: #c45c26;
+  --color-sand: #d4c4a8;
+  --color-mist: #c8d9d0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, #c8e6d8 0%, transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, #b8d4e0 0%, transparent 50%),
+    linear-gradient(165deg, #eef5f1 0%, #e4ebe6 45%, #dce8e2 100%);
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+/* Leaflet popups — transparent shell, card inside */
+.leaflet-popup-content-wrapper {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+.leaflet-popup-content {
+  margin: 0 !important;
+  line-height: 1.4;
+}
+.leaflet-popup-tip-container {
+  display: none;
+}
+.leaflet-container {
+  font-family: var(--font-sans);
+  background: #d7e2dc;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.35);
+    opacity: 0.85;
+  }
+  80%,
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.45s ease-out both;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.35s ease-out both;
+}
+
+.user-pulse {
+  position: absolute;
+  inset: -8px;
+  border-radius: 9999px;
+  background: rgb(14 116 144 / 0.35);
+  animation: pulse-ring 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+.marker-pin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  color: white;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 5px 10px;
+  border: 2px solid #fff;
+  box-shadow: 0 4px 14px rgb(20 32 27 / 0.28);
+  white-space: nowrap;
+  transition: transform 0.15s ease;
+}
+.marker-pin:hover {
+  transform: scale(1.08) translateY(-1px);
+}
