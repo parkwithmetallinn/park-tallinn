@@ -212,18 +212,46 @@ export default function App() {
     ? `https://www.google.com/maps/dir/?api=1&destination=${selected.lat},${selected.lng}`
     : '#'
 
+  useEffect(() => {
+    document.documentElement.classList.toggle('map-dark', dark)
+  }, [dark])
+
+  const chrome = dark
+    ? {
+        shell: 'bg-[#0f1714] text-[#e8f0eb]',
+        bar: 'border-white/10 bg-[#15201b]/90',
+        muted: 'text-[#9bb0a4]',
+        chip: 'bg-white/10 text-[#c9d9d0] hover:bg-white/15',
+        chipActive: 'bg-[#e8f0eb] text-[#0f1714]',
+        input:
+          'border-white/10 bg-white/8 text-[#e8f0eb] placeholder:text-[#9bb0a4]/70 focus:border-moss/50 focus:ring-moss/25',
+        timerBox: 'bg-white/10 text-[#e8f0eb]',
+      }
+    : {
+        shell: 'bg-transparent text-ink',
+        bar: 'border-ink/8 bg-paper/85',
+        muted: 'text-ink-soft',
+        chip: 'bg-paper-2 text-ink-soft hover:bg-mist',
+        chipActive: 'bg-ink text-paper',
+        input:
+          'border-ink/10 bg-paper-2 text-ink placeholder:text-ink-soft/50 focus:border-moss/40 focus:ring-moss/20',
+        timerBox: 'bg-paper-2 text-ink',
+      }
+
   return (
-    <div className={`flex h-full flex-col ${dark ? 'dark' : ''}`}>
-      <header className="relative z-30 flex items-center justify-between border-b border-ink/8 bg-paper/85 px-4 py-3 backdrop-blur-md">
+    <div className={`flex h-full flex-col ${chrome.shell}`}>
+      <header
+        className={`relative z-30 flex items-center justify-between border-b px-4 py-3 backdrop-blur-md ${chrome.bar}`}
+      >
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-moss text-white shadow-md shadow-moss/25">
             <MapPin className="h-5 w-5" strokeWidth={2.4} />
           </div>
           <div>
-            <h1 className="font-display text-2xl leading-none tracking-tight text-ink">
+            <h1 className="font-display text-2xl leading-none tracking-tight">
               Park Tallinn
             </h1>
-            <p className="mt-0.5 text-xs font-medium text-ink-soft">
+            <p className={`mt-0.5 text-xs font-medium ${chrome.muted}`}>
               Tasuta · tänavad · P&R
             </p>
           </div>
@@ -232,7 +260,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => setInfoOpen(true)}
-            className="rounded-xl bg-paper-2 p-2.5 text-ink-soft transition hover:bg-mist"
+            className={`rounded-xl p-2.5 transition ${chrome.chip}`}
             title="Parkimisreeglid"
           >
             <CircleHelp className="h-5 w-5" />
@@ -240,7 +268,7 @@ export default function App() {
           <button
             type="button"
             onClick={() => setDark((d) => !d)}
-            className="rounded-xl bg-paper-2 p-2.5 text-ink-soft transition hover:bg-mist"
+            className={`rounded-xl p-2.5 transition ${chrome.chip}`}
             title="Hele / tume"
           >
             {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
@@ -284,20 +312,20 @@ export default function App() {
         </span>
       </button>
 
-      <div className="relative z-20 space-y-2 border-b border-ink/8 bg-paper/90 px-4 py-2.5 backdrop-blur-md">
+      <div className={`relative z-20 space-y-2 border-b px-4 py-2.5 backdrop-blur-md ${chrome.bar}`}>
         <div className="relative">
-          <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-ink-soft/60" />
+          <Search className={`pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 ${chrome.muted} opacity-70`} />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Otsi nime, tänavat või tsooni…"
-            className="w-full rounded-xl border border-ink/10 bg-paper-2 py-2.5 pr-9 pl-10 text-sm outline-none transition placeholder:text-ink-soft/50 focus:border-moss/40 focus:ring-2 focus:ring-moss/20"
+            className={`w-full rounded-xl border py-2.5 pr-9 pl-10 text-sm outline-none transition focus:ring-2 ${chrome.input}`}
           />
           {query ? (
             <button
               type="button"
               onClick={() => setQuery('')}
-              className="absolute top-1/2 right-3 -translate-y-1/2 text-ink-soft"
+              className={`absolute top-1/2 right-3 -translate-y-1/2 ${chrome.muted}`}
             >
               <X className="h-4 w-4" />
             </button>
@@ -312,9 +340,7 @@ export default function App() {
                 type="button"
                 onClick={() => setFilter(f.id)}
                 className={`shrink-0 rounded-xl px-3.5 py-1.5 text-xs font-semibold transition ${
-                  active
-                    ? 'bg-ink text-paper'
-                    : 'bg-paper-2 text-ink-soft hover:bg-mist'
+                  active ? chrome.chipActive : chrome.chip
                 }`}
               >
                 {f.color && !active ? (
@@ -328,7 +354,7 @@ export default function App() {
             )
           })}
         </div>
-        <p className="text-[11px] text-ink-soft">
+        <p className={`text-[11px] ${chrome.muted}`}>
           Kaardil <strong>{filteredSpots.length}</strong> kohta
           {filter !== 'all' ? ` · filter: ${FILTERS.find((f) => f.id === filter)?.label}` : ''}
         </p>
@@ -342,7 +368,7 @@ export default function App() {
           zoomControl={false}
           attributionControl={false}
         >
-          <TileLayer url={tileUrl} maxZoom={19} subdomains="abcd" />
+          <TileLayer key={tileUrl} url={tileUrl} maxZoom={19} subdomains="abcd" />
           <MapLayers
             spots={filteredSpots}
             zones={PAID_ZONES}
@@ -364,7 +390,7 @@ export default function App() {
         </button>
       </main>
 
-      <footer className="relative z-30 border-t border-ink/8 bg-paper/95 px-4 py-3 backdrop-blur-md">
+      <footer className={`relative z-30 border-t px-4 py-3 backdrop-blur-md ${chrome.bar}`}>
         <div className="mx-auto max-w-xl space-y-2.5">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2.5">
@@ -373,12 +399,12 @@ export default function App() {
               </div>
               <div className="min-w-0">
                 <h3 className="text-sm font-bold leading-none">Parkimiskella taimer</h3>
-                <p className="mt-0.5 truncate text-xs text-ink-soft">{timerLabel}</p>
+                <p className={`mt-0.5 truncate text-xs ${chrome.muted}`}>{timerLabel}</p>
               </div>
             </div>
             <div
-              className={`rounded-xl bg-paper-2 px-3 py-1 font-mono text-2xl font-extrabold tracking-wider sm:text-3xl ${
-                timerSeconds > 0 && timerSeconds < 60 && !timerRunning ? 'text-clay' : 'text-ink'
+              className={`rounded-xl px-3 py-1 font-mono text-2xl font-extrabold tracking-wider sm:text-3xl ${chrome.timerBox} ${
+                timerSeconds > 0 && timerSeconds < 60 && !timerRunning ? '!text-clay' : ''
               }`}
             >
               {formatHMS(timerSeconds)}
@@ -391,7 +417,7 @@ export default function App() {
                   key={m}
                   type="button"
                   onClick={() => addMinutes(m)}
-                  className="shrink-0 rounded-lg bg-paper-2 px-2.5 py-1.5 text-xs font-semibold text-ink-soft transition hover:bg-mist"
+                  className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${chrome.chip}`}
                 >
                   +{m < 60 ? `${m}m` : `${m / 60}t`}
                 </button>
@@ -410,7 +436,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={resetTimer}
-                className="rounded-xl bg-mist px-3 py-1.5 text-xs font-bold text-ink-soft transition hover:bg-sand/60"
+                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${chrome.chip}`}
               >
                 Nulli
               </button>
