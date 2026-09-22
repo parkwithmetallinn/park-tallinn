@@ -13,11 +13,12 @@ Ava [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
 ## Funktsioonid
 
-- Kaart Leafletiga: tasulised tsoonid, markerid tüübi järgi
+- **Waze-stiilis 3D kaart** (MapLibre GL): pitch 55°, helehall taust, valged teed, hallid hooned, helesinine vesi
+- Lilla marsruudijoon + tänavanime callout’id sõlmkohtades («3D navi kaardil»)
 - Filtrid: 100% tasuta, tänavaäärsed, kellaga, avalikud parklad, P&R
 - Lähima soodsa koha bänner + Waze / Google Maps
-- Parkimiskella taimer (sh automaatne kellaga kohtadelt)
-- Kasutaja saab lisada uusi kohti (salvestub brauserisse)
+- Parkimiskella taimer
+- Kasutaja saab lisada uusi kohti (brauserisse)
 
 ## Andmed
 
@@ -25,4 +26,6 @@ Kohad on orienteeruvad. Kontrolli alati kohapealseid liiklusmärke — tingimuse
 
 ## Stack
 
-Vite · React · TypeScript · Tailwind CSS · Leaflet
+Vite · React · TypeScript · Tailwind CSS · **MapLibre GL** (Waze-stiilis 3D, pitch 55°)
+
+Vektorplaadid: [OpenFreeMap](https://openfreemap.org/). Marsruudid: OSRM.

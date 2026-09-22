@@ -6,27 +6,20 @@ import {
   Moon,
   Navigation,
   Plus,
+  Route as RouteIcon,
   Search,
   Sun,
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { MapContainer, TileLayer, useMap } from 'react-leaflet'
+import { MapView } from './components/MapView'
+import { ModalShell } from './components/ModalShell'
 import { PARKING_SPOTS, PAID_ZONES, TALLINN_CENTER } from './data/parking'
 import { distanceMeters, formatDistance } from './lib/geo'
 import { formatHMS, minutesFromBadge, TYPE_COLORS, TYPE_LABELS } from './lib/parking'
+import { fetchDrivingRoute, type DrivingRoute } from './lib/routing'
 import { loadCustomSpots, saveCustomSpot } from './lib/storage'
 import type { FilterId, ParkingSpot } from './types'
-import { MapLayers } from './components/MapLayers'
-import { ModalShell } from './components/ModalShell'
-
-function FlyTo({ center, zoom }: { center: [number, number]; zoom: number }) {
-  const map = useMap()
-  useEffect(() => {
-    map.flyTo(center, zoom, { duration: 1.1 })
-  }, [center, zoom, map])
-  return null
-}
 
 const FILTERS: { id: FilterId; label: string; color?: string }[] = [
   { id: 'all', label: 'Kõik' },
@@ -53,6 +46,10 @@ export default function App() {
   const [timerSeconds, setTimerSeconds] = useState(0)
   const [timerRunning, setTimerRunning] = useState(false)
   const [timerLabel, setTimerLabel] = useState('Määra aeg või vali kellaga koht')
+  const [route, setRoute] = useState<DrivingRoute | null>(null)
+  const [navigating, setNavigating] = useState(false)
+  const [routeLoading, setRouteLoading] = useState(false)
+  const [routeError, setRouteError] = useState<string | null>(null)
 
   useEffect(() => {
     setCustomSpots(loadCustomSpots())
@@ -156,8 +153,34 @@ export default function App() {
 
   const openNav = useCallback((spot: ParkingSpot) => {
     setSelected(spot)
+    setRouteError(null)
     setNavOpen(true)
   }, [])
+
+  const startInAppNavigation = async () => {
+    if (!selected) return
+    setRouteLoading(true)
+    setRouteError(null)
+    try {
+      const result = await fetchDrivingRoute(userLocation, [selected.lat, selected.lng])
+      if (!result) {
+        setRouteError('Marsruuti ei õnnestunud arvutada. Proovi Waze / Maps.')
+        return
+      }
+      setRoute(result)
+      setNavigating(true)
+      setNavOpen(false)
+    } catch {
+      setRouteError('Võrguviga marsruudi laadimisel.')
+    } finally {
+      setRouteLoading(false)
+    }
+  }
+
+  const stopNavigation = () => {
+    setNavigating(false)
+    setRoute(null)
+  }
 
   const recenter = () => {
     setFlyTarget([...userLocation] as [number, number])
@@ -216,11 +239,6 @@ export default function App() {
     e.currentTarget.reset()
   }
 
-  const tileUrl = dark
-    ? 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-    : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-  const tileClassName = dark ? 'map-tiles-dark' : undefined
-
   const wazeUrl = selected
     ? `https://waze.com/ul?ll=${selected.lat},${selected.lng}&navigate=yes`
     : '#'
@@ -254,6 +272,11 @@ export default function App() {
         timerBox: 'bg-paper-2 text-ink',
       }
 
+  const routeSummary =
+    route && navigating
+      ? `${formatDistance(route.distanceMeters)} · ${Math.round(route.durationSeconds / 60)} min`
+      : null
+
   return (
     <div className={`flex h-full flex-col ${chrome.shell}`}>
       <header
@@ -268,7 +291,7 @@ export default function App() {
               Park Tallinn
             </h1>
             <p className={`mt-0.5 text-xs font-medium ${chrome.muted}`}>
-              Tasuta · tänavad · P&R
+              3D navi · tasuta · P&R
             </p>
           </div>
         </div>
@@ -373,39 +396,49 @@ export default function App() {
         <p className={`text-[11px] ${chrome.muted}`}>
           Kaardil <strong>{filteredSpots.length}</strong> kohta
           {filter !== 'all' ? ` · filter: ${FILTERS.find((f) => f.id === filter)?.label}` : ''}
+          {' · '}
+          <span className="text-violet-600">3D · pitch 55°</span>
         </p>
       </div>
 
       <main className="relative min-h-0 flex-1 overflow-hidden">
-        <MapContainer
-          center={TALLINN_CENTER}
-          zoom={12}
-          className="h-full w-full"
-          zoomControl={false}
-          attributionControl={true}
-        >
-          <TileLayer
-            key={`${tileUrl}-${dark ? 'dark' : 'light'}`}
-            url={tileUrl}
-            maxZoom={19}
-            className={tileClassName}
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          />
-          <MapLayers
-            spots={filteredSpots}
-            zones={PAID_ZONES}
-            userLocation={userLocation}
-            dark={dark}
-            onNavigate={openNav}
-            distanceFrom={userLocation}
-          />
-          {flyTarget ? <FlyTo key={flyKey} center={flyTarget} zoom={15} /> : null}
-        </MapContainer>
+        <MapView
+          spots={filteredSpots}
+          zones={PAID_ZONES}
+          userLocation={userLocation}
+          flyTarget={flyTarget}
+          flyKey={flyKey}
+          route={route}
+          navigating={navigating}
+          onNavigate={openNav}
+          distanceFrom={userLocation}
+        />
+
+        {navigating && selected ? (
+          <div className="absolute top-3 right-3 left-3 z-[5] flex items-center justify-between gap-2 rounded-2xl border border-violet-200 bg-white/95 px-3 py-2.5 shadow-lg backdrop-blur-md">
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold tracking-wide text-violet-700 uppercase">
+                Aktiivne marsruut
+              </p>
+              <p className="truncate text-sm font-bold text-ink">{selected.name}</p>
+              {routeSummary ? (
+                <p className="text-xs text-ink-soft">{routeSummary}</p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={stopNavigation}
+              className="shrink-0 rounded-xl bg-violet-700 px-3 py-2 text-xs font-bold text-white"
+            >
+              Lõpeta
+            </button>
+          </div>
+        ) : null}
 
         <button
           type="button"
           onClick={() => setReportOpen(true)}
-          className="absolute right-4 bottom-4 z-[400] flex items-center gap-2 rounded-2xl bg-moss px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-moss/35 transition hover:bg-moss-deep active:scale-[0.98] sm:bottom-6"
+          className="absolute right-4 bottom-4 z-[5] flex items-center gap-2 rounded-2xl bg-moss px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-moss/35 transition hover:bg-moss-deep active:scale-[0.98] sm:bottom-6"
         >
           <Plus className="h-4 w-4" />
           Lisa koht
@@ -473,6 +506,21 @@ export default function App() {
             {selected.address} · {selected.timeLimit}
           </p>
           <div className="mt-4 space-y-2.5">
+            <button
+              type="button"
+              onClick={startInAppNavigation}
+              disabled={routeLoading}
+              className="flex w-full items-center justify-between rounded-2xl bg-violet-700 px-4 py-3.5 font-bold text-white shadow-md transition hover:bg-violet-800 disabled:opacity-60"
+            >
+              <span className="flex items-center gap-2">
+                <RouteIcon className="h-4 w-4" />
+                {routeLoading ? 'Arvutan marsruuti…' : '3D navi kaardil'}
+              </span>
+              <Navigation className="h-4 w-4 opacity-80" />
+            </button>
+            {routeError ? (
+              <p className="text-xs font-medium text-clay">{routeError}</p>
+            ) : null}
             <a
               href={wazeUrl}
               target="_blank"
