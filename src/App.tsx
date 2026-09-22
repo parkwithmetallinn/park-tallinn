@@ -124,19 +124,34 @@ export default function App() {
   }, [allSpots, filter, query])
 
   const nearest = useMemo(() => {
-    const candidates = allSpots.filter((s) => s.type !== 'paid')
+    const rank = (s: ParkingSpot) => {
+      if (s.type === 'free') return 0
+      if (s.type === 'pr') return 1
+      if (s.type === 'timed' && s.kind === 'lot') return 2
+      if (s.type === 'timed') return 4
+      return 5
+    }
+    const candidates = allSpots.filter(
+      (s) =>
+        s.type !== 'paid' &&
+        !s.id.includes('15min') &&
+        !s.id.includes('center-evening'),
+    )
     let best: ParkingSpot | null = null
-    let bestDist = Infinity
+    let bestScore = Infinity
     for (const spot of candidates) {
       const d = distanceMeters(userLocation[0], userLocation[1], spot.lat, spot.lng)
-      if (d < bestDist) {
-        bestDist = d
+      const score = rank(spot) * 2500 + d
+      if (score < bestScore) {
+        bestScore = score
         best = spot
       }
     }
-    return best
-      ? { spot: best, dist: formatDistance(bestDist) }
-      : null
+    if (!best) return null
+    const dist = formatDistance(
+      distanceMeters(userLocation[0], userLocation[1], best.lat, best.lng),
+    )
+    return { spot: best, dist }
   }, [allSpots, userLocation])
 
   const openNav = useCallback((spot: ParkingSpot) => {
