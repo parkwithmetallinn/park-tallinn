@@ -15,6 +15,8 @@ export interface ParkingSpot {
   desc: string
   hours?: string
   custom?: boolean
+  /** Landmark lots appear slightly earlier than dense street pins. */
+  landmark?: boolean
 }
 
 export interface PaidZone {
@@ -22,6 +24,16 @@ export interface PaidZone {
   color: string
   coords: [number, number][]
   note: string
+}
+
+export interface DistrictZone {
+  id: string
+  name: string
+  color: string
+  kind: 'free' | 'mixed' | 'paid'
+  summary: string
+  /** [lat, lng] rings */
+  coords: [number, number][]
 }
 
 export type FilterId = 'all' | SpotType | 'street' | 'lot'

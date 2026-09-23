@@ -14,11 +14,13 @@ import {
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { MapView } from './components/MapView'
 import { ModalShell } from './components/ModalShell'
+import { generateDenseStreetSpots } from './data/generateSpots'
 import { PARKING_SPOTS, PAID_ZONES, TALLINN_CENTER } from './data/parking'
 import { distanceMeters, formatDistance } from './lib/geo'
 import { formatHMS, minutesFromBadge, TYPE_COLORS, TYPE_LABELS } from './lib/parking'
 import { fetchDrivingRoute, type DrivingRoute } from './lib/routing'
 import { loadCustomSpots, saveCustomSpot } from './lib/storage'
+import { ZOOM } from './map/zoom'
 import type { FilterId, ParkingSpot } from './types'
 
 const FILTERS: { id: FilterId; label: string; color?: string }[] = [
@@ -50,6 +52,10 @@ export default function App() {
   const [navigating, setNavigating] = useState(false)
   const [routeLoading, setRouteLoading] = useState(false)
   const [routeError, setRouteError] = useState<string | null>(null)
+  const [mapMode, setMapMode] = useState<'district' | 'cluster' | 'street'>('district')
+  const [mapZoom, setMapZoom] = useState(11.8)
+
+  const denseStreetSpots = useMemo(() => generateDenseStreetSpots(2800), [])
 
   useEffect(() => {
     setCustomSpots(loadCustomSpots())
@@ -97,10 +103,13 @@ export default function App() {
     return () => clearInterval(id)
   }, [timerRunning, timerSeconds])
 
-  const allSpots = useMemo(
-    () => [...PARKING_SPOTS, ...customSpots],
-    [customSpots],
-  )
+  const allSpots = useMemo(() => {
+    const curated = PARKING_SPOTS.map((s) => ({
+      ...s,
+      landmark: s.kind === 'lot' || s.type === 'pr' || s.id.startsWith('timed-'),
+    }))
+    return [...curated, ...denseStreetSpots, ...customSpots]
+  }, [customSpots, denseStreetSpots])
 
   const filteredSpots = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -122,15 +131,18 @@ export default function App() {
 
   const nearest = useMemo(() => {
     const rank = (s: ParkingSpot) => {
-      if (s.type === 'free') return 0
+      if (s.landmark && s.type === 'free') return 0
       if (s.type === 'pr') return 1
-      if (s.type === 'timed' && s.kind === 'lot') return 2
+      if (s.landmark && s.type === 'timed') return 2
+      if (s.type === 'free') return 3
       if (s.type === 'timed') return 4
       return 5
     }
+    // Prefer curated / landmark spots for "nearest" — not the dense synthetic grid
     const candidates = allSpots.filter(
       (s) =>
         s.type !== 'paid' &&
+        !s.id.startsWith('gen-') &&
         !s.id.includes('15min') &&
         !s.id.includes('center-evening'),
     )
@@ -394,10 +406,18 @@ export default function App() {
           })}
         </div>
         <p className={`text-[11px] ${chrome.muted}`}>
-          Kaardil <strong>{filteredSpots.length}</strong> kohta
+          Andmestikus <strong>{filteredSpots.length}</strong> kohta
           {filter !== 'all' ? ` · filter: ${FILTERS.find((f) => f.id === filter)?.label}` : ''}
           {' · '}
-          <span className="text-violet-600">3D · pitch 55°</span>
+          {mapMode === 'district' && (
+            <span className="text-moss">Linnaosa tsoonid (suumi lähemale)</span>
+          )}
+          {mapMode === 'cluster' && (
+            <span className="text-sea">Klastrid · z{mapZoom.toFixed(1)}</span>
+          )}
+          {mapMode === 'street' && (
+            <span className="text-violet-600">Tänavatase · üksikud kohad</span>
+          )}
         </p>
       </div>
 
@@ -412,8 +432,19 @@ export default function App() {
           navigating={navigating}
           onNavigate={openNav}
           distanceFrom={userLocation}
+          onZoomChange={(z, mode) => {
+            setMapZoom(z)
+            setMapMode(mode)
+          }}
         />
 
+        {mapMode !== 'street' && !navigating ? (
+          <div className="pointer-events-none absolute bottom-20 left-1/2 z-[5] -translate-x-1/2 rounded-full border border-ink/10 bg-paper/95 px-3.5 py-1.5 text-[11px] font-semibold text-ink-soft shadow-md backdrop-blur-sm sm:bottom-24">
+            {mapMode === 'district'
+              ? 'Klõpsa tsooni või suumi — üksikud kohad alates z' + ZOOM.streetMin
+              : 'Suumi tänavatasemeni, et näha kõiki punkte'}
+          </div>
+        ) : null}
         {navigating && selected ? (
           <div className="absolute top-3 right-3 left-3 z-[5] flex items-center justify-between gap-2 rounded-2xl border border-violet-200 bg-white/95 px-3 py-2.5 shadow-lg backdrop-blur-md">
             <div className="min-w-0">

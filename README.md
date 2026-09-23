@@ -13,12 +13,10 @@ Ava [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
 ## Funktsioonid
 
-- **Waze-stiilis 3D kaart** (MapLibre GL): pitch 55°, helehall taust, valged teed, hallid hooned, helesinine vesi
-- Lilla marsruudijoon + tänavanime callout’id sõlmkohtades («3D navi kaardil»)
-- Filtrid: 100% tasuta, tänavaäärsed, kellaga, avalikud parklad, P&R
-- Lähima soodsa koha bänner + Waze / Google Maps
-- Parkimiskella taimer
-- Kasutaja saab lisada uusi kohti (brauserisse)
+- **Zoomipõhine kaart:** välja zoomides linnaosa polügoonid + klastrid; üksikud tänavakohad alles z≥15
+- **Waze-stiilis 3D** (MapLibre): pitch 55°, lilla marsruut + tänavacallout’id
+- Filtrid, lähim koht, taimer, Waze / Google Maps
+- ~2800+ kohta andmestikus (GPU klasterdamine, mitte DOM-nupud)
 
 ## Andmed
 
