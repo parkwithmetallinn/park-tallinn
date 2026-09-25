@@ -21,12 +21,16 @@ Ava [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
 ## Parkimissessioon (n8n)
 
-Bottom sheet → **Alusta parkimissessiooni** saadab POST:
+Bottom sheet → **Alusta / Lõpeta parkimissessioon** saadab POST:
 
 `https://mairon8n.app.n8n.cloud/webhook/parkimine`
 
 ```json
-{ "carNumber": "123ABC", "zone": "KESKLINN" }
+{ "action": "start", "carNumber": "123ABC", "zone": "KESKLINN" }
 ```
 
-Vastus: `{ success, message, sessionDetails }` — kuvatakse toast’ina. CORS-probleemi korral kasutatakse `/api/parkimine` proxy’t.
+```json
+{ "action": "stop", "carNumber": "123ABC", "zone": "KESKLINN" }
+```
+
+Vastus: `{ success, message, sessionDetails }` (start → `startTime` / `ACTIVE`; stop → `endTime` / `STOPPED`) — kuvatakse toast’ina. Aktiivset sessiooni saab lõpetada ka parkimiskella paneelist. CORS-probleemi korral kasutatakse `/api/parkimine` proxy’t.

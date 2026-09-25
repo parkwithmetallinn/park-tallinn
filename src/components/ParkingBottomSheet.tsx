@@ -1,5 +1,7 @@
-import { MapPin, Navigation, X } from 'lucide-react'
+import { MapPin, Navigation, Square, X } from 'lucide-react'
 import { useState } from 'react'
+import type { ActiveParkingSession } from '../lib/parkingSession'
+import { formatSessionInstant } from '../lib/parkingSession'
 import type { ParkingSpot } from '../types'
 import { navLinks } from '../lib/geocode'
 import { PARKING_LAYER_META } from '../map/parkingLayers'
@@ -11,8 +13,11 @@ export function ParkingBottomSheet({
   carNumber,
   onCarNumberChange,
   sessionLoading,
+  sessionAction,
+  activeSession,
   onClose,
   onStartSession,
+  onStopSession,
   onTimer,
 }: {
   spot: ParkingSpot
@@ -20,8 +25,12 @@ export function ParkingBottomSheet({
   carNumber: string
   onCarNumberChange: (value: string) => void
   sessionLoading?: boolean
+  /** Which remote action is in flight, if any. */
+  sessionAction?: 'start' | 'stop' | null
+  activeSession?: ActiveParkingSession | null
   onClose: () => void
   onStartSession: () => void
+  onStopSession: () => void
   onTimer?: () => void
 }) {
   const links = navLinks(spot.lat, spot.lng)
@@ -35,6 +44,12 @@ export function ParkingBottomSheet({
     spot.free_minutes > 0 ? `${spot.free_minutes} min tasuta` : null
   const [touched, setTouched] = useState(false)
   const carOk = carNumber.trim().length >= 2
+  const hasActive = Boolean(activeSession?.carNumber && activeSession?.zone)
+  const sameSpotSession =
+    hasActive &&
+    activeSession!.zone === spot.zone_code &&
+    activeSession!.carNumber === carNumber.trim().toUpperCase()
+  const startedLabel = formatSessionInstant(activeSession?.startedAt)
 
   return (
     <div
@@ -56,6 +71,11 @@ export function ParkingBottomSheet({
               {distanceLabel ? (
                 <span className="rounded-lg bg-sea/10 px-2 py-0.5 text-[11px] font-bold text-sea">
                   {distanceLabel}
+                </span>
+              ) : null}
+              {hasActive ? (
+                <span className="rounded-lg bg-moss/15 px-2 py-0.5 text-[11px] font-bold text-moss">
+                  Sessioon aktiivne
                 </span>
               ) : null}
             </div>
@@ -89,7 +109,7 @@ export function ParkingBottomSheet({
         <div className="space-y-3 border-t border-ink/6 px-5 py-4">
           <div>
             <p className="mb-2 text-[10px] font-bold tracking-wider text-ink-soft uppercase">
-              Alusta parkimist
+              Parkimissessioon
             </p>
             <label className="mb-1 block text-[11px] font-semibold text-ink-soft">
               Auto number
@@ -102,27 +122,51 @@ export function ParkingBottomSheet({
               autoCapitalize="characters"
               autoCorrect="off"
               spellCheck={false}
-              className="w-full rounded-2xl border border-ink/10 bg-white/80 px-3.5 py-3 font-mono text-sm font-semibold tracking-wider text-ink outline-none focus:border-moss/40 focus:ring-2 focus:ring-moss/20"
+              disabled={sessionLoading}
+              className="w-full rounded-2xl border border-ink/10 bg-white/80 px-3.5 py-3 font-mono text-sm font-semibold tracking-wider text-ink outline-none focus:border-moss/40 focus:ring-2 focus:ring-moss/20 disabled:opacity-60"
             />
             {touched && !carOk ? (
               <p className="mt-1 text-[11px] font-medium text-clay">Sisesta kehtiv auto number</p>
             ) : (
               <p className="mt-1 text-[11px] text-ink-soft">
                 Tsoon: <span className="font-semibold text-ink">{spot.zone_code}</span>
+                {hasActive && !sameSpotSession ? (
+                  <span className="mt-1 block text-moss">
+                    Aktiivne: {activeSession!.carNumber} · {activeSession!.zone}
+                    {activeSession!.spotName ? ` · ${activeSession!.spotName}` : ''}
+                    {startedLabel ? ` · alates ${startedLabel}` : ''}
+                  </span>
+                ) : null}
+                {sameSpotSession && startedLabel ? (
+                  <span className="mt-1 block text-moss">Alates {startedLabel}</span>
+                ) : null}
               </p>
             )}
-            <button
-              type="button"
-              disabled={sessionLoading || !carOk}
-              onClick={() => {
-                setTouched(true)
-                if (!carOk) return
-                onStartSession()
-              }}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-moss px-4 py-3.5 text-sm font-bold text-white shadow-md shadow-moss/25 transition hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-55 active:scale-[0.99]"
-            >
-              {sessionLoading ? 'Alustan…' : 'Alusta parkimissessiooni'}
-            </button>
+
+            {hasActive ? (
+              <button
+                type="button"
+                disabled={sessionLoading}
+                onClick={onStopSession}
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-clay px-4 py-3.5 text-sm font-bold text-white shadow-md shadow-clay/25 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-55 active:scale-[0.99]"
+              >
+                <Square className="h-4 w-4 fill-current" />
+                {sessionAction === 'stop' ? 'Lõpetan…' : 'Lõpeta parkimissessioon'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={sessionLoading || !carOk}
+                onClick={() => {
+                  setTouched(true)
+                  if (!carOk) return
+                  onStartSession()
+                }}
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-moss px-4 py-3.5 text-sm font-bold text-white shadow-md shadow-moss/25 transition hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-55 active:scale-[0.99]"
+              >
+                {sessionAction === 'start' ? 'Alustan…' : 'Alusta parkimissessiooni'}
+              </button>
+            )}
           </div>
 
           <p className="text-[10px] font-bold tracking-wider text-ink-soft uppercase">

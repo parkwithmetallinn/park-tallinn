@@ -1,6 +1,6 @@
 /**
  * Parking session API — n8n webhook backend.
- * POST { carNumber, zone } → { success, message, sessionDetails }
+ * POST { action, carNumber, zone } → { success, message, sessionDetails }
  */
 
 export const PARKING_WEBHOOK_URL =
@@ -10,7 +10,10 @@ export const PARKING_WEBHOOK_URL =
 /** Same-origin proxy path (Vite / Vercel) — used when direct CORS fails. */
 const PARKING_WEBHOOK_PROXY = '/api/parkimine'
 
-export type StartParkingSessionRequest = {
+export type ParkingSessionAction = 'start' | 'stop'
+
+export type ParkingSessionRequest = {
+  action: ParkingSessionAction
   carNumber: string
   zone: string
 }
@@ -19,17 +22,42 @@ export type ParkingSessionDetails = {
   sessionId?: string
   carNumber?: string
   zone?: string
+  /** ISO start — backend may send startedAt or startTime */
   startedAt?: string
+  startTime?: string
+  /** ISO end — backend may send endedAt or endTime */
+  endedAt?: string
+  endTime?: string
+  status?: string
   [key: string]: unknown
 }
 
-export type StartParkingSessionResponse = {
+export type ParkingSessionResponse = {
   success: boolean
   message: string
   sessionDetails?: ParkingSessionDetails | null
 }
 
-function normalizeResponse(data: unknown): StartParkingSessionResponse {
+/** Local snapshot of an ACTIVE backend session (for stop UI). */
+export type ActiveParkingSession = {
+  carNumber: string
+  zone: string
+  spotName?: string
+  startedAt?: string
+  status: string
+}
+
+function defaultMessage(action: ParkingSessionAction, success: boolean): string {
+  if (action === 'stop') {
+    return success ? 'Parkimissessioon lõpetatud' : 'Sessiooni lõpetamine ebaõnnestus'
+  }
+  return success ? 'Parkimissessioon alustatud' : 'Sessiooni alustamine ebaõnnestus'
+}
+
+function normalizeResponse(
+  data: unknown,
+  action: ParkingSessionAction,
+): ParkingSessionResponse {
   if (!data || typeof data !== 'object') {
     return { success: false, message: 'Tundmatu vastus serverilt' }
   }
@@ -38,9 +66,7 @@ function normalizeResponse(data: unknown): StartParkingSessionResponse {
   const message =
     typeof d.message === 'string' && d.message.trim()
       ? d.message
-      : success
-        ? 'Parkimissessioon alustatud'
-        : 'Sessiooni alustamine ebaõnnestus'
+      : defaultMessage(action, success)
   const sessionDetails =
     d.sessionDetails && typeof d.sessionDetails === 'object'
       ? (d.sessionDetails as ParkingSessionDetails)
@@ -50,9 +76,9 @@ function normalizeResponse(data: unknown): StartParkingSessionResponse {
 
 async function postSession(
   url: string,
-  body: StartParkingSessionRequest,
+  body: ParkingSessionRequest,
   signal?: AbortSignal,
-): Promise<StartParkingSessionResponse> {
+): Promise<ParkingSessionResponse> {
   const res = await fetch(url, {
     method: 'POST',
     headers: {
@@ -60,6 +86,7 @@ async function postSession(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
+      action: body.action,
       carNumber: body.carNumber.trim().toUpperCase(),
       zone: body.zone.trim(),
     }),
@@ -77,7 +104,7 @@ async function postSession(
   }
 
   if (!res.ok) {
-    const normalized = normalizeResponse(parsed)
+    const normalized = normalizeResponse(parsed, body.action)
     if (!normalized.success) {
       return {
         success: false,
@@ -88,18 +115,22 @@ async function postSession(
   }
 
   return normalizeResponse(
-    parsed ?? { success: res.ok, message: res.ok ? 'OK' : `Viga ${res.status}` },
+    parsed ?? {
+      success: res.ok,
+      message: res.ok ? 'OK' : `Viga ${res.status}`,
+    },
+    body.action,
   )
 }
 
 /**
- * Start a parking session via the n8n webhook.
+ * Start or stop a parking session via the n8n webhook.
  * Tries the public URL first; falls back to same-origin proxy on network/CORS failure.
  */
-export async function startParkingSession(
-  input: StartParkingSessionRequest,
+export async function sendParkingSession(
+  input: ParkingSessionRequest,
   signal?: AbortSignal,
-): Promise<StartParkingSessionResponse> {
+): Promise<ParkingSessionResponse> {
   const carNumber = input.carNumber.trim()
   const zone = input.zone.trim()
   if (!carNumber) {
@@ -109,11 +140,17 @@ export async function startParkingSession(
     return { success: false, message: 'Tsoon puudub' }
   }
 
+  const body: ParkingSessionRequest = {
+    action: input.action,
+    carNumber,
+    zone,
+  }
+
   try {
-    return await postSession(PARKING_WEBHOOK_URL, { carNumber, zone }, signal)
+    return await postSession(PARKING_WEBHOOK_URL, body, signal)
   } catch {
     try {
-      return await postSession(PARKING_WEBHOOK_PROXY, { carNumber, zone }, signal)
+      return await postSession(PARKING_WEBHOOK_PROXY, body, signal)
     } catch {
       return {
         success: false,
@@ -121,4 +158,43 @@ export async function startParkingSession(
       }
     }
   }
+}
+
+export function startParkingSession(
+  input: Omit<ParkingSessionRequest, 'action'>,
+  signal?: AbortSignal,
+): Promise<ParkingSessionResponse> {
+  return sendParkingSession({ ...input, action: 'start' }, signal)
+}
+
+export function stopParkingSession(
+  input: Omit<ParkingSessionRequest, 'action'>,
+  signal?: AbortSignal,
+): Promise<ParkingSessionResponse> {
+  return sendParkingSession({ ...input, action: 'stop' }, signal)
+}
+
+export function sessionStartIso(details?: ParkingSessionDetails | null): string | undefined {
+  if (!details) return undefined
+  const v = details.startedAt ?? details.startTime
+  return v != null ? String(v) : undefined
+}
+
+export function sessionEndIso(details?: ParkingSessionDetails | null): string | undefined {
+  if (!details) return undefined
+  const v = details.endedAt ?? details.endTime
+  return v != null ? String(v) : undefined
+}
+
+export function formatSessionInstant(iso?: string): string | undefined {
+  if (!iso) return undefined
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleString('et-EE', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
 }

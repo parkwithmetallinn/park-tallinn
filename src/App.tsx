@@ -22,9 +22,23 @@ import { distanceMeters, formatDistance } from './lib/geo'
 import { searchAddress, type GeocodeResult } from './lib/geocode'
 import { normalizeSpot } from './lib/geojson'
 import { formatHMS, minutesFromBadge, TYPE_LABELS } from './lib/parking'
-import { startParkingSession } from './lib/parkingSession'
+import {
+  formatSessionInstant,
+  sessionEndIso,
+  sessionStartIso,
+  startParkingSession,
+  stopParkingSession,
+  type ActiveParkingSession,
+} from './lib/parkingSession'
 import { parkingIndex } from './lib/spatialIndex'
-import { loadCarNumber, loadCustomSpots, saveCarNumber, saveCustomSpot } from './lib/storage'
+import {
+  loadActiveSession,
+  loadCarNumber,
+  loadCustomSpots,
+  saveActiveSession,
+  saveCarNumber,
+  saveCustomSpot,
+} from './lib/storage'
 import { PARKING_LAYER_META } from './map/parkingLayers'
 import type { FilterId, ParkingSpot, SpotType } from './types'
 
@@ -68,12 +82,22 @@ export default function App() {
   const [timerOpen, setTimerOpen] = useState(false)
   const [carNumber, setCarNumber] = useState('')
   const [sessionLoading, setSessionLoading] = useState(false)
+  const [sessionAction, setSessionAction] = useState<'start' | 'stop' | null>(null)
+  const [activeSession, setActiveSession] = useState<ActiveParkingSession | null>(null)
   const [toast, setToast] = useState<ToastState>(null)
   const geoAbort = useRef<AbortController | null>(null)
 
   useEffect(() => {
     setCustomSpots(loadCustomSpots())
     setCarNumber(loadCarNumber())
+    const saved = loadActiveSession()
+    if (saved) {
+      setActiveSession(saved)
+      setTimerLabel(
+        `Sessioon: ${saved.spotName ?? saved.zone} · ${saved.carNumber}`,
+      )
+      setTimerOpen(true)
+    }
   }, [])
 
   useEffect(() => {
@@ -228,6 +252,11 @@ export default function App() {
     saveCarNumber(value)
   }
 
+  const persistActive = (session: ActiveParkingSession | null) => {
+    setActiveSession(session)
+    saveActiveSession(session)
+  }
+
   const beginParkingSession = async () => {
     if (!selected) return
     const zone = selected.zone_code
@@ -236,14 +265,34 @@ export default function App() {
       setToast({ kind: 'error', title: 'Sisesta auto number' })
       return
     }
+    if (activeSession) {
+      setToast({
+        kind: 'error',
+        title: 'Sessioon juba käib',
+        detail: `Lõpeta enne ${activeSession.carNumber} · ${activeSession.zone}`,
+      })
+      return
+    }
 
     setSessionLoading(true)
+    setSessionAction('start')
     setToast({ kind: 'loading', title: 'Alustan parkimissessiooni…', detail: `${plate} · ${zone}` })
 
     const result = await startParkingSession({ carNumber: plate, zone })
 
     setSessionLoading(false)
+    setSessionAction(null)
     if (result.success) {
+      const startedAt = sessionStartIso(result.sessionDetails)
+      const status = String(result.sessionDetails?.status ?? 'ACTIVE')
+      persistActive({
+        carNumber: plate.toUpperCase(),
+        zone,
+        spotName: selected.name,
+        startedAt,
+        status,
+      })
+
       const mins = minutesFromBadge(selected.badge) || selected.free_minutes || 60
       setTimerSeconds(mins * 60)
       setTimerLabel(`Sessioon: ${selected.name} · ${plate}`)
@@ -252,11 +301,12 @@ export default function App() {
       closeSheet()
 
       const detailParts = [result.message]
-      const details = result.sessionDetails
-      if (details?.sessionId) detailParts.push(`ID ${details.sessionId}`)
-      const started = details?.startedAt ?? details?.startTime
-      if (started) detailParts.push(String(started))
-      if (details?.status) detailParts.push(String(details.status))
+      if (result.sessionDetails?.sessionId) {
+        detailParts.push(`ID ${result.sessionDetails.sessionId}`)
+      }
+      const startedLabel = formatSessionInstant(startedAt)
+      if (startedLabel) detailParts.push(startedLabel)
+      if (status) detailParts.push(status)
       setToast({
         kind: 'success',
         title: 'Parkimine alanud',
@@ -266,6 +316,53 @@ export default function App() {
       setToast({
         kind: 'error',
         title: 'Sessiooni ei alustatud',
+        detail: result.message,
+      })
+    }
+  }
+
+  const endParkingSession = async () => {
+    const session = activeSession
+    if (!session) {
+      setToast({ kind: 'error', title: 'Aktiivset sessiooni pole' })
+      return
+    }
+
+    setSessionLoading(true)
+    setSessionAction('stop')
+    setToast({
+      kind: 'loading',
+      title: 'Lõpetan parkimissessiooni…',
+      detail: `${session.carNumber} · ${session.zone}`,
+    })
+
+    const result = await stopParkingSession({
+      carNumber: session.carNumber,
+      zone: session.zone,
+    })
+
+    setSessionLoading(false)
+    setSessionAction(null)
+    if (result.success) {
+      persistActive(null)
+      setTimerRunning(false)
+      setTimerSeconds(0)
+      setTimerLabel('Sessioon lõpetatud')
+
+      const detailParts = [result.message]
+      const ended = formatSessionInstant(sessionEndIso(result.sessionDetails))
+      if (ended) detailParts.push(`lõpp ${ended}`)
+      const status = result.sessionDetails?.status
+      if (status) detailParts.push(String(status))
+      setToast({
+        kind: 'success',
+        title: 'Parkimine lõpetatud',
+        detail: detailParts.filter(Boolean).join(' · '),
+      })
+    } else {
+      setToast({
+        kind: 'error',
+        title: 'Sessiooni ei lõpetatud',
         detail: result.message,
       })
     }
@@ -478,10 +575,13 @@ export default function App() {
         <button
           type="button"
           onClick={() => setTimerOpen((o) => !o)}
-          className={`flex h-12 w-12 items-center justify-center rounded-2xl ${panel} ${text} transition hover:scale-105`}
-          title="Parkimiskell"
+          className={`relative flex h-12 w-12 items-center justify-center rounded-2xl ${panel} ${text} transition hover:scale-105`}
+          title={activeSession ? 'Aktiivne sessioon' : 'Parkimiskell'}
         >
-          <Clock3 className="h-5 w-5 text-sea" />
+          <Clock3 className={`h-5 w-5 ${activeSession ? 'text-moss' : 'text-sea'}`} />
+          {activeSession ? (
+            <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-moss ring-2 ring-white" />
+          ) : null}
         </button>
         <button
           type="button"
@@ -493,20 +593,30 @@ export default function App() {
         </button>
       </div>
 
-      {/* Compact timer drawer */}
+      {/* Compact timer / active session drawer */}
       {timerOpen ? (
         <div
           className={`absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-3 z-30 w-[min(100%-5.5rem,20rem)] px-3.5 py-3 sm:left-4 ${panel}`}
         >
           <div className="mb-2 flex items-center justify-between gap-2">
-            <div>
-              <p className={`text-xs font-bold ${text}`}>Parkimiskell</p>
+            <div className="min-w-0">
+              <p className={`text-xs font-bold ${text}`}>
+                {activeSession ? 'Aktiivne sessioon' : 'Parkimiskell'}
+              </p>
               <p className={`truncate text-[10px] ${muted}`}>{timerLabel}</p>
             </div>
             <span className={`font-mono text-xl font-extrabold tabular-nums ${text}`}>
               {formatHMS(timerSeconds)}
             </span>
           </div>
+          {activeSession ? (
+            <div className="mb-2 rounded-xl bg-moss/10 px-2.5 py-2 text-[11px] font-semibold text-moss">
+              {activeSession.carNumber} · {activeSession.zone}
+              {formatSessionInstant(activeSession.startedAt)
+                ? ` · alates ${formatSessionInstant(activeSession.startedAt)}`
+                : ''}
+            </div>
+          ) : null}
           <div className="mb-2 flex gap-1">
             {[15, 30, 60, 120].map((m) => (
               <button
@@ -520,15 +630,26 @@ export default function App() {
             ))}
           </div>
           <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={startOrPause}
-              className={`flex-1 rounded-xl py-2 text-xs font-bold text-white ${
-                timerRunning ? 'bg-clay' : 'bg-moss'
-              }`}
-            >
-              {timerRunning ? 'Paus' : 'Käivita'}
-            </button>
+            {activeSession ? (
+              <button
+                type="button"
+                disabled={sessionLoading}
+                onClick={() => void endParkingSession()}
+                className="flex-1 rounded-xl bg-clay py-2 text-xs font-bold text-white disabled:opacity-55"
+              >
+                {sessionAction === 'stop' ? 'Lõpetan…' : 'Lõpeta sessioon'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={startOrPause}
+                className={`flex-1 rounded-xl py-2 text-xs font-bold text-white ${
+                  timerRunning ? 'bg-clay' : 'bg-moss'
+                }`}
+              >
+                {timerRunning ? 'Paus' : 'Käivita'}
+              </button>
+            )}
             <button
               type="button"
               onClick={resetTimer}
@@ -547,8 +668,11 @@ export default function App() {
           carNumber={carNumber}
           onCarNumberChange={handleCarNumberChange}
           sessionLoading={sessionLoading}
+          sessionAction={sessionAction}
+          activeSession={activeSession}
           onClose={closeSheet}
           onStartSession={() => void beginParkingSession()}
+          onStopSession={() => void endParkingSession()}
           onTimer={autoTimerFromSpot}
         />
       ) : null}
