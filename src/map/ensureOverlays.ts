@@ -1,6 +1,5 @@
 import type { Map as MapLibreMapType } from 'maplibre-gl'
 import {
-  GRID_DEBUG_SOURCE,
   PARKING_LAYER_META,
   PARKING_PROVIDERS,
   PARKING_VIEWPORT_SOURCE,
@@ -117,39 +116,24 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
     })
   }
 
-  if (!map.getSource(GRID_DEBUG_SOURCE)) {
-    map.addSource(GRID_DEBUG_SOURCE, {
-      type: 'geojson',
-      data: { type: 'FeatureCollection', features: [] },
-    })
-    map.addLayer({
-      id: 'grid-debug-line',
-      type: 'line',
-      source: GRID_DEBUG_SOURCE,
-      minzoom: ZOOM.streetMin,
-      layout: { visibility: 'none' },
-      paint: {
-        'line-color': '#94A3B8',
-        'line-width': 0.8,
-        'line-opacity': 0.55,
-      },
-    })
-  }
-
-  // One viewport source → N provider layers (GPU filters, no DOM)
+  // One viewport source → N layer filters (GPU, no DOM)
   if (!map.getSource(PARKING_VIEWPORT_SOURCE)) {
     map.addSource(PARKING_VIEWPORT_SOURCE, {
       type: 'geojson',
       data: { type: 'FeatureCollection', features: [] },
     })
 
-    for (const provider of PARKING_PROVIDERS) {
-      const meta = PARKING_LAYER_META[provider]
+    for (const layerKey of PARKING_PROVIDERS) {
+      const meta = PARKING_LAYER_META[layerKey]
       map.addLayer({
         id: meta.id,
         type: 'circle',
         source: PARKING_VIEWPORT_SOURCE,
-        filter: ['==', ['get', 'provider'], provider],
+        filter: [
+          'any',
+          ['==', ['get', 'layer'], layerKey],
+          ['==', ['get', 'provider'], layerKey],
+        ],
         minzoom: ZOOM.streetMin,
         layout: { visibility: 'visible' },
         paint: {
@@ -172,7 +156,11 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
         id: `${meta.id}-label`,
         type: 'symbol',
         source: PARKING_VIEWPORT_SOURCE,
-        filter: ['==', ['get', 'provider'], provider],
+        filter: [
+          'any',
+          ['==', ['get', 'layer'], layerKey],
+          ['==', ['get', 'provider'], layerKey],
+        ],
         minzoom: ZOOM.streetMin + 0.6,
         layout: {
           'text-field': ['get', 'badge'],
@@ -225,9 +213,9 @@ export function setParkingLayerVisibility(
   map: MapLibreMapType,
   visible: Partial<Record<keyof typeof PARKING_LAYER_META, boolean>>,
 ) {
-  for (const provider of PARKING_PROVIDERS) {
-    const meta = PARKING_LAYER_META[provider]
-    const on = visible[provider] !== false
+  for (const layerKey of PARKING_PROVIDERS) {
+    const meta = PARKING_LAYER_META[layerKey]
+    const on = visible[layerKey] !== false
     if (map.getLayer(meta.id)) {
       map.setLayoutProperty(meta.id, 'visibility', on ? 'visible' : 'none')
     }

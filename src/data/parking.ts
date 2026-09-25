@@ -1,11 +1,8 @@
-import type { PaidZone, ParkingSpot } from '../types'
+import type { PaidZone, ParkingSpotSeed } from '../types'
 
 export const TALLINN_CENTER: [number, number] = [59.437, 24.7535]
 
-/** Seed records — `provider` filled via withProvider() at boot. */
-export type ParkingSpotSeed = Omit<ParkingSpot, 'provider'> & {
-  provider?: ParkingSpot['provider']
-}
+export type { ParkingSpotSeed }
 
 /** Approx. visual boundaries of Tallinn paid street zones */
 export const PAID_ZONES: PaidZone[] = [
@@ -20,6 +17,10 @@ export const PAID_ZONES: PaidZone[] = [
       [59.4345, 24.74],
     ],
     note: 'Kõrgeim tariif · 15 min tasuta kellaga',
+    zone_code: 'VANALINN',
+    free_minutes: 15,
+    price_per_hour: 6.0,
+    operator: 'Tallinna Linn',
   },
   {
     name: 'Südalinn',
@@ -33,6 +34,10 @@ export const PAID_ZONES: PaidZone[] = [
       [59.437, 24.753],
     ],
     note: 'Keskmine tariif · 15 min tasuta kellaga',
+    zone_code: 'SÜDALINN',
+    free_minutes: 15,
+    price_per_hour: 4.5,
+    operator: 'AS Ühisteenused',
   },
   {
     name: 'Kesklinn',
@@ -45,6 +50,10 @@ export const PAID_ZONES: PaidZone[] = [
       [59.425, 24.72],
     ],
     note: 'Tavaline tariif · öösel & pühapäeval tasuta',
+    zone_code: 'KESKLINN',
+    free_minutes: 15,
+    price_per_hour: 2.5,
+    operator: 'Tallinna Linn',
   },
   {
     name: 'Pirita rand',
@@ -56,6 +65,10 @@ export const PAID_ZONES: PaidZone[] = [
       [59.461, 24.832],
     ],
     note: 'Hooajaline tasuline tsoon ranna ääres',
+    zone_code: 'PIRITA',
+    free_minutes: 0,
+    price_per_hour: 2.0,
+    operator: 'Tallinna Linn',
   },
 ]
 

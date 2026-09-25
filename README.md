@@ -1,6 +1,6 @@
 # Park Tallinn
 
-Kaardipõhine parkimisäpp (MapLibre GL). Ajutine OSM/OpenFreeMap vektorkaart; hiljem asendub ~100 MB Maa-ameti vektorkaardiga.
+Kaardipõhine Eesti parkimisäpp (MapLibre GL). Ajutine OSM/OpenFreeMap vektorkaart; hiljem asendub ~100 MB Maa-ameti vektorkaardiga.
 
 ## Käivitamine
 
@@ -22,26 +22,28 @@ export const VECTOR_TILE_SOURCE_URL = 'https://tiles.openfreemap.org/planet'
 
 Või sea `STYLE_URL` täielikule stiili JSON-ile.
 
-## 100×100 m ruudustik
+## Viewport bounding box
 
-- `src/lib/grid.ts` — Web Mercator 100 m lahtrid
-- `src/lib/spatialIndex.ts` — punktid indekseeritud lahtri võtme järgi
+- `src/lib/bbox.ts` — vaateakna piiride laiendamine
+- `src/lib/spatialIndex.ts` — punktide bbox-päring
 - `src/lib/parkingRepository.ts` — viewport-päring (täna lokaalne indeks; homme HTTP)
 
-Tänavatasemel (z ≥ 15) laetakse kaardile **ainult nähtavate lahtrite** punktid. Välja zoomides individuaalseid punkte ei renderdata.
+Tänavatasemel (z ≥ 15) laetakse kaardile **ainult ekraanil nähtava bbox-i** punktid. Välja zoomides kuvatakse linnaosade koondtsoonid.
 
-## Parkimiskihid
+## Andmeskeem (Eesti parkimisturg)
 
-Üks GeoJSON allikas, eraldi MapLibre kihid filtriga `provider`:
+Iga punkt/polügoon kannab: `operator`, `zone_code`, `free_minutes`, `price_per_hour`, `featureType`, `layer`.
 
-| Kiht | Provider |
-|------|----------|
-| EuroPark | `europark` |
-| Snabb | `snabb` |
-| Tasuta tänav | `free_street` |
-| Kellaga | `timed` |
-| P&R | `park_ride` |
-| Avalik | `municipal` |
+| Kiht | Näited |
+|------|--------|
+| `municipal` | Vanalinn, Südalinn, Kesklinn, Pirita |
+| `europark` / `snabb` / `citypark` / `uhisteenused` / `parkit` | Eraoperaatorid |
+| `free_street` / `timed` | Tasuta & kellaga tänavad |
+| `ev` | Enefit Volt, Eleport, Ignitis |
+| `inva` / `loading` | Inva-kohad, kauba laadimine |
+| `park_ride` | Pargi & Reisi |
+
+Mock-andmestik: `src/data/mockKesklinn.ts` (~28 päriselulist kohta Kesklinna/Vanalinna).
 
 ## Stack
 

@@ -1,46 +1,45 @@
 import type { ParkingSpot } from '../types'
 import { parkingIndex } from './spatialIndex'
-import { cellsCoveringBounds, type LngLatBoundsLike } from './grid'
+import { padBounds, type LngLatBoundsLike } from './bbox'
 import { ZOOM } from '../map/zoom'
 
 export type ViewportQueryResult = {
   spots: ParkingSpot[]
-  cellKeys: string[]
-  /** True when zoom is too low — individual spots must not be rendered. */
+  /** True when zoom is too low — show district aggregates only. */
   skippedForZoom: boolean
-  /** True when bounds cover too many cells — refuse to load all points. */
+  /** True when viewport is huge — refuse to dump entire country into GPU. */
   skippedForExtent: boolean
 }
 
+/** ~0.08° ≈ several km — above this at street zoom we still skip point dump. */
+const MAX_VIEWPORT_AREA_DEG2 = 0.04
+
 /**
- * Spatial query API used by the map.
- * Today: local grid index. Tomorrow: `fetch(/api/parking?cells=...)`.
+ * Viewport bounding-box parking query.
+ * Today: in-memory index. Tomorrow:
+ *   GET /api/v1/parking?west=&south=&east=&north=&zoom=
  */
 export async function queryParkingInViewport(
   bounds: LngLatBoundsLike,
   zoom: number,
 ): Promise<ViewportQueryResult> {
   if (zoom < ZOOM.streetMin) {
-    return { spots: [], cellKeys: [], skippedForZoom: true, skippedForExtent: false }
+    return { spots: [], skippedForZoom: true, skippedForExtent: false }
   }
 
-  const cellKeys = cellsCoveringBounds(bounds, {
-    maxCells: 350,
-    padMeters: 50,
-  })
-
-  if (cellKeys.length === 0) {
-    return { spots: [], cellKeys: [], skippedForZoom: false, skippedForExtent: true }
+  const padded = padBounds(bounds, 80)
+  const area = (padded.east - padded.west) * (padded.north - padded.south)
+  if (area > MAX_VIEWPORT_AREA_DEG2) {
+    return { spots: [], skippedForZoom: false, skippedForExtent: true }
   }
 
-  // Local index today — replace body with network call when backend exists:
-  // const res = await fetch(`/api/v1/parking/cells?keys=${cellKeys.join(',')}`)
-  // const spots = await res.json()
-  const spots = parkingIndex.queryCells(cellKeys)
+  // Local today — swap for network:
+  // const q = new URLSearchParams({ west, south, east, north, zoom: String(zoom) })
+  // const spots = await fetch(`/api/v1/parking?${q}`).then(r => r.json())
+  const spots = parkingIndex.queryBounds(padded)
 
   return {
     spots,
-    cellKeys,
     skippedForZoom: false,
     skippedForExtent: false,
   }

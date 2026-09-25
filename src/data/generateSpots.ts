@@ -1,6 +1,7 @@
 import { DISTRICT_ZONES } from './districts'
 import { pointInPolygon } from '../lib/geojsonPolygons'
-import type { ParkingProvider, ParkingSpot } from '../types'
+import { normalizeSpot } from '../lib/geojson'
+import type { ParkingLayerKey, ParkingSpot } from '../types'
 
 const STREET_NAMES = [
   'Pikk',
@@ -27,7 +28,7 @@ const STREET_NAMES = [
 
 /**
  * Dense synthetic spots for scalability demos (thousands of points).
- * Mixes free streets, timed, EuroPark & Snabb so layer filters are testable.
+ * Mixes free streets, timed, EuroPark, Snabb, Citypark so layer filters are testable.
  */
 export function generateDenseStreetSpots(count = 2800): ParkingSpot[] {
   const districts = DISTRICT_ZONES.filter((d) => d.kind !== 'paid')
@@ -53,37 +54,64 @@ export function generateDenseStreetSpots(count = 2800): ParkingSpot[] {
     const inPaidCore = lat > 59.428 && lat < 59.442 && lng > 24.735 && lng < 24.765
     if (inPaidCore && i % 7 !== 0) continue
 
-    const roll = i % 20
-    let provider: ParkingProvider
+    const roll = i % 24
+    let layer: ParkingLayerKey
     let type: ParkingSpot['type']
     let kind: ParkingSpot['kind']
     let badge: string
     let timeLimit: string
     let desc: string
+    let free_minutes = 0
+    let price_per_hour = 0
+    let zone_code = 'FREE'
 
     if (inPaidCore || roll === 0 || roll === 1) {
-      provider = 'timed'
+      layer = 'timed'
       type = 'timed'
       kind = 'street'
       badge = inPaidCore ? (i % 3 === 0 ? '15 min' : '30 min') : roll === 0 ? '30 min' : '2h'
+      free_minutes = badge.includes('15') ? 15 : badge.includes('30') ? 30 : 120
+      price_per_hour = 2.5
+      zone_code = 'KESKLINN'
       timeLimit = 'Ajapiirang · parkimiskell'
       desc = 'Tänavaäärne kellaga / ajapiiranguga koht.'
     } else if (roll === 2) {
-      provider = 'europark'
+      layer = 'europark'
       type = 'paid'
       kind = 'lot'
       badge = 'EuroPark'
+      zone_code = 'EP'
+      price_per_hour = 3.5
       timeLimit = 'Tasuline (EuroPark)'
       desc = 'EuroPark eraparkla — kontrolli tariifi äpis / kohapeal.'
     } else if (roll === 3) {
-      provider = 'snabb'
+      layer = 'snabb'
       type = 'paid'
       kind = 'lot'
       badge = 'Snabb'
+      zone_code = 'SN'
+      price_per_hour = 3.2
       timeLimit = 'Tasuline (Snabb)'
       desc = 'Snabb eraparkla — digitaalne piletid.'
+    } else if (roll === 4) {
+      layer = 'citypark'
+      type = 'paid'
+      kind = 'lot'
+      badge = 'Citypark'
+      zone_code = 'CP'
+      price_per_hour = 3.0
+      timeLimit = 'Tasuline (Citypark)'
+      desc = 'Citypark eraparkla.'
+    } else if (roll === 5) {
+      layer = 'ev'
+      type = 'timed'
+      kind = 'lot'
+      badge = 'EV'
+      zone_code = 'EV'
+      timeLimit = 'Elektrilaadija'
+      desc = 'Sünteetiline EV-laadija demo.'
     } else {
-      provider = 'free_street'
+      layer = 'free_street'
       type = 'free'
       kind = 'street'
       badge = 'TÄNAV'
@@ -94,20 +122,28 @@ export function generateDenseStreetSpots(count = 2800): ParkingSpot[] {
     const street = STREET_NAMES[i % STREET_NAMES.length]
     const n = 1 + (i % 80)
 
-    spots.push({
-      id: `gen-street-${spots.length}`,
-      name: `${provider === 'europark' || provider === 'snabb' ? badge : street + ' tn ' + n}`,
-      type,
-      kind,
-      provider,
-      badge,
-      timeLimit,
-      lat,
-      lng,
-      address: `${street} tn ${n}, ${d.name}`,
-      desc,
-      landmark: false,
-    })
+    spots.push(
+      normalizeSpot({
+        id: `gen-street-${spots.length}`,
+        name:
+          layer === 'europark' || layer === 'snabb' || layer === 'citypark'
+            ? badge
+            : `${street} tn ${n}`,
+        type,
+        kind,
+        layer,
+        zone_code,
+        free_minutes,
+        price_per_hour,
+        badge,
+        timeLimit,
+        lat,
+        lng,
+        address: `${street} tn ${n}, ${d.name}`,
+        desc,
+        landmark: false,
+      }),
+    )
   }
 
   return spots

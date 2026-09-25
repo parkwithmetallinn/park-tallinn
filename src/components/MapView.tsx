@@ -13,7 +13,6 @@ import { useEffect, useRef, useState } from 'react'
 import { DISTRICT_ZONES } from '../data/districts'
 import { distanceMeters, formatDistance } from '../lib/geo'
 import { countSpotsInDistrict, spotsToGeoJSON } from '../lib/geojson'
-import { cellToPolygon, parseCellKey } from '../lib/grid'
 import { queryParkingInViewport } from '../lib/parkingRepository'
 import { parkingIndex } from '../lib/spatialIndex'
 import type { DrivingRoute } from '../lib/routing'
@@ -26,14 +25,13 @@ import {
   setParkingLayerVisibility,
 } from '../map/ensureOverlays'
 import {
-  GRID_DEBUG_SOURCE,
   PARKING_LAYER_META,
   PARKING_PROVIDERS,
   PARKING_VIEWPORT_SOURCE,
 } from '../map/parkingLayers'
 import { NAV_PITCH } from '../map/theme'
 import { ZOOM } from '../map/zoom'
-import type { FilterId, PaidZone, ParkingProvider, ParkingSpot } from '../types'
+import type { FilterId, ParkingLayerKey, PaidZone, ParkingSpot } from '../types'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
 setWorkerUrl(maplibreWorker)
@@ -52,14 +50,9 @@ function makeCalloutEl(name: string) {
   return el
 }
 
-function filterToProviders(filter: FilterId): ParkingProvider[] | 'all' {
+function filterToLayers(filter: FilterId): ParkingLayerKey[] | 'all' {
   if (filter === 'all') return 'all'
-  if (filter === 'free' || filter === 'street') return ['free_street', 'municipal']
-  if (filter === 'timed') return ['timed']
-  if (filter === 'lot') return ['municipal', 'europark', 'snabb']
-  if (filter === 'pr') return ['park_ride']
-  if (filter === 'paid') return ['europark', 'snabb']
-  if ((PARKING_PROVIDERS as string[]).includes(filter)) return [filter as ParkingProvider]
+  if ((PARKING_PROVIDERS as string[]).includes(filter)) return [filter as ParkingLayerKey]
   return 'all'
 }
 
@@ -105,9 +98,7 @@ export function MapView({
   distanceFrom,
   onZoomChange,
   onViewportStats,
-  showGridDebug = false,
 }: {
-  /** Full dataset for district aggregates + index is already bulk-loaded in App. */
   spots: ParkingSpot[]
   zones: PaidZone[]
   filter: FilterId
@@ -119,8 +110,7 @@ export function MapView({
   onNavigate: (spot: ParkingSpot) => void
   distanceFrom: [number, number]
   onZoomChange?: (zoom: number, mode: 'district' | 'cluster' | 'street') => void
-  onViewportStats?: (stats: { cells: number; rendered: number }) => void
-  showGridDebug?: boolean
+  onViewportStats?: (stats: { rendered: number; skipped: boolean }) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMapType | null>(null)
@@ -196,15 +186,14 @@ export function MapView({
       )
       if (gen !== loadGenRef.current || !mapRef.current) return
 
-      const providers = filterToProviders(filterRef.current)
+      const layers = filterToLayers(filterRef.current)
       const visibleSpots =
-        providers === 'all'
+        layers === 'all'
           ? result.spots
-          : result.spots.filter((s) => providers.includes(s.provider))
+          : result.spots.filter((s) => layers.includes(s.layer))
 
       const source = m.getSource(PARKING_VIEWPORT_SOURCE) as GeoJSONSource | undefined
       if (source) {
-        // Street zoom only — empty FeatureCollection when skipped
         source.setData(
           result.skippedForZoom || result.skippedForExtent
             ? { type: 'FeatureCollection', features: [] }
@@ -212,24 +201,9 @@ export function MapView({
         )
       }
 
-      const gridSrc = m.getSource(GRID_DEBUG_SOURCE) as GeoJSONSource | undefined
-      if (gridSrc) {
-        gridSrc.setData({
-          type: 'FeatureCollection',
-          features: result.cellKeys.map((key) => ({
-            type: 'Feature' as const,
-            properties: { key },
-            geometry: {
-              type: 'Polygon' as const,
-              coordinates: [cellToPolygon(parseCellKey(key))],
-            },
-          })),
-        })
-      }
-
       onViewportStats?.({
-        cells: result.cellKeys.length,
         rendered: visibleSpots.length,
+        skipped: result.skippedForZoom || result.skippedForExtent,
       })
     }
 
@@ -277,7 +251,7 @@ export function MapView({
 
     const openSpotPopup = (spot: ParkingSpot, lngLat: [number, number]) => {
       popupRef.current?.remove()
-      const color = PARKING_LAYER_META[spot.provider]?.color ?? '#64748B'
+      const color = PARKING_LAYER_META[spot.layer]?.color ?? '#64748B'
       const dist = formatDistance(
         distanceMeters(
           distanceFromRef.current[0],
@@ -286,6 +260,10 @@ export function MapView({
           spot.lng,
         ),
       )
+      const price =
+        spot.price_per_hour > 0 ? `${spot.price_per_hour.toFixed(2)} €/h` : 'tasuta'
+      const free =
+        spot.free_minutes > 0 ? `${spot.free_minutes} min tasuta` : null
       const html = `
         <div class="ml-popup">
           <div class="ml-popup-top">
@@ -294,7 +272,8 @@ export function MapView({
           </div>
           <h4>${spot.name}</h4>
           <p class="ml-addr">${spot.address}</p>
-          <p class="ml-meta">${spot.provider} · ${spot.timeLimit}</p>
+          <p class="ml-meta">${spot.operator} · ${spot.zone_code} · ${price}${free ? ` · ${free}` : ''}</p>
+          <p class="ml-meta">${spot.featureType} · ${spot.timeLimit}</p>
           <p class="ml-desc">${spot.desc}</p>
           <button type="button" class="ml-nav-btn" data-spot="${spot.id}">Navigeeri</button>
         </div>
@@ -329,8 +308,8 @@ export function MapView({
       openSpotPopup(spot, [lng, lat])
     }
 
-    for (const provider of PARKING_PROVIDERS) {
-      const layerId = PARKING_LAYER_META[provider].id
+    for (const layerKey of PARKING_PROVIDERS) {
+      const layerId = PARKING_LAYER_META[layerKey].id
       map.on('click', layerId, onPointClick)
       map.on('mouseenter', layerId, () => {
         map.getCanvas().style.cursor = 'pointer'
@@ -351,10 +330,11 @@ export function MapView({
       const f = e.features?.[0]
       if (!f) return
       popupRef.current?.remove()
+      const zoneCode = f.properties?.zone_code ? ` · ${f.properties.zone_code}` : ''
       popupRef.current = new Popup({ offset: 8, className: 'park-popup', maxWidth: '240px' })
         .setLngLat(e.lngLat)
         .setHTML(
-          `<div class="ml-popup"><h4>${f.properties?.name ?? ''}</h4><p class="ml-desc">${f.properties?.note ?? ''}</p></div>`,
+          `<div class="ml-popup"><h4>${f.properties?.name ?? ''}${zoneCode}</h4><p class="ml-desc">${f.properties?.note ?? ''}</p></div>`,
         )
         .addTo(map)
     })
@@ -362,7 +342,6 @@ export function MapView({
     const ro = new ResizeObserver(() => map.resize())
     ro.observe(containerRef.current)
 
-    // stash refresh on map for filter updates
     ;(map as MapLibreMapType & { __refreshViewport?: () => void }).__refreshViewport = () => {
       void refreshViewport(map)
     }
@@ -380,7 +359,6 @@ export function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Paid zones
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
@@ -390,7 +368,15 @@ export function MapView({
       type: 'FeatureCollection',
       features: zones.map((z) => ({
         type: 'Feature',
-        properties: { name: z.name, color: z.color, note: z.note },
+        properties: {
+          name: z.name,
+          color: z.color,
+          note: z.note,
+          zone_code: z.zone_code ?? z.name.toUpperCase(),
+          free_minutes: z.free_minutes ?? 15,
+          price_per_hour: z.price_per_hour ?? 0,
+          operator: z.operator ?? 'Tallinna Linn',
+        },
         geometry: {
           type: 'Polygon',
           coordinates: [z.coords.map(([lat, lng]) => [lng, lat])],
@@ -399,7 +385,6 @@ export function MapView({
     })
   }, [zones, ready])
 
-  // District polygons (overview) — uses full spot list once when it changes
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
@@ -408,38 +393,25 @@ export function MapView({
     source.setData(buildDistrictGeoJSON(spots))
   }, [spots, ready])
 
-  // Filter → layer visibility + re-query viewport subset
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
-    const providers = filterToProviders(filter)
-    if (providers === 'all') {
+    const layers = filterToLayers(filter)
+    if (layers === 'all') {
       setParkingLayerVisibility(
         map,
         Object.fromEntries(PARKING_PROVIDERS.map((p) => [p, true])),
       )
     } else {
       const vis = Object.fromEntries(
-        PARKING_PROVIDERS.map((p) => [p, providers.includes(p)]),
-      ) as Partial<Record<ParkingProvider, boolean>>
+        PARKING_PROVIDERS.map((p) => [p, layers.includes(p)]),
+      ) as Partial<Record<ParkingLayerKey, boolean>>
       setParkingLayerVisibility(map, vis)
     }
     const refresh = (map as MapLibreMapType & { __refreshViewport?: () => void })
       .__refreshViewport
     refresh?.()
   }, [filter, ready])
-
-  useEffect(() => {
-    const map = mapRef.current
-    if (!map || !ready) return
-    if (map.getLayer('grid-debug-line')) {
-      map.setLayoutProperty(
-        'grid-debug-line',
-        'visibility',
-        showGridDebug ? 'visible' : 'none',
-      )
-    }
-  }, [showGridDebug, ready])
 
   useEffect(() => {
     const map = mapRef.current

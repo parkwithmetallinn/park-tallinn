@@ -1,25 +1,60 @@
-export type SpotType = 'free' | 'timed' | 'pr' | 'paid'
-
-export type SpotKind = 'lot' | 'street'
-
 /**
- * Provider / product layer — each maps to its own MapLibre layer filter.
- * Ready for EuroPark / Snabb API feeds later.
+ * Industry-grade parking feature schema for Estonia.
+ * GeoJSON properties mirror what a future API / Maa-amet pipeline would emit.
  */
-export type ParkingProvider =
+
+/** Physical geometry / use-case of the feature */
+export type ParkingFeatureType =
+  | 'off-street-lot'
+  | 'on-street-line'
+  | 'ev-charger'
+  | 'inva'
+  | 'loading'
+  | 'park-ride'
+  | 'municipal-zone'
+
+/** Who operates / bills the spot */
+export type ParkingOperator =
+  | 'Tallinna Linn'
+  | 'AS Ühisteenused'
+  | 'EuroPark'
+  | 'Snabb'
+  | 'Citypark'
+  | 'Parkit'
+  | 'Enefit Volt'
+  | 'Eleport'
+  | 'Ignitis'
+  | 'Unknown'
+
+/** MapLibre layer grouping (filter key) */
+export type ParkingLayerKey =
+  | 'municipal'
   | 'europark'
   | 'snabb'
+  | 'citypark'
+  | 'uhisteenused'
+  | 'parkit'
   | 'free_street'
   | 'timed'
+  | 'ev'
+  | 'inva'
+  | 'loading'
   | 'park_ride'
-  | 'municipal'
 
 export interface ParkingSpot {
   id: string
   name: string
-  type: SpotType
-  kind: SpotKind
-  provider: ParkingProvider
+  /** GeoJSON / product type */
+  featureType: ParkingFeatureType
+  operator: ParkingOperator
+  /** Layer key for MapLibre filters */
+  layer: ParkingLayerKey
+  /** Operator zone id, e.g. EP12, KESKLINN, SN1 */
+  zone_code: string
+  /** Free minutes before paid (0, 15, 30, 60…) */
+  free_minutes: number
+  /** Hourly rate in EUR; 0 = free */
+  price_per_hour: number
   badge: string
   timeLimit: string
   lat: number
@@ -28,8 +63,11 @@ export interface ParkingSpot {
   desc: string
   hours?: string
   custom?: boolean
-  /** Landmark lots appear slightly earlier / used for nearest banner. */
   landmark?: boolean
+  /** @deprecated use featureType / layer — kept for gradual migration */
+  type?: 'free' | 'timed' | 'pr' | 'paid'
+  kind?: 'lot' | 'street'
+  provider?: ParkingLayerKey
 }
 
 export interface PaidZone {
@@ -37,6 +75,10 @@ export interface PaidZone {
   color: string
   coords: [number, number][]
   note: string
+  zone_code?: string
+  free_minutes?: number
+  price_per_hour?: number
+  operator?: ParkingOperator
 }
 
 export interface DistrictZone {
@@ -45,13 +87,33 @@ export interface DistrictZone {
   color: string
   kind: 'free' | 'mixed' | 'paid'
   summary: string
-  /** [lat, lng] rings */
   coords: [number, number][]
 }
 
-export type FilterId =
-  | 'all'
-  | SpotType
-  | 'street'
-  | 'lot'
-  | ParkingProvider
+export type FilterId = 'all' | ParkingLayerKey
+
+/** Legacy UI type labels (report form / older filters) */
+export type SpotType = NonNullable<ParkingSpot['type']>
+
+/** @deprecated alias — use ParkingLayerKey */
+export type ParkingProvider = ParkingLayerKey
+
+/** Seed without required layer fields filled by normalizeSpot() */
+export type ParkingSpotSeed = Omit<
+  ParkingSpot,
+  'layer' | 'operator' | 'featureType' | 'zone_code' | 'free_minutes' | 'price_per_hour'
+> &
+  Partial<
+    Pick<
+      ParkingSpot,
+      | 'layer'
+      | 'operator'
+      | 'featureType'
+      | 'zone_code'
+      | 'free_minutes'
+      | 'price_per_hour'
+      | 'provider'
+      | 'type'
+      | 'kind'
+    >
+  >

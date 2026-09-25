@@ -1,4 +1,4 @@
-import { withProvider } from './geojson'
+import { normalizeSpot } from './geojson'
 import type { ParkingSpot } from '../types'
 
 const STORAGE_KEY = 'park_tallinn_custom_spots'
@@ -9,7 +9,7 @@ export function loadCustomSpots(): ParkingSpot[] {
     if (!raw) return []
     const parsed = JSON.parse(raw) as ParkingSpot[]
     if (!Array.isArray(parsed)) return []
-    return parsed.map((s) => withProvider(s))
+    return parsed.map((s) => normalizeSpot(s))
   } catch {
     return []
   }
@@ -17,6 +17,6 @@ export function loadCustomSpots(): ParkingSpot[] {
 
 export function saveCustomSpot(spot: ParkingSpot): void {
   const existing = loadCustomSpots()
-  existing.push(withProvider(spot))
+  existing.push(normalizeSpot(spot))
   localStorage.setItem(STORAGE_KEY, JSON.stringify(existing))
 }
