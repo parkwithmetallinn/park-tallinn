@@ -43,6 +43,13 @@ Bottom sheet / kellapaneel saadavad POST:
 
 Vastus: `{ success, message, sessionDetails }` — kuvatakse toast’ina. CORS-probleemi korral kasutatakse `/api/parkimine` proxy’t.
 
+Iga päring saadab Header Auth:
+
+```http
+X-N8N-API-KEY: <VITE_N8N_API_KEY>
+Content-Type: application/json
+```
+
 Deep-link testimiseks (ilma kaardiklõpsuta):
 
 `http://127.0.0.1:43127/?spot=ev-ignitis-ahtri`
