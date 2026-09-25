@@ -14,6 +14,8 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 43127,
     strictPort: true,
+    // Allow Cloudflare quick-tunnel / forwarded preview hosts
+    allowedHosts: true,
     proxy: {
       // Nominatim has no browser CORS — proxy in dev
       '/api/nominatim': {
