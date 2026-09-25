@@ -43,10 +43,10 @@ Bottom sheet / kellapaneel saadavad POST:
 
 Vastus: `{ success, message, sessionDetails }` — kuvatakse toast’ina. CORS-probleemi korral kasutatakse `/api/parkimine` proxy’t.
 
-Iga päring saadab Header Auth:
+Iga päring saadab Header Auth (täpne päise nimi):
 
 ```http
-X-N8N-API-KEY: <VITE_N8N_API_KEY>
+X-N8N-API-KEY: SecurityMHMJ26%
 Content-Type: application/json
 ```
 

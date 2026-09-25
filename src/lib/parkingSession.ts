@@ -12,9 +12,14 @@ export const PARKING_WEBHOOK_URL =
   import.meta.env.VITE_PARKING_WEBHOOK_URL ??
   'https://mairon8n.app.n8n.cloud/webhook/parkimine'
 
-/** Header auth for the n8n webhook (Header Auth). */
-export const PARKING_WEBHOOK_API_KEY =
-  import.meta.env.VITE_N8N_API_KEY ?? 'SecurityMHMJ26%'
+/**
+ * n8n Header Auth — name must match the credential type exactly.
+ * Sent on every POST to the parking webhook (direct URL and /api/parkimine proxy).
+ */
+export const PARKING_WEBHOOK_HEADERS = {
+  'X-N8N-API-KEY': 'SecurityMHMJ26%',
+  'Content-Type': 'application/json',
+} as const
 
 /** Same-origin proxy path (Vite / Vercel) — used when direct CORS fails. */
 const PARKING_WEBHOOK_PROXY = '/api/parkimine'
@@ -103,9 +108,7 @@ async function postSession(
   const res = await fetch(url, {
     method: 'POST',
     headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-N8N-API-KEY': PARKING_WEBHOOK_API_KEY,
+      ...PARKING_WEBHOOK_HEADERS,
     },
     body: JSON.stringify(buildPayload(body)),
     signal,
