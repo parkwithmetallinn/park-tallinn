@@ -1,0 +1,42 @@
+import type { ParkingLayerKey, ParkingSpot } from '../types'
+import { PARKING_LAYER_META } from './parkingLayers'
+
+/**
+ * City-map curb colors: free = green, short free window = yellow,
+ * paid municipal = zone / operator hue.
+ */
+export function streetLineColor(spot: ParkingSpot): string {
+  if (spot.layer === 'free_street' || (spot.price_per_hour === 0 && spot.free_minutes === 0)) {
+    return '#16A34A'
+  }
+  if (spot.layer === 'timed' || spot.featureType === 'on-street-line') {
+    if (spot.free_minutes > 0 && spot.free_minutes <= 30) return '#EAB308'
+    if (spot.free_minutes > 30 && spot.free_minutes <= 60) return '#F59E0B'
+    if (spot.zone_code === 'VANALINN') return '#C45C26'
+    if (spot.zone_code === 'SÜDALINN') return '#D97706'
+    if (spot.zone_code === 'KESKLINN') return '#0F766E'
+    if (spot.zone_code === 'PIRITA') return '#0284C7'
+    return '#EAB308'
+  }
+  if (spot.layer === 'municipal') {
+    if (spot.zone_code === 'VANALINN') return '#C45C26'
+    if (spot.zone_code === 'SÜDALINN') return '#D97706'
+    if (spot.zone_code === 'KESKLINN') return '#0F766E'
+    if (spot.zone_code === 'PIRITA') return '#0284C7'
+    return '#15803D'
+  }
+  return PARKING_LAYER_META[spot.layer]?.color ?? '#64748B'
+}
+
+export function lotFillColor(layer: ParkingLayerKey): string {
+  return PARKING_LAYER_META[layer]?.color ?? '#64748B'
+}
+
+/** MapLibre source ids for geometry-aware parking overlays */
+export const PARKING_LINES_SOURCE = 'parking-street-lines'
+export const PARKING_LOTS_SOURCE = 'parking-lot-polygons'
+export const PARKING_LINES_LAYER = 'parking-street-lines'
+export const PARKING_LINES_CASING_LAYER = 'parking-street-lines-casing'
+export const PARKING_LOTS_FILL_LAYER = 'parking-lots-fill'
+export const PARKING_LOTS_OUTLINE_LAYER = 'parking-lots-outline'
+export const PARKING_LOTS_LABEL_LAYER = 'parking-lots-label'

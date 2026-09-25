@@ -1,4 +1,5 @@
 import { PARKING_LAYER_META } from '../map/parkingLayers'
+import { lotFillColor, streetLineColor } from '../map/streetLineTheme'
 import type {
   ParkingFeatureType,
   ParkingLayerKey,
@@ -128,9 +129,7 @@ function inferPrice(spot: ParkingSpotSeed, layer: ParkingLayerKey): number {
     case 'parkit':
       return 2.5
     case 'ev':
-      return 0
     case 'inva':
-      return 0
     case 'loading':
       return 0
     default:
@@ -195,36 +194,199 @@ export function inferProvider(spot: ParkingSpotSeed): ParkingLayerKey {
   return normalizeSpot(spot).layer
 }
 
-export function spotsToGeoJSON(spots: ParkingSpot[]) {
+function sharedProps(s: ParkingSpot) {
   return {
-    type: 'FeatureCollection' as const,
-    features: spots.map((s) => ({
-      type: 'Feature' as const,
+    id: s.id,
+    name: s.name,
+    type: s.type,
+    kind: s.kind,
+    featureType: s.featureType,
+    operator: s.operator,
+    layer: s.layer,
+    provider: s.layer,
+    zone_code: s.zone_code,
+    free_minutes: s.free_minutes,
+    price_per_hour: s.price_per_hour,
+    badge: s.badge,
+    timeLimit: s.timeLimit,
+    address: s.address,
+    desc: s.desc,
+    landmark: s.landmark ? 1 : 0,
+    color: layerColor(s.layer),
+  }
+}
+
+/** ~meters → degrees at Tallinn latitude */
+function metersToDeg(lat: number, meters: number) {
+  const dLat = meters / 111_320
+  const dLng = meters / (111_320 * Math.cos((lat * Math.PI) / 180))
+  return { dLat, dLng }
+}
+
+/** Short curb stub when no surveyed line exists (dense synthetic data). */
+export function stubStreetLine(
+  lat: number,
+  lng: number,
+  lengthM = 55,
+  bearingDeg = 75,
+): [number, number][] {
+  const rad = (bearingDeg * Math.PI) / 180
+  const { dLat, dLng } = metersToDeg(lat, lengthM / 2)
+  const dy = Math.cos(rad) * dLat
+  const dx = Math.sin(rad) * dLng
+  return [
+    [lat - dy, lng - dx],
+    [lat + dy, lng + dx],
+  ]
+}
+
+/** Small rectangle footprint when no surveyed polygon exists. */
+export function stubLotPolygon(
+  lat: number,
+  lng: number,
+  halfWm = 28,
+  halfHm = 22,
+): [number, number][] {
+  const { dLat, dLng } = metersToDeg(lat, 1)
+  const hw = halfWm * dLng
+  const hh = halfHm * dLat
+  return [
+    [lat - hh, lng - hw],
+    [lat - hh, lng + hw],
+    [lat + hh, lng + hw],
+    [lat + hh, lng - hw],
+    [lat - hh, lng - hw],
+  ]
+}
+
+export function isOnStreetFeature(s: ParkingSpot): boolean {
+  return (
+    s.featureType === 'on-street-line' ||
+    s.layer === 'free_street' ||
+    s.layer === 'timed' ||
+    Boolean(s.line?.length) ||
+    (s.kind === 'street' && s.layer === 'municipal')
+  )
+}
+
+export function isLotPolygonFeature(s: ParkingSpot): boolean {
+  if (s.polygon && s.polygon.length >= 3) return true
+  if (s.featureType === 'off-street-lot' || s.featureType === 'park-ride') return true
+  return (
+    s.kind === 'lot' &&
+    (s.layer === 'europark' ||
+      s.layer === 'snabb' ||
+      s.layer === 'citypark' ||
+      s.layer === 'uhisteenused' ||
+      s.layer === 'parkit' ||
+      s.layer === 'park_ride')
+  )
+}
+
+/** Point markers only for POIs that are not curb lines or lot areas. */
+export function isPointFeature(s: ParkingSpot): boolean {
+  if (isOnStreetFeature(s)) return false
+  if (isLotPolygonFeature(s)) return false
+  return true
+}
+
+function resolveLine(s: ParkingSpot): [number, number][] {
+  if (s.line && s.line.length >= 2) return s.line
+  return stubStreetLine(s.lat, s.lng, s.landmark ? 90 : 50, 70 + (s.id.length % 40))
+}
+
+function resolvePolygon(s: ParkingSpot): [number, number][] {
+  if (s.polygon && s.polygon.length >= 3) {
+    const ring = s.polygon.slice()
+    const [aLat, aLng] = ring[0]
+    const [bLat, bLng] = ring[ring.length - 1]
+    if (aLat !== bLat || aLng !== bLng) ring.push([aLat, aLng])
+    return ring
+  }
+  return stubLotPolygon(s.lat, s.lng)
+}
+
+type Feat = {
+  type: 'Feature'
+  properties: Record<string, string | number | undefined>
+  geometry:
+    | { type: 'Point'; coordinates: [number, number] }
+    | { type: 'LineString'; coordinates: [number, number][] }
+    | { type: 'Polygon'; coordinates: [number, number][][] }
+}
+
+type FeatColl = { type: 'FeatureCollection'; features: Feat[] }
+
+export type ParkingMapGeoJSON = {
+  points: FeatColl
+  lines: FeatColl
+  polygons: FeatColl
+}
+
+/** Split parking records into point / line / polygon FeatureCollections. */
+export function spotsToMapGeoJSON(spots: ParkingSpot[]): ParkingMapGeoJSON {
+  const points: Feat[] = []
+  const lines: Feat[] = []
+  const polygons: Feat[] = []
+
+  for (const s of spots) {
+    if (isOnStreetFeature(s)) {
+      const line = resolveLine(s)
+      lines.push({
+        type: 'Feature',
+        properties: {
+          ...sharedProps(s),
+          color: streetLineColor(s),
+          render: 'line',
+        },
+        geometry: {
+          type: 'LineString',
+          coordinates: line.map(([lat, lng]) => [lng, lat] as [number, number]),
+        },
+      })
+      continue
+    }
+
+    if (isLotPolygonFeature(s)) {
+      const ring = resolvePolygon(s)
+      polygons.push({
+        type: 'Feature',
+        properties: {
+          ...sharedProps(s),
+          color: lotFillColor(s.layer),
+          render: 'polygon',
+        },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [ring.map(([lat, lng]) => [lng, lat] as [number, number])],
+        },
+      })
+      continue
+    }
+
+    points.push({
+      type: 'Feature',
       properties: {
-        id: s.id,
-        name: s.name,
-        type: s.type,
-        kind: s.kind,
-        featureType: s.featureType,
-        operator: s.operator,
-        layer: s.layer,
-        provider: s.layer,
-        zone_code: s.zone_code,
-        free_minutes: s.free_minutes,
-        price_per_hour: s.price_per_hour,
-        badge: s.badge,
-        timeLimit: s.timeLimit,
-        address: s.address,
-        desc: s.desc,
-        landmark: s.landmark ? 1 : 0,
-        color: layerColor(s.layer),
+        ...sharedProps(s),
+        render: 'point',
       },
       geometry: {
-        type: 'Point' as const,
-        coordinates: [s.lng, s.lat] as [number, number],
+        type: 'Point',
+        coordinates: [s.lng, s.lat],
       },
-    })),
+    })
   }
+
+  return {
+    points: { type: 'FeatureCollection', features: points },
+    lines: { type: 'FeatureCollection', features: lines },
+    polygons: { type: 'FeatureCollection', features: polygons },
+  }
+}
+
+/** @deprecated use spotsToMapGeoJSON — points only for legacy callers */
+export function spotsToGeoJSON(spots: ParkingSpot[]) {
+  return spotsToMapGeoJSON(spots).points
 }
 
 export function layerColor(layer: ParkingLayerKey): string {

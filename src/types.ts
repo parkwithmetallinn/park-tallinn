@@ -57,6 +57,7 @@ export interface ParkingSpot {
   price_per_hour: number
   badge: string
   timeLimit: string
+  /** Centroid for bbox index / popup anchor */
   lat: number
   lng: number
   address: string
@@ -64,6 +65,16 @@ export interface ParkingSpot {
   hours?: string
   custom?: boolean
   landmark?: boolean
+  /**
+   * On-street curb geometry as [lat, lng][] polyline.
+   * When set (or featureType is on-street-line), rendered as a colored street line — not a pin.
+   */
+  line?: [number, number][]
+  /**
+   * Off-street lot footprint as [lat, lng][] ring (closed preferred).
+   * When set (or off-street operator lot), rendered as a filled polygon.
+   */
+  polygon?: [number, number][]
   /** @deprecated use featureType / layer — kept for gradual migration */
   type?: 'free' | 'timed' | 'pr' | 'paid'
   kind?: 'lot' | 'street'
@@ -115,5 +126,7 @@ export type ParkingSpotSeed = Omit<
       | 'provider'
       | 'type'
       | 'kind'
+      | 'line'
+      | 'polygon'
     >
   >

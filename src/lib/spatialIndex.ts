@@ -1,10 +1,35 @@
 import type { LngLatBoundsLike } from './bbox'
 import type { ParkingSpot } from '../types'
 
+function pointInBounds(lat: number, lng: number, b: LngLatBoundsLike): boolean {
+  return lng >= b.west && lng <= b.east && lat >= b.south && lat <= b.north
+}
+
+function coordsHitBounds(
+  coords: [number, number][] | undefined,
+  b: LngLatBoundsLike,
+): boolean {
+  if (!coords?.length) return false
+  for (const [lat, lng] of coords) {
+    if (pointInBounds(lat, lng, b)) return true
+  }
+  // Also: segment/ring bbox intersects viewport
+  let minLat = Infinity
+  let maxLat = -Infinity
+  let minLng = Infinity
+  let maxLng = -Infinity
+  for (const [lat, lng] of coords) {
+    minLat = Math.min(minLat, lat)
+    maxLat = Math.max(maxLat, lat)
+    minLng = Math.min(minLng, lng)
+    maxLng = Math.max(maxLng, lng)
+  }
+  return !(maxLng < b.west || minLng > b.east || maxLat < b.south || minLat > b.north)
+}
+
 /**
  * Flat + bbox spatial index.
- * Internal acceleration may use coarse cells; the public API is always
- * viewport bounding-box queries (not a drawn 100×100 m grid).
+ * Public API: viewport bounding-box queries (points, lines, polygons).
  */
 export class ParkingSpatialIndex {
   private spots: ParkingSpot[] = []
@@ -33,15 +58,14 @@ export class ParkingSpatialIndex {
     return this.spots.length
   }
 
-  /**
-   * Return spots whose coordinates fall inside the viewport bbox
-   * (optionally padded in degrees by the caller via expanded bounds).
-   */
   queryBounds(bounds: LngLatBoundsLike): ParkingSpot[] {
-    const { west, south, east, north } = bounds
     const out: ParkingSpot[] = []
     for (const s of this.spots) {
-      if (s.lng >= west && s.lng <= east && s.lat >= south && s.lat <= north) {
+      if (pointInBounds(s.lat, s.lng, bounds)) {
+        out.push(s)
+        continue
+      }
+      if (coordsHitBounds(s.line, bounds) || coordsHitBounds(s.polygon, bounds)) {
         out.push(s)
       }
     }

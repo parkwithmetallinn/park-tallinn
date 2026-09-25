@@ -43,8 +43,13 @@ Iga punkt/polügoon kannab: `operator`, `zone_code`, `free_minutes`, `price_per_
 | `inva` / `loading` | Inva-kohad, kauba laadimine |
 | `park_ride` | Pargi & Reisi |
 
-Mock-andmestik: `src/data/mockKesklinn.ts` (~28 päriselulist kohta Kesklinna/Vanalinna).
+## Visuaalne stiil (tänavad vs parklad)
 
-## Stack
+- **Tänavaäärsed** → `LineString` (roheline = tasuta, kollane = 15/30 min, tsooni värv = tasuline)
+- **Eraparklad / P&R** → täidetud `Polygon` alad
+- **EV / inva / laadimine** → punktid
+
+Allikad: `parking-street-lines`, `parking-lot-polygons`, `parking-viewport`.
+Geomeetria mock: `src/data/parkingGeometry.ts`.
 
 Vite · React · TypeScript · Tailwind · MapLibre GL

@@ -12,7 +12,7 @@ import maplibreWorker from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import { useEffect, useRef, useState } from 'react'
 import { DISTRICT_ZONES } from '../data/districts'
 import { distanceMeters, formatDistance } from '../lib/geo'
-import { countSpotsInDistrict, spotsToGeoJSON } from '../lib/geojson'
+import { countSpotsInDistrict, spotsToMapGeoJSON } from '../lib/geojson'
 import { queryParkingInViewport } from '../lib/parkingRepository'
 import { parkingIndex } from '../lib/spatialIndex'
 import type { DrivingRoute } from '../lib/routing'
@@ -29,6 +29,13 @@ import {
   PARKING_PROVIDERS,
   PARKING_VIEWPORT_SOURCE,
 } from '../map/parkingLayers'
+import {
+  PARKING_LINES_LAYER,
+  PARKING_LINES_SOURCE,
+  PARKING_LOTS_FILL_LAYER,
+  PARKING_LOTS_SOURCE,
+  streetLineColor,
+} from '../map/streetLineTheme'
 import { NAV_PITCH } from '../map/theme'
 import { ZOOM } from '../map/zoom'
 import type { FilterId, ParkingLayerKey, PaidZone, ParkingSpot } from '../types'
@@ -192,14 +199,18 @@ export function MapView({
           ? result.spots
           : result.spots.filter((s) => layers.includes(s.layer))
 
-      const source = m.getSource(PARKING_VIEWPORT_SOURCE) as GeoJSONSource | undefined
-      if (source) {
-        source.setData(
-          result.skippedForZoom || result.skippedForExtent
-            ? { type: 'FeatureCollection', features: [] }
-            : spotsToGeoJSON(visibleSpots),
-        )
-      }
+      const empty = { type: 'FeatureCollection' as const, features: [] }
+      const geo =
+        result.skippedForZoom || result.skippedForExtent
+          ? { points: empty, lines: empty, polygons: empty }
+          : spotsToMapGeoJSON(visibleSpots)
+
+      const pointSrc = m.getSource(PARKING_VIEWPORT_SOURCE) as GeoJSONSource | undefined
+      const lineSrc = m.getSource(PARKING_LINES_SOURCE) as GeoJSONSource | undefined
+      const lotSrc = m.getSource(PARKING_LOTS_SOURCE) as GeoJSONSource | undefined
+      pointSrc?.setData(geo.points)
+      lineSrc?.setData(geo.lines)
+      lotSrc?.setData(geo.polygons)
 
       onViewportStats?.({
         rendered: visibleSpots.length,
@@ -251,7 +262,10 @@ export function MapView({
 
     const openSpotPopup = (spot: ParkingSpot, lngLat: [number, number]) => {
       popupRef.current?.remove()
-      const color = PARKING_LAYER_META[spot.layer]?.color ?? '#64748B'
+      const color =
+        spot.line || spot.featureType === 'on-street-line' || spot.kind === 'street'
+          ? streetLineColor(spot)
+          : (PARKING_LAYER_META[spot.layer]?.color ?? '#64748B')
       const dist = formatDistance(
         distanceMeters(
           distanceFromRef.current[0],
@@ -264,6 +278,12 @@ export function MapView({
         spot.price_per_hour > 0 ? `${spot.price_per_hour.toFixed(2)} €/h` : 'tasuta'
       const free =
         spot.free_minutes > 0 ? `${spot.free_minutes} min tasuta` : null
+      const shape =
+        spot.polygon || spot.featureType === 'off-street-lot'
+          ? 'Parkla ala'
+          : spot.line || spot.featureType === 'on-street-line'
+            ? 'Tänavaäärne lõik'
+            : spot.featureType
       const html = `
         <div class="ml-popup">
           <div class="ml-popup-top">
@@ -273,7 +293,7 @@ export function MapView({
           <h4>${spot.name}</h4>
           <p class="ml-addr">${spot.address}</p>
           <p class="ml-meta">${spot.operator} · ${spot.zone_code} · ${price}${free ? ` · ${free}` : ''}</p>
-          <p class="ml-meta">${spot.featureType} · ${spot.timeLimit}</p>
+          <p class="ml-meta">${shape} · ${spot.timeLimit}</p>
           <p class="ml-desc">${spot.desc}</p>
           <button type="button" class="ml-nav-btn" data-spot="${spot.id}">Navigeeri</button>
         </div>
@@ -298,19 +318,28 @@ export function MapView({
       })
     }
 
-    const onPointClick = (e: MapLayerMouseEvent) => {
+    const onFeatureClick = (e: MapLayerMouseEvent) => {
       const f = e.features?.[0]
       const id = f?.properties?.id as string | undefined
-      if (!id || !f || f.geometry.type !== 'Point') return
+      if (!id) return
       const spot = parkingIndex.getById(id)
       if (!spot) return
-      const [lng, lat] = f.geometry.coordinates as [number, number]
-      openSpotPopup(spot, [lng, lat])
+      openSpotPopup(spot, [e.lngLat.lng, e.lngLat.lat])
     }
 
     for (const layerKey of PARKING_PROVIDERS) {
       const layerId = PARKING_LAYER_META[layerKey].id
-      map.on('click', layerId, onPointClick)
+      map.on('click', layerId, onFeatureClick)
+      map.on('mouseenter', layerId, () => {
+        map.getCanvas().style.cursor = 'pointer'
+      })
+      map.on('mouseleave', layerId, () => {
+        map.getCanvas().style.cursor = ''
+      })
+    }
+
+    for (const layerId of [PARKING_LINES_LAYER, PARKING_LOTS_FILL_LAYER]) {
+      map.on('click', layerId, onFeatureClick)
       map.on('mouseenter', layerId, () => {
         map.getCanvas().style.cursor = 'pointer'
       })

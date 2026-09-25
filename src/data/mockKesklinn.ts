@@ -1,4 +1,18 @@
 import type { ParkingSpotSeed } from '../types'
+import {
+  LINE_HARJU,
+  LINE_KOOLI,
+  LINE_LIIVALAIA,
+  LINE_PARNU_MNT,
+  LINE_RAVALA,
+  LINE_VENE,
+  LINE_VIRU,
+  POLY_AHTRI,
+  POLY_ROTERMANN,
+  POLY_SOLARIS,
+  POLY_STOCKMANN,
+  POLY_VIRU,
+} from './parkingGeometry'
 
 /**
  * 28 päriselulist mock-kohta Kesklinna & Vanalinna piirkonnast.
@@ -44,6 +58,7 @@ export const MOCK_KESKLINN_SPOTS: ParkingSpotSeed[] = [
     address: 'Viru väljak, Südalinn',
     desc: 'Südalinna tsoon AS Ühisteenused halduses. Öösel & pühapäeval tasuta.',
     landmark: true,
+    line: LINE_VIRU,
   },
   {
     id: 'mun-kesklinn-liivalaia',
@@ -63,6 +78,7 @@ export const MOCK_KESKLINN_SPOTS: ParkingSpotSeed[] = [
     address: 'Liivalaia tn, Kesklinn',
     desc: 'Tavaline kesklinna tariif. Tööpäev 07–19, L 08–15.',
     landmark: true,
+    line: LINE_LIIVALAIA,
   },
   {
     id: 'mun-pirita-rand',
@@ -103,6 +119,7 @@ export const MOCK_KESKLINN_SPOTS: ParkingSpotSeed[] = [
     address: 'Estonia pst 9, Kesklinn',
     desc: 'Solaris parkimismaja — EuroPark digipilet või terminal.',
     landmark: true,
+    polygon: POLY_SOLARIS,
   },
   {
     id: 'ep-viru-keskus',
@@ -122,6 +139,7 @@ export const MOCK_KESKLINN_SPOTS: ParkingSpotSeed[] = [
     address: 'Viru väljak 4, Kesklinn',
     desc: 'Viru Keskuse maa-alune parkla. Esimesed 60 min klientidele soodsam.',
     landmark: true,
+    polygon: POLY_VIRU,
   },
   {
     id: 'snabb-rotermann',
@@ -141,6 +159,7 @@ export const MOCK_KESKLINN_SPOTS: ParkingSpotSeed[] = [
     address: 'Rotermanni tn, Kesklinn',
     desc: 'Snabb (Barking) digitaalne eraparkla Rotermanni kvartalis.',
     landmark: true,
+    polygon: POLY_ROTERMANN,
   },
   {
     id: 'snabb-fahle',
@@ -179,6 +198,7 @@ export const MOCK_KESKLINN_SPOTS: ParkingSpotSeed[] = [
     address: 'Liivalaia 53, Kesklinn',
     desc: 'Stockmanni parkimismaja Citypark halduses.',
     landmark: true,
+    polygon: POLY_STOCKMANN,
   },
   {
     id: 'ut-ahtri',
@@ -198,6 +218,7 @@ export const MOCK_KESKLINN_SPOTS: ParkingSpotSeed[] = [
     address: 'Ahtri 6, Kesklinn',
     desc: 'AS Ühisteenused eraparkla sadama lähistel.',
     landmark: true,
+    polygon: POLY_AHTRI,
   },
   {
     id: 'parkit-telliskivi-edge',
@@ -238,6 +259,7 @@ export const MOCK_KESKLINN_SPOTS: ParkingSpotSeed[] = [
     address: 'Kooli tn, Vanalinn/Toompea serv',
     desc: 'Tsoonipiiri tagused tasuta tänavaäärsed kohad. Kontrolli märke!',
     landmark: true,
+    line: LINE_KOOLI,
   },
   {
     id: 'street-timed-15-harju',
@@ -258,6 +280,7 @@ export const MOCK_KESKLINN_SPOTS: ParkingSpotSeed[] = [
     desc: 'Lühike peatus — pane kell esiklaasile esimeseks 15 minutiks.',
     hours: 'Tasulistel tundidel',
     landmark: true,
+    line: LINE_HARJU,
   },
   {
     id: 'street-timed-30-vene',
@@ -277,6 +300,7 @@ export const MOCK_KESKLINN_SPOTS: ParkingSpotSeed[] = [
     address: 'Vene tn, Vanalinn',
     desc: 'Ajapiiranguga tänavalõik Vanalinnas — 30 min kellaga.',
     landmark: true,
+    line: LINE_VENE,
   },
   {
     id: 'street-timed-1h-ravala',
@@ -296,6 +320,7 @@ export const MOCK_KESKLINN_SPOTS: ParkingSpotSeed[] = [
     address: 'Rävala pst, Kesklinn',
     desc: 'Kesklinna tänav 1h tasuta ajaga, seejärel tavaline tariif.',
     landmark: true,
+    line: LINE_RAVALA,
   },
   {
     id: 'street-timed-2h-kentmanni',
@@ -551,5 +576,46 @@ export const MOCK_KESKLINN_SPOTS: ParkingSpotSeed[] = [
     address: 'Sadama / Porto Franco, Kesklinn',
     desc: 'Porto Franco kvartali Citypark parkla.',
     landmark: true,
+  },
+
+  {
+    id: 'street-timed-parnu-mnt',
+    name: 'Pärnu mnt · 30 min kellaga',
+    featureType: 'on-street-line',
+    operator: 'Tallinna Linn',
+    layer: 'timed',
+    zone_code: 'KESKLINN',
+    free_minutes: 30,
+    price_per_hour: 2.5,
+    type: 'timed',
+    kind: 'street',
+    badge: '30 min',
+    timeLimit: '30 min tasuta kellaga',
+    lat: 59.433,
+    lng: 24.7495,
+    address: 'Pärnu mnt, Kesklinn',
+    desc: 'Pärnu maantee teeäärne kellaga lõik — joon kaardil, mitte punkt.',
+    landmark: true,
+    line: LINE_PARNU_MNT,
+  },
+  {
+    id: 'street-paid-liivalaia-line',
+    name: 'Liivalaia teeäär · KESKLINN',
+    featureType: 'on-street-line',
+    operator: 'Tallinna Linn',
+    layer: 'municipal',
+    zone_code: 'KESKLINN',
+    free_minutes: 15,
+    price_per_hour: 2.5,
+    type: 'paid',
+    kind: 'street',
+    badge: 'KESKLINN',
+    timeLimit: '15 min tasuta · 2,50 €/h',
+    lat: 59.4328,
+    lng: 24.7545,
+    address: 'Liivalaia tn, Kesklinn',
+    desc: 'Tasuline munitsipaaltänav — roheline/teal joon teelõigu servas.',
+    landmark: true,
+    line: LINE_LIIVALAIA,
   },
 ]

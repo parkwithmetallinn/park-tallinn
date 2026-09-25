@@ -40,17 +40,17 @@ export const PARKING_LAYER_META: Record<
     color: '#BE185D',
     circleRadius: 7,
   },
-  free_street: {
-    id: 'parking-free-street',
-    label: 'Tasuta tänav',
-    color: '#0B6E4F',
-    circleRadius: 5.5,
-  },
   timed: {
     id: 'parking-timed',
     label: 'Kellaga / ajapiirang',
-    color: '#0E7490',
+    color: '#EAB308',
     circleRadius: 6,
+  },
+  free_street: {
+    id: 'parking-free-street',
+    label: 'Tasuta tänav',
+    color: '#16A34A',
+    circleRadius: 5.5,
   },
   ev: {
     id: 'parking-ev',
