@@ -2,6 +2,11 @@ import type { PaidZone, ParkingSpot } from '../types'
 
 export const TALLINN_CENTER: [number, number] = [59.437, 24.7535]
 
+/** Seed records — `provider` filled via withProvider() at boot. */
+export type ParkingSpotSeed = Omit<ParkingSpot, 'provider'> & {
+  provider?: ParkingSpot['provider']
+}
+
 /** Approx. visual boundaries of Tallinn paid street zones */
 export const PAID_ZONES: PaidZone[] = [
   {
@@ -58,7 +63,7 @@ export const PAID_ZONES: PaidZone[] = [
  * Avalikud tasuta parklad, tänavaäärsed lõigud, kellaajaga kohad ja P&R.
  * Kontrolli alati kohapealseid märke — tingimused võivad muutuda.
  */
-export const PARKING_SPOTS: ParkingSpot[] = [
+export const PARKING_SPOTS: ParkingSpotSeed[] = [
   // ——— 100% tasuta avalikud parklad ———
   {
     id: 'lot-stroomi',

@@ -1,39 +1,16 @@
-import type { DistrictZone, ParkingSpot, SpotType } from '../types'
+import type { ParkingProvider, ParkingSpot, SpotType } from '../types'
 
-/** Ray-casting point-in-polygon. Ring is [lat, lng][]. */
-export function pointInPolygon(
-  lat: number,
-  lng: number,
-  ring: [number, number][],
-): boolean {
-  let inside = false
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [yi, xi] = ring[i]
-    const [yj, xj] = ring[j]
-    const intersect =
-      yi > lat !== yj > lat &&
-      lng < ((xj - xi) * (lat - yi)) / (yj - yi + Number.EPSILON) + xi
-    if (intersect) inside = !inside
-  }
-  return inside
+export function inferProvider(spot: Omit<ParkingSpot, 'provider'> & { provider?: ParkingProvider }): ParkingProvider {
+  if (spot.provider) return spot.provider
+  if (spot.type === 'pr') return 'park_ride'
+  if (spot.type === 'timed') return 'timed'
+  if (spot.kind === 'street' && spot.type === 'free') return 'free_street'
+  if (spot.kind === 'lot') return 'municipal'
+  return 'municipal'
 }
 
-export function countSpotsInDistrict(
-  spots: ParkingSpot[],
-  district: DistrictZone,
-): { total: number; free: number; timed: number; pr: number } {
-  let free = 0
-  let timed = 0
-  let pr = 0
-  let total = 0
-  for (const s of spots) {
-    if (!pointInPolygon(s.lat, s.lng, district.coords)) continue
-    total++
-    if (s.type === 'free') free++
-    else if (s.type === 'timed') timed++
-    else if (s.type === 'pr') pr++
-  }
-  return { total, free, timed, pr }
+export function withProvider(spot: Omit<ParkingSpot, 'provider'> & { provider?: ParkingProvider }): ParkingSpot {
+  return { ...spot, provider: inferProvider(spot) }
 }
 
 export function spotsToGeoJSON(spots: ParkingSpot[]) {
@@ -46,19 +23,13 @@ export function spotsToGeoJSON(spots: ParkingSpot[]) {
         name: s.name,
         type: s.type as SpotType,
         kind: s.kind,
+        provider: s.provider,
         badge: s.badge,
         timeLimit: s.timeLimit,
         address: s.address,
         desc: s.desc,
         landmark: s.landmark ? 1 : 0,
-        color:
-          s.type === 'free'
-            ? '#0B6E4F'
-            : s.type === 'timed'
-              ? '#0E7490'
-              : s.type === 'pr'
-                ? '#1D4E89'
-                : '#C45C26',
+        color: providerColor(s.provider),
       },
       geometry: {
         type: 'Point' as const,
@@ -67,3 +38,25 @@ export function spotsToGeoJSON(spots: ParkingSpot[]) {
     })),
   }
 }
+
+export function providerColor(provider: ParkingProvider): string {
+  switch (provider) {
+    case 'europark':
+      return '#1D4ED8'
+    case 'snabb':
+      return '#EA580C'
+    case 'free_street':
+      return '#0B6E4F'
+    case 'timed':
+      return '#0E7490'
+    case 'park_ride':
+      return '#1D4E89'
+    case 'municipal':
+      return '#15803D'
+    default:
+      return '#64748B'
+  }
+}
+
+// re-export point-in-polygon helpers used elsewhere
+export { countSpotsInDistrict, pointInPolygon } from './geojsonPolygons'

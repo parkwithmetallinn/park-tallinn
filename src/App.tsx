@@ -17,19 +17,23 @@ import { ModalShell } from './components/ModalShell'
 import { generateDenseStreetSpots } from './data/generateSpots'
 import { PARKING_SPOTS, PAID_ZONES, TALLINN_CENTER } from './data/parking'
 import { distanceMeters, formatDistance } from './lib/geo'
-import { formatHMS, minutesFromBadge, TYPE_COLORS, TYPE_LABELS } from './lib/parking'
+import { withProvider } from './lib/geojson'
+import { formatHMS, minutesFromBadge, TYPE_LABELS } from './lib/parking'
 import { fetchDrivingRoute, type DrivingRoute } from './lib/routing'
+import { parkingIndex } from './lib/spatialIndex'
 import { loadCustomSpots, saveCustomSpot } from './lib/storage'
+import { PARKING_LAYER_META } from './map/parkingLayers'
 import { ZOOM } from './map/zoom'
 import type { FilterId, ParkingSpot } from './types'
 
 const FILTERS: { id: FilterId; label: string; color?: string }[] = [
   { id: 'all', label: 'Kõik' },
-  { id: 'free', label: '100% tasuta', color: TYPE_COLORS.free },
-  { id: 'street', label: 'Tänavaäärsed', color: '#3d5248' },
-  { id: 'timed', label: 'Kellaga', color: TYPE_COLORS.timed },
-  { id: 'lot', label: 'Avalikud parklad', color: '#0b6e4f' },
-  { id: 'pr', label: 'Pargi & Reisi', color: TYPE_COLORS.pr },
+  { id: 'free_street', label: 'Tasuta tänav', color: PARKING_LAYER_META.free_street.color },
+  { id: 'timed', label: 'Kellaga', color: PARKING_LAYER_META.timed.color },
+  { id: 'europark', label: 'EuroPark', color: PARKING_LAYER_META.europark.color },
+  { id: 'snabb', label: 'Snabb', color: PARKING_LAYER_META.snabb.color },
+  { id: 'park_ride', label: 'Pargi & Reisi', color: PARKING_LAYER_META.park_ride.color },
+  { id: 'municipal', label: 'Avalikud', color: PARKING_LAYER_META.municipal.color },
 ]
 
 export default function App() {
@@ -54,6 +58,8 @@ export default function App() {
   const [routeError, setRouteError] = useState<string | null>(null)
   const [mapMode, setMapMode] = useState<'district' | 'cluster' | 'street'>('district')
   const [mapZoom, setMapZoom] = useState(11.8)
+  const [viewportStats, setViewportStats] = useState({ cells: 0, rendered: 0 })
+  const [showGridDebug, setShowGridDebug] = useState(false)
 
   const denseStreetSpots = useMemo(() => generateDenseStreetSpots(2800), [])
 
@@ -104,30 +110,27 @@ export default function App() {
   }, [timerRunning, timerSeconds])
 
   const allSpots = useMemo(() => {
-    const curated = PARKING_SPOTS.map((s) => ({
-      ...s,
-      landmark: s.kind === 'lot' || s.type === 'pr' || s.id.startsWith('timed-'),
-    }))
-    return [...curated, ...denseStreetSpots, ...customSpots]
+    const curated = PARKING_SPOTS.map((s) =>
+      withProvider({
+        ...s,
+        landmark: s.kind === 'lot' || s.type === 'pr' || s.id.startsWith('timed-'),
+        provider:
+          s.type === 'pr'
+            ? 'park_ride'
+            : s.type === 'timed'
+              ? 'timed'
+              : s.kind === 'street'
+                ? 'free_street'
+                : 'municipal',
+      }),
+    )
+    const custom = customSpots.map((s) => withProvider(s))
+    return [...curated, ...denseStreetSpots, ...custom]
   }, [customSpots, denseStreetSpots])
 
-  const filteredSpots = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return allSpots.filter((spot) => {
-      if (filter === 'street' && spot.kind !== 'street') return false
-      if (filter === 'lot' && spot.kind !== 'lot') return false
-      if (filter !== 'all' && filter !== 'street' && filter !== 'lot' && spot.type !== filter) {
-        return false
-      }
-      if (!q) return true
-      return (
-        spot.name.toLowerCase().includes(q) ||
-        spot.address.toLowerCase().includes(q) ||
-        spot.desc.toLowerCase().includes(q) ||
-        spot.badge.toLowerCase().includes(q)
-      )
-    })
-  }, [allSpots, filter, query])
+  useEffect(() => {
+    parkingIndex.bulkLoad(allSpots)
+  }, [allSpots])
 
   const nearest = useMemo(() => {
     const rank = (s: ParkingSpot) => {
@@ -232,7 +235,7 @@ export default function App() {
     const notes = String(fd.get('notes') || '').trim()
     if (!name || !address) return
 
-    const spot: ParkingSpot = {
+    const spot = withProvider({
       id: `custom-${Date.now()}`,
       name,
       type,
@@ -244,7 +247,7 @@ export default function App() {
       address,
       desc: notes || 'Kasutaja lisatud koht',
       custom: true,
-    }
+    })
     saveCustomSpot(spot)
     setCustomSpots(loadCustomSpots())
     setReportOpen(false)
@@ -406,25 +409,29 @@ export default function App() {
           })}
         </div>
         <p className={`text-[11px] ${chrome.muted}`}>
-          Andmestikus <strong>{filteredSpots.length}</strong> kohta
-          {filter !== 'all' ? ` · filter: ${FILTERS.find((f) => f.id === filter)?.label}` : ''}
+          Indeks <strong>{allSpots.length}</strong> · viewport{' '}
+          <strong>{viewportStats.rendered}</strong> kohta / {viewportStats.cells}×100m ruutu
+          {filter !== 'all' ? ` · ${FILTERS.find((f) => f.id === filter)?.label}` : ''}
           {' · '}
-          {mapMode === 'district' && (
-            <span className="text-moss">Linnaosa tsoonid (suumi lähemale)</span>
-          )}
-          {mapMode === 'cluster' && (
-            <span className="text-sea">Klastrid · z{mapZoom.toFixed(1)}</span>
-          )}
-          {mapMode === 'street' && (
-            <span className="text-violet-600">Tänavatase · üksikud kohad</span>
-          )}
+          {mapMode === 'district' && <span className="text-moss">Linnaosa tsoonid</span>}
+          {mapMode === 'cluster' && <span className="text-sea">Suumi tänavale · z{mapZoom.toFixed(1)}</span>}
+          {mapMode === 'street' && <span className="text-violet-600">100×100m grid · kihid</span>}
+          {' · '}
+          <button
+            type="button"
+            className="underline decoration-dotted"
+            onClick={() => setShowGridDebug((v) => !v)}
+          >
+            {showGridDebug ? 'Peida ruudustik' : 'Näita ruudustikku'}
+          </button>
         </p>
       </div>
 
       <main className="relative min-h-0 flex-1 overflow-hidden">
         <MapView
-          spots={filteredSpots}
+          spots={allSpots}
           zones={PAID_ZONES}
+          filter={filter}
           userLocation={userLocation}
           flyTarget={flyTarget}
           flyKey={flyKey}
@@ -432,17 +439,20 @@ export default function App() {
           navigating={navigating}
           onNavigate={openNav}
           distanceFrom={userLocation}
+          showGridDebug={showGridDebug}
           onZoomChange={(z, mode) => {
             setMapZoom(z)
             setMapMode(mode)
           }}
+          onViewportStats={setViewportStats}
         />
 
         {mapMode !== 'street' && !navigating ? (
           <div className="pointer-events-none absolute bottom-20 left-1/2 z-[5] -translate-x-1/2 rounded-full border border-ink/10 bg-paper/95 px-3.5 py-1.5 text-[11px] font-semibold text-ink-soft shadow-md backdrop-blur-sm sm:bottom-24">
             {mapMode === 'district'
-              ? 'Klõpsa tsooni või suumi — üksikud kohad alates z' + ZOOM.streetMin
-              : 'Suumi tänavatasemeni, et näha kõiki punkte'}
+              ? 'Klõpsa tsooni või suumi — punktid laetakse 100×100m ruutudena alates z' +
+                ZOOM.streetMin
+              : 'Suumi tänavatasemeni — ainult nähtava ruudustiku kohad'}
           </div>
         ) : null}
         {navigating && selected ? (

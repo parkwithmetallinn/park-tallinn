@@ -1,6 +1,6 @@
 # Park Tallinn
 
-Kaardipõhine app Tallinna **tasuta**, **kellaajaga** ja **Pargi & Reisi** parkimiseks — avalikud parklad, tänavaäärsed lõigud ja navigeerimine Waze’i / Google Mapsi.
+Kaardipõhine parkimisäpp (MapLibre GL). Ajutine OSM/OpenFreeMap vektorkaart; hiljem asendub ~100 MB Maa-ameti vektorkaardiga.
 
 ## Käivitamine
 
@@ -11,19 +11,38 @@ npm run dev
 
 Ava [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
-## Funktsioonid
+## Aluskaart (1 rea vahetus)
 
-- **Zoomipõhine kaart:** välja zoomides linnaosa polügoonid + klastrid; üksikud tänavakohad alles z≥15
-- **Waze-stiilis 3D** (MapLibre): pitch 55°, lilla marsruut + tänavacallout’id
-- Filtrid, lähim koht, taimer, Waze / Google Maps
-- ~2800+ kohta andmestikus (GPU klasterdamine, mitte DOM-nupud)
+Fail: `src/config/basemap.ts`
 
-## Andmed
+```ts
+export const VECTOR_TILE_SOURCE_URL = 'https://tiles.openfreemap.org/planet'
+// → 'https://tiles.example.ee/maaamet/v1'
+```
 
-Kohad on orienteeruvad. Kontrolli alati kohapealseid liiklusmärke — tingimused muutuvad.
+Või sea `STYLE_URL` täielikule stiili JSON-ile.
+
+## 100×100 m ruudustik
+
+- `src/lib/grid.ts` — Web Mercator 100 m lahtrid
+- `src/lib/spatialIndex.ts` — punktid indekseeritud lahtri võtme järgi
+- `src/lib/parkingRepository.ts` — viewport-päring (täna lokaalne indeks; homme HTTP)
+
+Tänavatasemel (z ≥ 15) laetakse kaardile **ainult nähtavate lahtrite** punktid. Välja zoomides individuaalseid punkte ei renderdata.
+
+## Parkimiskihid
+
+Üks GeoJSON allikas, eraldi MapLibre kihid filtriga `provider`:
+
+| Kiht | Provider |
+|------|----------|
+| EuroPark | `europark` |
+| Snabb | `snabb` |
+| Tasuta tänav | `free_street` |
+| Kellaga | `timed` |
+| P&R | `park_ride` |
+| Avalik | `municipal` |
 
 ## Stack
 
-Vite · React · TypeScript · Tailwind CSS · **MapLibre GL** (Waze-stiilis 3D, pitch 55°)
-
-Vektorplaadid: [OpenFreeMap](https://openfreemap.org/). Marsruudid: OSRM.
+Vite · React · TypeScript · Tailwind · MapLibre GL
