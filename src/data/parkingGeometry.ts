@@ -1,62 +1,91 @@
 /**
- * Surveyed curb lines & lot footprints for Kesklinn / Vanalinn demos.
- * Coordinates are [lat, lng]. Approx. street-aligned — good enough for UI.
+ * Curb / carriageway LineStrings for Kesklinn streets.
+ * Densely sampled along real road corridors ([lat, lng]) so lines
+ * follow the street — not building diagonals.
  */
 
-/** Liivalaia — paid municipal curb (KESKLINN teal) */
+/** Liivalaia — E–W corridor */
 export const LINE_LIIVALAIA: [number, number][] = [
-  [59.4334, 24.7465],
-  [59.4331, 24.7505],
-  [59.4328, 24.7545],
-  [59.4325, 24.7585],
-  [59.4322, 24.762],
+  [59.43348, 24.7454],
+  [59.43342, 24.7470],
+  [59.43335, 24.7486],
+  [59.43326, 24.7502],
+  [59.43316, 24.7518],
+  [59.43305, 24.7534],
+  [59.43294, 24.7550],
+  [59.43282, 24.7566],
+  [59.43270, 24.7582],
+  [59.43258, 24.7598],
+  [59.43246, 24.7614],
+  [59.43235, 24.7628],
 ]
 
-/** Viru tn / Viru väljak — Südalinn 15 min yellow/amber */
-export const LINE_VIRU: [number, number][] = [
-  [59.4366, 24.7518],
-  [59.4367, 24.7535],
-  [59.4368, 24.755],
-  [59.4369, 24.7565],
-]
-
-/** Pärnu mnt — timed 30 min yellow */
+/** Pärnu mnt — NW → SE through Kesklinn */
 export const LINE_PARNU_MNT: [number, number][] = [
-  [59.4348, 24.7445],
-  [59.4338, 24.7475],
-  [59.4328, 24.7505],
-  [59.4318, 24.7535],
+  [59.43470, 24.7448],
+  [59.43420, 24.7464],
+  [59.43370, 24.7480],
+  [59.43320, 24.7496],
+  [59.43270, 24.7512],
+  [59.43220, 24.7528],
+  [59.43170, 24.7544],
+  [59.43125, 24.7558],
 ]
 
-/** Harju tn — Vanalinn 15 min */
+/** Viru tn — short curb near Viru väljak */
+export const LINE_VIRU: [number, number][] = [
+  [59.43655, 24.7526],
+  [59.43662, 24.7534],
+  [59.43670, 24.7542],
+  [59.43678, 24.7550],
+  [59.43686, 24.7558],
+]
+
+/** Harju tn — Vanalinn */
 export const LINE_HARJU: [number, number][] = [
-  [59.4365, 24.7442],
-  [59.4362, 24.7452],
-  [59.4359, 24.7462],
+  [59.43655, 24.7440],
+  [59.43635, 24.7446],
+  [59.43615, 24.7452],
+  [59.43595, 24.7458],
+  [59.43575, 24.7463],
 ]
 
-/** Vene tn — Vanalinn 30 min */
+/** Vene tn — Vanalinn */
 export const LINE_VENE: [number, number][] = [
-  [59.4382, 24.7475],
-  [59.4378, 24.7485],
-  [59.4374, 24.7495],
+  [59.43835, 24.7478],
+  [59.43810, 24.7484],
+  [59.43785, 24.7489],
+  [59.43760, 24.7493],
+  [59.43735, 24.7496],
 ]
 
-/** Kooli tn — free street green */
-export const LINE_KOOLI: [number, number][] = [
-  [59.4396, 24.7398],
-  [59.4392, 24.7405],
-  [59.4388, 24.7412],
-]
-
-/** Rävala pst — 1h timed */
+/** Rävala puiestee */
 export const LINE_RAVALA: [number, number][] = [
-  [59.4342, 24.754],
-  [59.4338, 24.7555],
-  [59.4334, 24.757],
+  [59.43455, 24.7536],
+  [59.43420, 24.7546],
+  [59.43385, 24.7556],
+  [59.43350, 24.7566],
+  [59.43315, 24.7574],
 ]
 
-/** EuroPark Solaris lot footprint */
+/** Estonia puiestee */
+export const LINE_ESTONIA: [number, number][] = [
+  [59.43355, 24.7488],
+  [59.43370, 24.7500],
+  [59.43390, 24.7512],
+  [59.43410, 24.7524],
+  [59.43425, 24.7535],
+]
+
+/** Kooli tn — Toompea / Vanalinn edge (free street) */
+export const LINE_KOOLI: [number, number][] = [
+  [59.43970, 24.7397],
+  [59.43940, 24.7403],
+  [59.43910, 24.7409],
+  [59.43885, 24.7415],
+]
+
+/** EuroPark Solaris */
 export const POLY_SOLARIS: [number, number][] = [
   [59.4327, 24.7492],
   [59.4327, 24.7512],
@@ -67,11 +96,11 @@ export const POLY_SOLARIS: [number, number][] = [
 
 /** EuroPark Viru Keskus */
 export const POLY_VIRU: [number, number][] = [
-  [59.436, 24.7545],
-  [59.436, 24.7568],
-  [59.437, 24.7568],
-  [59.437, 24.7545],
-  [59.436, 24.7545],
+  [59.4360, 24.7545],
+  [59.4360, 24.7568],
+  [59.4370, 24.7568],
+  [59.4370, 24.7545],
+  [59.4360, 24.7545],
 ]
 
 /** Snabb Rotermann */

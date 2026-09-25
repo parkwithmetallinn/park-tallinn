@@ -260,42 +260,29 @@ export function stubLotPolygon(
 }
 
 export function isOnStreetFeature(s: ParkingSpot): boolean {
-  return (
-    s.featureType === 'on-street-line' ||
-    s.layer === 'free_street' ||
-    s.layer === 'timed' ||
-    Boolean(s.line?.length) ||
-    (s.kind === 'street' && s.layer === 'municipal')
-  )
+  // Only surveyed / road-snapped polylines — never invent stubs through buildings
+  return Boolean(s.line && s.line.length >= 2)
 }
 
 export function isLotPolygonFeature(s: ParkingSpot): boolean {
   if (s.polygon && s.polygon.length >= 3) return true
-  if (s.featureType === 'off-street-lot' || s.featureType === 'park-ride') return true
+  if (s.featureType === 'off-street-lot') return true
   return (
     s.kind === 'lot' &&
     (s.layer === 'europark' ||
       s.layer === 'snabb' ||
       s.layer === 'citypark' ||
       s.layer === 'uhisteenused' ||
-      s.layer === 'parkit' ||
-      s.layer === 'park_ride')
+      s.layer === 'parkit')
   )
 }
 
-/** Point markers only for POIs that are not curb lines or lot areas. */
-export function isPointFeature(s: ParkingSpot): boolean {
-  if (isOnStreetFeature(s)) return false
-  if (isLotPolygonFeature(s)) return false
-  return true
-}
-
-function resolveLine(s: ParkingSpot): [number, number][] {
+function resolveLine(s: ParkingSpot): [number, number][] | null {
   if (s.line && s.line.length >= 2) return s.line
-  return stubStreetLine(s.lat, s.lng, s.landmark ? 90 : 50, 70 + (s.id.length % 40))
+  return null
 }
 
-function resolvePolygon(s: ParkingSpot): [number, number][] {
+function resolvePolygon(s: ParkingSpot): [number, number][] | null {
   if (s.polygon && s.polygon.length >= 3) {
     const ring = s.polygon.slice()
     const [aLat, aLng] = ring[0]
@@ -303,7 +290,10 @@ function resolvePolygon(s: ParkingSpot): [number, number][] {
     if (aLat !== bLat || aLng !== bLng) ring.push([aLat, aLng])
     return ring
   }
-  return stubLotPolygon(s.lat, s.lng, s.landmark ? 45 : 32, s.landmark ? 35 : 24)
+  if (isLotPolygonFeature(s)) {
+    return stubLotPolygon(s.lat, s.lng, 38, 28)
+  }
+  return null
 }
 
 type Feat = {
@@ -330,8 +320,8 @@ export function spotsToMapGeoJSON(spots: ParkingSpot[]): ParkingMapGeoJSON {
   const polygons: Feat[] = []
 
   for (const s of spots) {
-    if (isOnStreetFeature(s)) {
-      const line = resolveLine(s)
+    const line = resolveLine(s)
+    if (line) {
       lines.push({
         type: 'Feature',
         properties: {
@@ -347,8 +337,8 @@ export function spotsToMapGeoJSON(spots: ParkingSpot[]): ParkingMapGeoJSON {
       continue
     }
 
-    if (isLotPolygonFeature(s)) {
-      const ring = resolvePolygon(s)
+    const ring = resolvePolygon(s)
+    if (ring) {
       polygons.push({
         type: 'Feature',
         properties: {
@@ -364,17 +354,25 @@ export function spotsToMapGeoJSON(spots: ParkingSpot[]): ParkingMapGeoJSON {
       continue
     }
 
-    points.push({
-      type: 'Feature',
-      properties: {
-        ...sharedProps(s),
-        render: 'point',
-      },
-      geometry: {
-        type: 'Point',
-        coordinates: [s.lng, s.lat],
-      },
-    })
+    // Points only for true POIs (EV / inva / loading / P&R)
+    if (
+      s.featureType === 'ev-charger' ||
+      s.featureType === 'inva' ||
+      s.featureType === 'loading' ||
+      s.featureType === 'park-ride'
+    ) {
+      points.push({
+        type: 'Feature',
+        properties: {
+          ...sharedProps(s),
+          render: 'point',
+        },
+        geometry: {
+          type: 'Point',
+          coordinates: [s.lng, s.lat],
+        },
+      })
+    }
   }
 
   return {

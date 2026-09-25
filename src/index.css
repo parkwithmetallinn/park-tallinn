@@ -32,11 +32,9 @@ body,
 body {
   font-family: var(--font-sans);
   color: var(--color-ink);
-  background:
-    radial-gradient(1200px 600px at 10% -10%, #c8e6d8 0%, transparent 55%),
-    radial-gradient(900px 500px at 100% 0%, #b8d4e0 0%, transparent 50%),
-    linear-gradient(165deg, #eef5f1 0%, #e4ebe6 45%, #dce8e2 100%);
+  background: #e8eef2;
   -webkit-font-smoothing: antialiased;
+  overflow: hidden;
 }
 
 .font-display {

@@ -15,118 +15,10 @@ import {
 } from './streetLineTheme'
 import { ZOOM } from './zoom'
 
-const PAID_SOURCE = 'paid-zones'
-const DISTRICT_SOURCE = 'district-zones'
 const ROUTE_SOURCE = 'nav-route'
 
+/** Clean parking overlays only — no district hexes / paid-zone debug fills. */
 export function ensureParkingOverlaySources(map: MapLibreMapType) {
-  if (!map.getSource(PAID_SOURCE)) {
-    map.addSource(PAID_SOURCE, {
-      type: 'geojson',
-      data: { type: 'FeatureCollection', features: [] },
-    })
-    map.addLayer({
-      id: 'paid-zones-fill',
-      type: 'fill',
-      source: PAID_SOURCE,
-      paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.18 },
-    })
-    map.addLayer({
-      id: 'paid-zones-line',
-      type: 'line',
-      source: PAID_SOURCE,
-      paint: {
-        'line-color': ['get', 'color'],
-        'line-width': 2,
-        'line-opacity': 0.75,
-        'line-dasharray': [2, 1.5],
-      },
-    })
-    map.addLayer({
-      id: 'paid-zones-label',
-      type: 'symbol',
-      source: PAID_SOURCE,
-      layout: {
-        'text-field': ['get', 'name'],
-        'text-size': 12,
-        'text-font': ['Noto Sans Bold'],
-        'text-transform': 'uppercase',
-        'text-letter-spacing': 0.04,
-        'text-max-width': 10,
-      },
-      paint: {
-        'text-color': ['get', 'color'],
-        'text-halo-color': '#F1F5F9',
-        'text-halo-width': 2,
-      },
-    })
-  }
-
-  if (!map.getSource(DISTRICT_SOURCE)) {
-    map.addSource(DISTRICT_SOURCE, {
-      type: 'geojson',
-      data: { type: 'FeatureCollection', features: [] },
-    })
-    map.addLayer({
-      id: 'district-fill',
-      type: 'fill',
-      source: DISTRICT_SOURCE,
-      maxzoom: ZOOM.streetMin,
-      paint: {
-        'fill-color': ['get', 'color'],
-        'fill-opacity': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          10,
-          0.28,
-          ZOOM.districtMax,
-          0.18,
-          ZOOM.streetMin,
-          0.06,
-        ],
-      },
-    })
-    map.addLayer({
-      id: 'district-outline',
-      type: 'line',
-      source: DISTRICT_SOURCE,
-      maxzoom: ZOOM.streetMin + 0.4,
-      paint: {
-        'line-color': ['get', 'color'],
-        'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2, 13, 3, 15, 1.5],
-        'line-opacity': 0.9,
-      },
-    })
-    map.addLayer({
-      id: 'district-label',
-      type: 'symbol',
-      source: DISTRICT_SOURCE,
-      maxzoom: ZOOM.streetMin,
-      layout: {
-        'text-field': [
-          'format',
-          ['get', 'name'],
-          { 'font-scale': 1.05 },
-          '\n',
-          {},
-          ['get', 'countLabel'],
-          { 'font-scale': 0.9 },
-        ],
-        'text-size': ['interpolate', ['linear'], ['zoom'], 10, 11, 13, 14],
-        'text-font': ['Noto Sans Bold'],
-        'text-max-width': 12,
-        'text-line-height': 1.15,
-      },
-      paint: {
-        'text-color': '#1e293b',
-        'text-halo-color': '#F1F5F9',
-        'text-halo-width': 2.2,
-      },
-    })
-  }
-
-  // Off-street lot polygons (before lines so curb lines paint on top)
   if (!map.getSource(PARKING_LOTS_SOURCE)) {
     map.addSource(PARKING_LOTS_SOURCE, {
       type: 'geojson',
@@ -140,7 +32,7 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       layout: { visibility: 'visible' },
       paint: {
         'fill-color': ['get', 'color'],
-        'fill-opacity': 0.38,
+        'fill-opacity': 0.42,
       },
     })
     map.addLayer({
@@ -151,7 +43,7 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       layout: { visibility: 'visible' },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': ['interpolate', ['linear'], ['zoom'], 15, 1.5, 17, 2.5],
+        'line-width': ['interpolate', ['linear'], ['zoom'], 14, 1.5, 17, 2.5],
         'line-opacity': 0.95,
       },
     })
@@ -159,11 +51,11 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       id: PARKING_LOTS_LABEL_LAYER,
       type: 'symbol',
       source: PARKING_LOTS_SOURCE,
-      minzoom: ZOOM.streetMin + 0.4,
+      minzoom: ZOOM.streetMin + 0.3,
       layout: {
         'text-field': ['get', 'badge'],
         'text-font': ['Noto Sans Bold'],
-        'text-size': ['interpolate', ['linear'], ['zoom'], 15, 10, 17, 12],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 14, 10, 17, 12],
         'text-max-width': 8,
         'symbol-placement': 'point',
       },
@@ -175,7 +67,6 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
     })
   }
 
-  // On-street curb lines
   if (!map.getSource(PARKING_LINES_SOURCE)) {
     map.addSource(PARKING_LINES_SOURCE, {
       type: 'geojson',
@@ -193,8 +84,8 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       },
       paint: {
         'line-color': '#FFFFFF',
-        'line-width': ['interpolate', ['linear'], ['zoom'], 15, 5, 17, 9, 18, 12],
-        'line-opacity': 0.85,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 14, 5, 17, 10, 18, 13],
+        'line-opacity': 0.9,
       },
     })
     map.addLayer({
@@ -209,13 +100,10 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': ['interpolate', ['linear'], ['zoom'], 15, 3, 17, 5.5, 18, 7],
+        'line-width': ['interpolate', ['linear'], ['zoom'], 14, 3.5, 17, 6, 18, 8],
         'line-opacity': 0.95,
       },
     })
-    // Near-invisible wide stroke for easier tapping under 3D pitch.
-    // IMPORTANT: MapLibre omits fully transparent (opacity 0) features from
-    // queryRenderedFeatures — keep a tiny opacity so hits register.
     map.addLayer({
       id: 'parking-street-lines-hit',
       type: 'line',
@@ -234,7 +122,6 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
     })
   }
 
-  // Point POIs (EV, inva, loading — not curb lines / lot areas)
   if (!map.getSource(PARKING_VIEWPORT_SOURCE)) {
     map.addSource(PARKING_VIEWPORT_SOURCE, {
       type: 'geojson',
@@ -260,12 +147,12 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
             'interpolate',
             ['linear'],
             ['zoom'],
-            15,
-            meta.circleRadius * 0.85,
+            14,
+            meta.circleRadius * 0.9,
             17,
-            meta.circleRadius * 1.25,
+            meta.circleRadius * 1.3,
           ],
-          'circle-stroke-width': 1.5,
+          'circle-stroke-width': 2,
           'circle-stroke-color': '#ffffff',
           'circle-opacity': 0.95,
         },
@@ -279,19 +166,19 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
           ['==', ['get', 'layer'], layerKey],
           ['==', ['get', 'provider'], layerKey],
         ],
-        minzoom: ZOOM.streetMin + 0.6,
+        minzoom: ZOOM.streetMin + 0.5,
         layout: {
           'text-field': ['get', 'badge'],
           'text-font': ['Noto Sans Bold'],
           'text-size': 9,
-          'text-offset': [0, 1.15],
+          'text-offset': [0, 1.2],
           'text-anchor': 'top',
           'text-allow-overlap': false,
         },
         paint: {
           'text-color': meta.color,
           'text-halo-color': '#F1F5F9',
-          'text-halo-width': 1.2,
+          'text-halo-width': 1.3,
         },
       })
     }
@@ -350,9 +237,6 @@ export function setParkingLayerVisibility(
       map.setLayoutProperty(`${meta.id}-label`, 'visibility', on ? 'visible' : 'none')
     }
   }
-
-  // Geometry layers stay visible; MapView filters FeatureCollection by layer key.
-  // When any filter is active we still show lines/lots that match via data, not layout.
   for (const id of GEOM_LAYER_IDS) {
     if (map.getLayer(id)) {
       map.setLayoutProperty(id, 'visibility', 'visible')
@@ -360,4 +244,4 @@ export function setParkingLayerVisibility(
   }
 }
 
-export { PAID_SOURCE, DISTRICT_SOURCE, ROUTE_SOURCE }
+export { ROUTE_SOURCE }

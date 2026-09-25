@@ -1,6 +1,6 @@
 # Park Tallinn
 
-Kaardipõhine Eesti parkimisäpp (MapLibre GL). Ajutine OSM/OpenFreeMap vektorkaart; hiljem asendub ~100 MB Maa-ameti vektorkaardiga.
+Puhas 3D parkimiskaart Tallinnale (MapLibre). Tänavaäärsed tsoonid on teedega joondatud jooned; eraparklad on polügoonid.
 
 ## Käivitamine
 
@@ -11,45 +11,14 @@ npm run dev
 
 Ava [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
-## Aluskaart (1 rea vahetus)
+## Funktsioonid
 
-Fail: `src/config/basemap.ts`
+- **Viewport bbox** — ainult ekraanil nähtavad kohad
+- **Road-snapped jooned** — OSRM-iga teedele joondatud LineString’id (Liivalaia, Pärnu mnt, Viru, …)
+- **Nominatim otsing** — `/api/nominatim` proxy (Vite / Vercel)
+- **Bottom sheet** — Waze, Google Maps, Apple Maps navigeerimine
+- **Floating glass UI** — ümarad paneelid + backdrop-blur
 
-```ts
-export const VECTOR_TILE_SOURCE_URL = 'https://tiles.openfreemap.org/planet'
-// → 'https://tiles.example.ee/maaamet/v1'
-```
-
-Või sea `STYLE_URL` täielikule stiili JSON-ile.
-
-## Viewport bounding box
-
-- `src/lib/bbox.ts` — vaateakna piiride laiendamine
-- `src/lib/spatialIndex.ts` — punktide bbox-päring
-- `src/lib/parkingRepository.ts` — viewport-päring (täna lokaalne indeks; homme HTTP)
-
-Tänavatasemel (z ≥ 15) laetakse kaardile **ainult ekraanil nähtava bbox-i** punktid. Välja zoomides kuvatakse linnaosade koondtsoonid.
-
-## Andmeskeem (Eesti parkimisturg)
-
-Iga punkt/polügoon kannab: `operator`, `zone_code`, `free_minutes`, `price_per_hour`, `featureType`, `layer`.
-
-| Kiht | Näited |
-|------|--------|
-| `municipal` | Vanalinn, Südalinn, Kesklinn, Pirita |
-| `europark` / `snabb` / `citypark` / `uhisteenused` / `parkit` | Eraoperaatorid |
-| `free_street` / `timed` | Tasuta & kellaga tänavad |
-| `ev` | Enefit Volt, Eleport, Ignitis |
-| `inva` / `loading` | Inva-kohad, kauba laadimine |
-| `park_ride` | Pargi & Reisi |
-
-## Visuaalne stiil (tänavad vs parklad)
-
-- **Tänavaäärsed** → `LineString` (roheline = tasuta, kollane = 15/30 min, tsooni värv = tasuline)
-- **Eraparklad / P&R** → täidetud `Polygon` alad
-- **EV / inva / laadimine** → punktid
-
-Allikad: `parking-street-lines`, `parking-lot-polygons`, `parking-viewport`.
-Geomeetria mock: `src/data/parkingGeometry.ts`.
+## Stack
 
 Vite · React · TypeScript · Tailwind · MapLibre GL

@@ -6,67 +6,65 @@ import {
   Moon,
   Navigation,
   Plus,
-  Route as RouteIcon,
   Search,
   Sun,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { MapView } from './components/MapView'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { MapErrorBoundary } from './components/MapErrorBoundary'
+import { MapView } from './components/MapView'
 import { ModalShell } from './components/ModalShell'
-import { generateDenseStreetSpots } from './data/generateSpots'
+import { ParkingBottomSheet } from './components/ParkingBottomSheet'
 import { MOCK_KESKLINN_SPOTS } from './data/mockKesklinn'
-import { PARKING_SPOTS, PAID_ZONES, TALLINN_CENTER } from './data/parking'
+import { PARKING_SPOTS, TALLINN_CENTER } from './data/parking'
 import { distanceMeters, formatDistance } from './lib/geo'
+import { searchAddress, type GeocodeResult } from './lib/geocode'
 import { normalizeSpot } from './lib/geojson'
 import { formatHMS, minutesFromBadge, TYPE_LABELS } from './lib/parking'
-import { fetchDrivingRoute, type DrivingRoute } from './lib/routing'
 import { parkingIndex } from './lib/spatialIndex'
 import { loadCustomSpots, saveCustomSpot } from './lib/storage'
 import { PARKING_LAYER_META } from './map/parkingLayers'
-import { ZOOM } from './map/zoom'
 import type { FilterId, ParkingSpot, SpotType } from './types'
 
 const FILTERS: { id: FilterId; label: string; color?: string }[] = [
   { id: 'all', label: 'Kõik' },
   { id: 'municipal', label: 'Linnatsoon', color: PARKING_LAYER_META.municipal.color },
-  { id: 'free_street', label: 'Tasuta tänav', color: PARKING_LAYER_META.free_street.color },
+  { id: 'free_street', label: 'Tasuta', color: PARKING_LAYER_META.free_street.color },
   { id: 'timed', label: 'Kellaga', color: PARKING_LAYER_META.timed.color },
   { id: 'europark', label: 'EuroPark', color: PARKING_LAYER_META.europark.color },
   { id: 'snabb', label: 'Snabb', color: PARKING_LAYER_META.snabb.color },
   { id: 'citypark', label: 'Citypark', color: PARKING_LAYER_META.citypark.color },
-  { id: 'ev', label: 'EV laadija', color: PARKING_LAYER_META.ev.color },
+  { id: 'ev', label: 'EV', color: PARKING_LAYER_META.ev.color },
   { id: 'inva', label: 'Inva', color: PARKING_LAYER_META.inva.color },
-  { id: 'loading', label: 'Laadimine', color: PARKING_LAYER_META.loading.color },
-  { id: 'park_ride', label: 'Pargi & Reisi', color: PARKING_LAYER_META.park_ride.color },
+  { id: 'park_ride', label: 'P&R', color: PARKING_LAYER_META.park_ride.color },
 ]
+
+const glass =
+  'rounded-[1.35rem] border border-white/50 bg-white/75 shadow-[0_8px_32px_rgba(15,23,42,0.12)] backdrop-blur-2xl'
+const glassDark =
+  'rounded-[1.35rem] border border-white/10 bg-[#15201b]/80 shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-2xl'
 
 export default function App() {
   const [dark, setDark] = useState(false)
   const [filter, setFilter] = useState<FilterId>('all')
   const [query, setQuery] = useState('')
+  const [geoResults, setGeoResults] = useState<GeocodeResult[]>([])
+  const [geoLoading, setGeoLoading] = useState(false)
+  const [geoError, setGeoError] = useState<string | null>(null)
   const [userLocation, setUserLocation] = useState<[number, number]>(TALLINN_CENTER)
   const [hasGps, setHasGps] = useState(false)
   const [flyTarget, setFlyTarget] = useState<[number, number] | null>(null)
+  const [flyZoom, setFlyZoom] = useState<number | undefined>(undefined)
   const [flyKey, setFlyKey] = useState(0)
   const [customSpots, setCustomSpots] = useState<ParkingSpot[]>([])
   const [selected, setSelected] = useState<ParkingSpot | null>(null)
-  const [navOpen, setNavOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
   const [timerSeconds, setTimerSeconds] = useState(0)
   const [timerRunning, setTimerRunning] = useState(false)
   const [timerLabel, setTimerLabel] = useState('Määra aeg või vali kellaga koht')
-  const [route, setRoute] = useState<DrivingRoute | null>(null)
-  const [navigating, setNavigating] = useState(false)
-  const [routeLoading, setRouteLoading] = useState(false)
-  const [routeError, setRouteError] = useState<string | null>(null)
-  const [mapMode, setMapMode] = useState<'district' | 'cluster' | 'street'>('district')
-  const [mapZoom, setMapZoom] = useState(11.8)
-  const [viewportStats, setViewportStats] = useState({ rendered: 0, skipped: false })
-
-  const denseStreetSpots = useMemo(() => generateDenseStreetSpots(2800), [])
+  const [timerOpen, setTimerOpen] = useState(false)
+  const geoAbort = useRef<AbortController | null>(null)
 
   useEffect(() => {
     setCustomSpots(loadCustomSpots())
@@ -91,20 +89,6 @@ export default function App() {
       setTimerSeconds((s) => {
         if (s <= 1) {
           setTimerRunning(false)
-          try {
-            const ctx = new AudioContext()
-            const osc = ctx.createOscillator()
-            const gain = ctx.createGain()
-            osc.type = 'sine'
-            osc.frequency.value = 880
-            gain.gain.value = 0.35
-            osc.connect(gain)
-            gain.connect(ctx.destination)
-            osc.start()
-            osc.stop(ctx.currentTime + 1)
-          } catch {
-            /* ignore */
-          }
           setTimerLabel('Aeg läbi! Liiguta autot või pikenda')
           return 0
         }
@@ -113,6 +97,38 @@ export default function App() {
     }, 1000)
     return () => clearInterval(id)
   }, [timerRunning, timerSeconds])
+
+  // Nominatim geocoding (debounced)
+  useEffect(() => {
+    const q = query.trim()
+    if (q.length < 3) {
+      setGeoResults([])
+      setGeoError(null)
+      setGeoLoading(false)
+      return
+    }
+    setGeoLoading(true)
+    setGeoError(null)
+    geoAbort.current?.abort()
+    const ac = new AbortController()
+    geoAbort.current = ac
+    const t = window.setTimeout(async () => {
+      try {
+        const results = await searchAddress(q, ac.signal)
+        if (!ac.signal.aborted) setGeoResults(results)
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') return
+        setGeoError('Aadressi otsing ebaõnnestus')
+        setGeoResults([])
+      } finally {
+        if (!ac.signal.aborted) setGeoLoading(false)
+      }
+    }, 400)
+    return () => {
+      window.clearTimeout(t)
+      ac.abort()
+    }
+  }, [query])
 
   const allSpots = useMemo(() => {
     const curated = PARKING_SPOTS.map((s) =>
@@ -131,90 +147,60 @@ export default function App() {
     )
     const mocks = MOCK_KESKLINN_SPOTS.map((s) => normalizeSpot(s))
     const custom = customSpots.map((s) => normalizeSpot(s))
-    return [...mocks, ...curated, ...denseStreetSpots, ...custom]
-  }, [customSpots, denseStreetSpots])
+    // Curated mock + public lots only — no dense synthetic grid clutter
+    return [...mocks, ...curated, ...custom]
+  }, [customSpots])
 
   useEffect(() => {
     parkingIndex.bulkLoad(allSpots)
   }, [allSpots])
 
   const nearest = useMemo(() => {
-    const rank = (s: ParkingSpot) => {
-      if (s.landmark && s.type === 'free') return 0
-      if (s.type === 'pr') return 1
-      if (s.landmark && s.type === 'timed') return 2
-      if (s.type === 'free') return 3
-      if (s.type === 'timed') return 4
-      return 5
-    }
-    // Prefer curated / landmark spots for "nearest" — not the dense synthetic grid
     const candidates = allSpots.filter(
       (s) =>
-        s.type !== 'paid' &&
+        s.landmark &&
         !s.id.startsWith('gen-') &&
         !s.id.includes('15min') &&
         !s.id.includes('center-evening'),
     )
     let best: ParkingSpot | null = null
-    let bestScore = Infinity
+    let bestD = Infinity
     for (const spot of candidates) {
       const d = distanceMeters(userLocation[0], userLocation[1], spot.lat, spot.lng)
-      const score = rank(spot) * 2500 + d
-      if (score < bestScore) {
-        bestScore = score
+      if (d < bestD) {
+        bestD = d
         best = spot
       }
     }
     if (!best) return null
-    const dist = formatDistance(
-      distanceMeters(userLocation[0], userLocation[1], best.lat, best.lng),
-    )
-    return { spot: best, dist }
+    return { spot: best, dist: formatDistance(bestD) }
   }, [allSpots, userLocation])
 
-  const openNav = useCallback((spot: ParkingSpot) => {
+  const openSheet = useCallback((spot: ParkingSpot) => {
     setSelected(spot)
-    setRouteError(null)
-    setNavOpen(true)
   }, [])
 
-  const startInAppNavigation = async () => {
-    if (!selected) return
-    setRouteLoading(true)
-    setRouteError(null)
-    try {
-      const result = await fetchDrivingRoute(userLocation, [selected.lat, selected.lng])
-      if (!result) {
-        setRouteError('Marsruuti ei õnnestunud arvutada. Proovi Waze / Maps.')
-        return
-      }
-      setRoute(result)
-      setNavigating(true)
-      setNavOpen(false)
-    } catch {
-      setRouteError('Võrguviga marsruudi laadimisel.')
-    } finally {
-      setRouteLoading(false)
-    }
-  }
-
-  const stopNavigation = () => {
-    setNavigating(false)
-    setRoute(null)
-  }
+  const closeSheet = () => setSelected(null)
 
   const recenter = () => {
     setFlyTarget([...userLocation] as [number, number])
+    setFlyZoom(15.5)
     setFlyKey((k) => k + 1)
   }
 
-  const addMinutes = (mins: number) => setTimerSeconds((s) => s + mins * 60)
+  const flyToGeocode = (r: GeocodeResult) => {
+    setFlyTarget([r.lat, r.lng])
+    setFlyZoom(16.2)
+    setFlyKey((k) => k + 1)
+    setQuery(r.label.split(',')[0] ?? r.label)
+    setGeoResults([])
+  }
 
+  const addMinutes = (mins: number) => setTimerSeconds((s) => s + mins * 60)
   const startOrPause = () => {
     if (timerSeconds <= 0) return
     setTimerRunning((r) => !r)
   }
-
   const resetTimer = () => {
     setTimerRunning(false)
     setTimerSeconds(0)
@@ -223,11 +209,12 @@ export default function App() {
 
   const autoTimerFromSpot = () => {
     if (!selected) return
-    const mins = minutesFromBadge(selected.badge)
+    const mins = minutesFromBadge(selected.badge) || selected.free_minutes || 60
     setTimerSeconds(mins * 60)
     setTimerLabel(`Määratud: ${selected.name}`)
     setTimerRunning(true)
-    setNavOpen(false)
+    setTimerOpen(true)
+    closeSheet()
   }
 
   const submitReport = (e: FormEvent<HTMLFormElement>) => {
@@ -248,11 +235,12 @@ export default function App() {
       kind,
       badge: type === 'free' ? (kind === 'street' ? 'TÄNAV' : 'TASUTA') : type === 'pr' ? 'P&R' : 'KELLAGA',
       timeLimit: limit,
-      lat: userLocation[0] + (Math.random() - 0.5) * 0.006,
-      lng: userLocation[1] + (Math.random() - 0.5) * 0.006,
+      lat: userLocation[0] + (Math.random() - 0.5) * 0.004,
+      lng: userLocation[1] + (Math.random() - 0.5) * 0.004,
       address,
       desc: notes || 'Kasutaja lisatud koht',
       custom: true,
+      landmark: true,
     })
     saveCustomSpot(spot)
     setCustomSpots(loadCustomSpots())
@@ -260,341 +248,251 @@ export default function App() {
     e.currentTarget.reset()
   }
 
-  const wazeUrl = selected
-    ? `https://waze.com/ul?ll=${selected.lat},${selected.lng}&navigate=yes`
-    : '#'
-  const gmapsUrl = selected
-    ? `https://www.google.com/maps/dir/?api=1&destination=${selected.lat},${selected.lng}`
-    : '#'
-
   useEffect(() => {
     document.documentElement.classList.toggle('map-dark', dark)
   }, [dark])
 
-  const chrome = dark
-    ? {
-        shell: 'bg-[#0f1714] text-[#e8f0eb]',
-        bar: 'border-white/10 bg-[#15201b]/90',
-        muted: 'text-[#9bb0a4]',
-        chip: 'bg-white/10 text-[#c9d9d0] hover:bg-white/15',
-        chipActive: 'bg-[#e8f0eb] text-[#0f1714]',
-        input:
-          'border-white/10 bg-white/8 text-[#e8f0eb] placeholder:text-[#9bb0a4]/70 focus:border-moss/50 focus:ring-moss/25',
-        timerBox: 'bg-white/10 text-[#e8f0eb]',
-      }
-    : {
-        shell: 'bg-transparent text-ink',
-        bar: 'border-ink/8 bg-paper/85',
-        muted: 'text-ink-soft',
-        chip: 'bg-paper-2 text-ink-soft hover:bg-mist',
-        chipActive: 'bg-ink text-paper',
-        input:
-          'border-ink/10 bg-paper-2 text-ink placeholder:text-ink-soft/50 focus:border-moss/40 focus:ring-moss/20',
-        timerBox: 'bg-paper-2 text-ink',
-      }
+  const panel = dark ? glassDark : glass
+  const muted = dark ? 'text-[#9bb0a4]' : 'text-ink-soft'
+  const text = dark ? 'text-[#e8f0eb]' : 'text-ink'
+  const chip = dark
+    ? 'bg-white/10 text-[#c9d9d0] hover:bg-white/15'
+    : 'bg-white/60 text-ink-soft hover:bg-white/90'
+  const chipActive = dark ? 'bg-[#e8f0eb] text-[#0f1714]' : 'bg-ink text-paper'
 
-  const routeSummary =
-    route && navigating
-      ? `${formatDistance(route.distanceMeters)} · ${Math.round(route.durationSeconds / 60)} min`
-      : null
+  const selectedDist = selected
+    ? formatDistance(
+        distanceMeters(userLocation[0], userLocation[1], selected.lat, selected.lng),
+      )
+    : null
 
   return (
-    <div className={`flex h-full flex-col ${chrome.shell}`}>
-      <header
-        className={`relative z-30 flex items-center justify-between border-b px-4 py-3 backdrop-blur-md ${chrome.bar}`}
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-moss text-white shadow-md shadow-moss/25">
-            <MapPin className="h-5 w-5" strokeWidth={2.4} />
-          </div>
-          <div>
-            <h1 className="font-display text-2xl leading-none tracking-tight">
-              Park Tallinn
-            </h1>
-            <p className={`mt-0.5 text-xs font-medium ${chrome.muted}`}>
-              3D navi · tasuta · P&R
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setInfoOpen(true)}
-            className={`rounded-xl p-2.5 transition ${chrome.chip}`}
-            title="Parkimisreeglid"
-          >
-            <CircleHelp className="h-5 w-5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setDark((d) => !d)}
-            className={`rounded-xl p-2.5 transition ${chrome.chip}`}
-            title="Hele / tume"
-          >
-            {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-          </button>
-          <button
-            type="button"
-            onClick={recenter}
-            className="flex items-center gap-1.5 rounded-xl bg-sea px-3 py-2.5 text-white shadow-md shadow-sea/30 transition hover:brightness-110"
-            title="Minu asukoht"
-          >
-            <LocateFixed className="h-5 w-5" />
-            <span className="hidden text-xs font-semibold sm:inline">
-              {hasGps ? 'Minu asukoht' : 'Keskus'}
-            </span>
-          </button>
-        </div>
-      </header>
-
-      <button
-        type="button"
-        onClick={() => nearest && openNav(nearest.spot)}
-        className="relative z-20 flex w-full items-center justify-between bg-gradient-to-r from-moss via-moss to-sea px-4 py-2.5 text-left text-white transition hover:brightness-105"
-      >
-        <div className="flex min-w-0 items-center gap-2.5">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/20">
-            <Navigation className="h-3.5 w-3.5" />
-          </div>
-          <div className="min-w-0">
-            <span className="block text-[10px] font-semibold uppercase tracking-wider text-white/80">
-              Lähim soodne koht
-            </span>
-            <span className="block truncate text-sm font-bold">
-              {nearest
-                ? `${nearest.spot.name} · ${nearest.dist}`
-                : 'Arvutan…'}
-            </span>
-          </div>
-        </div>
-        <span className="shrink-0 rounded-lg bg-white/20 px-2.5 py-1 text-xs font-semibold backdrop-blur-sm">
-          Ava navi →
-        </span>
-      </button>
-
-      <div className={`relative z-20 space-y-2 border-b px-4 py-2.5 backdrop-blur-md ${chrome.bar}`}>
-        <div className="relative">
-          <Search className={`pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 ${chrome.muted} opacity-70`} />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Otsi nime, tänavat või tsooni…"
-            className={`w-full rounded-xl border py-2.5 pr-9 pl-10 text-sm outline-none transition focus:ring-2 ${chrome.input}`}
-          />
-          {query ? (
-            <button
-              type="button"
-              onClick={() => setQuery('')}
-              className={`absolute top-1/2 right-3 -translate-y-1/2 ${chrome.muted}`}
-            >
-              <X className="h-4 w-4" />
-            </button>
-          ) : null}
-        </div>
-        <div className="no-scrollbar flex gap-2 overflow-x-auto pb-0.5">
-          {FILTERS.map((f) => {
-            const active = filter === f.id
-            return (
-              <button
-                key={f.id}
-                type="button"
-                data-filter={f.id}
-                onClick={() => setFilter(f.id)}
-                className={`shrink-0 rounded-xl px-3.5 py-1.5 text-xs font-semibold transition ${
-                  active ? chrome.chipActive : chrome.chip
-                }`}
-              >
-                {f.color && !active ? (
-                  <span
-                    className="mr-1.5 inline-block h-2 w-2 rounded-full"
-                    style={{ backgroundColor: f.color }}
-                  />
-                ) : null}
-                {f.label}
-              </button>
-            )
-          })}
-        </div>
-        <p className={`text-[11px] ${chrome.muted}`}>
-          Indeks <strong>{allSpots.length}</strong> · viewport bbox{' '}
-          <strong>{viewportStats.rendered}</strong> kohta
-          {viewportStats.skipped ? ' (koondvaade)' : ''}
-          {filter !== 'all' ? ` · ${FILTERS.find((f) => f.id === filter)?.label}` : ''}
-          {' · '}
-          {mapMode === 'district' && <span className="text-moss">Linnaosa tsoonid</span>}
-          {mapMode === 'cluster' && (
-            <span className="text-sea">Suumi tänavale · z{mapZoom.toFixed(1)}</span>
-          )}
-          {mapMode === 'street' && <span className="text-sea">Tänavatase · bbox-päring</span>}
-        </p>
-      </div>
-
-      <main className="relative min-h-0 flex-1 overflow-hidden">
+    <div className={`relative h-full overflow-hidden ${dark ? 'bg-[#0f1714]' : 'bg-transparent'}`}>
+      {/* Full-bleed map */}
+      <div className="absolute inset-0">
         <MapErrorBoundary>
           <MapView
             spots={allSpots}
-            zones={PAID_ZONES}
             filter={filter}
             userLocation={userLocation}
             flyTarget={flyTarget}
             flyKey={flyKey}
-            route={route}
-            navigating={navigating}
-            onNavigate={openNav}
-            distanceFrom={userLocation}
-            onZoomChange={(z, mode) => {
-              setMapZoom(z)
-              setMapMode(mode)
-            }}
-            onViewportStats={setViewportStats}
+            flyZoom={flyZoom}
+            route={null}
+            navigating={false}
+            onNavigate={openSheet}
+            onZoomChange={() => {}}
           />
         </MapErrorBoundary>
+      </div>
 
-        {mapMode !== 'street' && !navigating ? (
-          <div className="pointer-events-none absolute bottom-20 left-1/2 z-[5] -translate-x-1/2 rounded-full border border-ink/10 bg-paper/95 px-3.5 py-1.5 text-[11px] font-semibold text-ink-soft shadow-md backdrop-blur-sm sm:bottom-24">
-            {mapMode === 'district'
-              ? 'Klõpsa tsooni või suumi — punktid viewport-bbox-iga alates z' +
-                ZOOM.streetMin
-              : 'Suumi tänavatasemeni — ainult ekraanil nähtavad kohad'}
-          </div>
-        ) : null}
-        {navigating && selected ? (
-          <div className="absolute top-3 right-3 left-3 z-[5] flex items-center justify-between gap-2 rounded-2xl border border-violet-200 bg-white/95 px-3 py-2.5 shadow-lg backdrop-blur-md">
-            <div className="min-w-0">
-              <p className="text-[10px] font-bold tracking-wide text-violet-700 uppercase">
-                Aktiivne marsruut
-              </p>
-              <p className="truncate text-sm font-bold text-ink">{selected.name}</p>
-              {routeSummary ? (
-                <p className="text-xs text-ink-soft">{routeSummary}</p>
-              ) : null}
+      {/* Floating top chrome */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-4">
+        <div className="pointer-events-auto mx-auto max-w-lg space-y-2.5">
+          <div className={`flex items-center gap-2.5 px-3 py-2.5 ${panel}`}>
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-moss text-white shadow-md shadow-moss/25">
+              <MapPin className="h-5 w-5" strokeWidth={2.4} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h1 className={`font-display text-xl leading-none tracking-tight ${text}`}>
+                Park Tallinn
+              </h1>
+              <p className={`mt-0.5 text-[11px] font-medium ${muted}`}>Tasuta · kellaga · P&R</p>
             </div>
             <button
               type="button"
-              onClick={stopNavigation}
-              className="shrink-0 rounded-xl bg-violet-700 px-3 py-2 text-xs font-bold text-white"
+              onClick={() => setInfoOpen(true)}
+              className={`rounded-xl p-2 transition ${chip}`}
+              title="Reeglid"
             >
-              Lõpeta
+              <CircleHelp className="h-4.5 w-4.5 h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setDark((d) => !d)}
+              className={`rounded-xl p-2 transition ${chip}`}
+              title="Hele / tume"
+            >
+              {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+            </button>
+            <button
+              type="button"
+              onClick={recenter}
+              className="rounded-xl bg-sea p-2 text-white shadow-md shadow-sea/25 transition hover:brightness-110"
+              title="Minu asukoht"
+            >
+              <LocateFixed className="h-5 w-5" />
             </button>
           </div>
-        ) : null}
 
+          <div className={`relative px-1 py-1 ${panel}`}>
+            <div className="relative">
+              <Search
+                className={`pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 ${muted} opacity-70`}
+              />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Otsi aadressi (nt Estonia pst 1)…"
+                className={`w-full rounded-[1.1rem] border-0 bg-transparent py-3 pr-10 pl-10 text-sm outline-none ${text} placeholder:opacity-45`}
+                autoComplete="off"
+                enterKeyHint="search"
+              />
+              {query ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuery('')
+                    setGeoResults([])
+                  }}
+                  className={`absolute top-1/2 right-3 -translate-y-1/2 ${muted}`}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              ) : null}
+            </div>
+
+            {(geoLoading || geoResults.length > 0 || geoError) && query.trim().length >= 3 ? (
+              <div className="mt-1 max-h-52 overflow-y-auto border-t border-ink/6 px-1 py-1">
+                {geoLoading ? (
+                  <p className={`px-3 py-2 text-xs ${muted}`}>Otsin aadresse…</p>
+                ) : null}
+                {geoError ? <p className="px-3 py-2 text-xs text-clay">{geoError}</p> : null}
+                {geoResults.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => flyToGeocode(r)}
+                    className={`flex w-full items-start gap-2 rounded-xl px-3 py-2.5 text-left transition hover:bg-moss/8 ${text}`}
+                  >
+                    <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-moss" />
+                    <span className="text-xs leading-snug font-medium">{r.label}</span>
+                  </button>
+                ))}
+                {!geoLoading && !geoError && geoResults.length === 0 ? (
+                  <p className={`px-3 py-2 text-xs ${muted}`}>Tulemusi ei leitud</p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          <div className={`no-scrollbar flex gap-1.5 overflow-x-auto px-2 py-2 ${panel}`}>
+            {FILTERS.map((f) => {
+              const active = filter === f.id
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  data-filter={f.id}
+                  onClick={() => setFilter(f.id)}
+                  className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
+                    active ? chipActive : chip
+                  }`}
+                >
+                  {f.color && !active ? (
+                    <span
+                      className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full"
+                      style={{ backgroundColor: f.color }}
+                    />
+                  ) : null}
+                  {f.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {nearest ? (
+            <button
+              type="button"
+              onClick={() => openSheet(nearest.spot)}
+              className="flex w-full items-center justify-between rounded-[1.35rem] bg-gradient-to-r from-moss to-sea px-4 py-2.5 text-left text-white shadow-lg shadow-moss/25 transition hover:brightness-105"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <Navigation className="h-4 w-4 shrink-0 opacity-90" />
+                <span className="truncate text-sm font-semibold">
+                  {nearest.spot.name} · {nearest.dist}
+                </span>
+              </span>
+              <span className="shrink-0 text-xs font-bold opacity-90">Ava →</span>
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Floating actions */}
+      <div className="absolute right-3 bottom-[max(5.5rem,env(safe-area-inset-bottom))] z-20 flex flex-col gap-2 sm:right-4">
+        <button
+          type="button"
+          onClick={() => setTimerOpen((o) => !o)}
+          className={`flex h-12 w-12 items-center justify-center rounded-2xl ${panel} ${text} transition hover:scale-105`}
+          title="Parkimiskell"
+        >
+          <Clock3 className="h-5 w-5 text-sea" />
+        </button>
         <button
           type="button"
           onClick={() => setReportOpen(true)}
-          className="absolute right-4 bottom-4 z-[5] flex items-center gap-2 rounded-2xl bg-moss px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-moss/35 transition hover:bg-moss-deep active:scale-[0.98] sm:bottom-6"
+          className="flex h-12 w-12 items-center justify-center rounded-2xl bg-moss text-white shadow-lg shadow-moss/30 transition hover:scale-105 hover:bg-moss-deep"
+          title="Lisa koht"
         >
-          <Plus className="h-4 w-4" />
-          Lisa koht
+          <Plus className="h-5 w-5" />
         </button>
-      </main>
+      </div>
 
-      <footer className={`relative z-30 border-t px-4 py-3 backdrop-blur-md ${chrome.bar}`}>
-        <div className="mx-auto max-w-xl space-y-2.5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-sea/15 text-sea">
-                <Clock3 className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-sm font-bold leading-none">Parkimiskella taimer</h3>
-                <p className={`mt-0.5 truncate text-xs ${chrome.muted}`}>{timerLabel}</p>
-              </div>
+      {/* Compact timer drawer */}
+      {timerOpen ? (
+        <div
+          className={`absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-3 z-30 w-[min(100%-5.5rem,20rem)] px-3.5 py-3 sm:left-4 ${panel}`}
+        >
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div>
+              <p className={`text-xs font-bold ${text}`}>Parkimiskell</p>
+              <p className={`truncate text-[10px] ${muted}`}>{timerLabel}</p>
             </div>
-            <div
-              className={`rounded-xl px-3 py-1 font-mono text-2xl font-extrabold tracking-wider sm:text-3xl ${chrome.timerBox} ${
-                timerSeconds > 0 && timerSeconds < 60 && !timerRunning ? '!text-clay' : ''
+            <span className={`font-mono text-xl font-extrabold tabular-nums ${text}`}>
+              {formatHMS(timerSeconds)}
+            </span>
+          </div>
+          <div className="mb-2 flex gap-1">
+            {[15, 30, 60, 120].map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => addMinutes(m)}
+                className={`flex-1 rounded-lg py-1 text-[10px] font-semibold ${chip}`}
+              >
+                +{m < 60 ? `${m}m` : `${m / 60}t`}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={startOrPause}
+              className={`flex-1 rounded-xl py-2 text-xs font-bold text-white ${
+                timerRunning ? 'bg-clay' : 'bg-moss'
               }`}
             >
-              {formatHMS(timerSeconds)}
-            </div>
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <div className="no-scrollbar flex gap-1.5 overflow-x-auto">
-              {[15, 30, 60, 120, 180].map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => addMinutes(m)}
-                  className={`shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${chrome.chip}`}
-                >
-                  +{m < 60 ? `${m}m` : `${m / 60}t`}
-                </button>
-              ))}
-            </div>
-            <div className="flex shrink-0 gap-2">
-              <button
-                type="button"
-                onClick={startOrPause}
-                className={`rounded-xl px-4 py-1.5 text-xs font-bold text-white shadow-md transition ${
-                  timerRunning ? 'bg-clay' : 'bg-moss hover:bg-moss-deep'
-                }`}
-              >
-                {timerRunning ? 'Paus' : 'Käivita'}
-              </button>
-              <button
-                type="button"
-                onClick={resetTimer}
-                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${chrome.chip}`}
-              >
-                Nulli
-              </button>
-            </div>
+              {timerRunning ? 'Paus' : 'Käivita'}
+            </button>
+            <button
+              type="button"
+              onClick={resetTimer}
+              className={`rounded-xl px-3 py-2 text-xs font-bold ${chip}`}
+            >
+              Nulli
+            </button>
           </div>
         </div>
-      </footer>
+      ) : null}
 
-      {navOpen && selected ? (
-        <ModalShell onClose={() => setNavOpen(false)} title={selected.name}>
-          <p className="text-xs text-ink-soft">
-            {selected.address} · {selected.timeLimit}
-          </p>
-          <div className="mt-4 space-y-2.5">
-            <button
-              type="button"
-              onClick={startInAppNavigation}
-              disabled={routeLoading}
-              className="flex w-full items-center justify-between rounded-2xl bg-violet-700 px-4 py-3.5 font-bold text-white shadow-md transition hover:bg-violet-800 disabled:opacity-60"
-            >
-              <span className="flex items-center gap-2">
-                <RouteIcon className="h-4 w-4" />
-                {routeLoading ? 'Arvutan marsruuti…' : '3D navi kaardil'}
-              </span>
-              <Navigation className="h-4 w-4 opacity-80" />
-            </button>
-            {routeError ? (
-              <p className="text-xs font-medium text-clay">{routeError}</p>
-            ) : null}
-            <a
-              href={wazeUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center justify-between rounded-2xl bg-sea px-4 py-3.5 font-bold text-white shadow-md transition hover:brightness-110"
-            >
-              Ava Waze’is
-              <Navigation className="h-4 w-4 opacity-80" />
-            </a>
-            <a
-              href={gmapsUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center justify-between rounded-2xl bg-moss px-4 py-3.5 font-bold text-white shadow-md transition hover:bg-moss-deep"
-            >
-              Ava Google Mapsis
-              <MapPin className="h-4 w-4 opacity-80" />
-            </a>
-          </div>
-          {selected.type === 'timed' ? (
-            <button
-              type="button"
-              onClick={autoTimerFromSpot}
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-sea/30 bg-sea/10 py-2.5 text-xs font-semibold text-sea transition hover:bg-sea/15"
-            >
-              <Clock3 className="h-4 w-4" />
-              Sea taimer ({selected.badge})
-            </button>
-          ) : null}
-        </ModalShell>
+      {selected ? (
+        <ParkingBottomSheet
+          spot={selected}
+          distanceLabel={selectedDist}
+          onClose={closeSheet}
+          onTimer={autoTimerFromSpot}
+        />
       ) : null}
 
       {infoOpen ? (
@@ -603,36 +501,21 @@ export default function App() {
             <div className="rounded-2xl border border-sea/20 bg-sea/8 p-3">
               <h4 className="mb-1 text-sm font-bold text-sea">Esimesed 15 minutit tasuta</h4>
               <p>
-                Avalikel tasulistel linnatänavatel kehtib esimesed 15 minutit tasuta parkimine.
-                Pane esiklaasile loetav parkimiskell või kirjalik algusaeg.
+                Avalikel tasulistel linnatänavatel kehtib esimesed 15 minutit tasuta. Pane kell
+                esiklaasile.
               </p>
             </div>
             <div className="rounded-2xl bg-paper-2 p-3">
               <h4 className="mb-1 text-sm font-bold text-ink">Kesklinna tasuta kellaajad</h4>
-              <p>• Tööpäeviti tasuline 07:00–19:00 (öösel tasuta)</p>
-              <p>• Laupäeval tasuline 08:00–15:00 (pärast 15:00 tasuta)</p>
-              <p>• Pühapäeval ja riigipühadel ööpäevaringselt tasuta</p>
+              <p>• Tööpäeviti tasuline 07:00–19:00</p>
+              <p>• Laupäeval tasuline 08:00–15:00</p>
+              <p>• Pühapäeval ja riigipühadel tasuta</p>
             </div>
             <div className="rounded-2xl border border-moss/20 bg-moss/8 p-3">
-              <h4 className="mb-1 text-sm font-bold text-moss">Avalikud & tänavaäärsed</h4>
+              <h4 className="mb-1 text-sm font-bold text-moss">Kaart</h4>
               <p>
-                Väljaspool tasulisi tsoone on tänavaparkimine üldjuhul tasuta (Mustamäe, Lasnamäe,
-                Nõmme, Põhja-Tallinn, Õismäe jt). Kaardil on esile toodud mugavad lõigud ja avalikud
-                platsid.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-navy/20 bg-navy/8 p-3">
-              <h4 className="mb-1 text-sm font-bold text-navy">Pargi ja Reisi</h4>
-              <p>
-                P&R parklates on parkimine tasuta, kui registreerid Ühiskaardiga või valideerid
-                ühistranspordisõidu.
-              </p>
-            </div>
-            <div className="rounded-2xl border border-clay/20 bg-clay/8 p-3">
-              <h4 className="mb-1 text-sm font-bold text-clay">Eraparklad</h4>
-              <p>
-                EuroPark, Snabb, Ühisteenused jt — kontrolli alati kohapealseid märke enne
-                sõidukist eemaldumist. Andmed on orienteeruvad.
+                Rohelised jooned = tasuta tänav · kollased = kellaga · värvilised alad =
+                eraparklad. Otsi aadressi ülevalt.
               </p>
             </div>
           </div>
@@ -713,6 +596,8 @@ export default function App() {
           </form>
         </ModalShell>
       ) : null}
+
+      {!hasGps ? null : null}
     </div>
   )
 }
