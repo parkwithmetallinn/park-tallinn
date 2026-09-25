@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { MapView } from './components/MapView'
+import { MapErrorBoundary } from './components/MapErrorBoundary'
 import { ModalShell } from './components/ModalShell'
 import { generateDenseStreetSpots } from './data/generateSpots'
 import { MOCK_KESKLINN_SPOTS } from './data/mockKesklinn'
@@ -397,6 +398,7 @@ export default function App() {
               <button
                 key={f.id}
                 type="button"
+                data-filter={f.id}
                 onClick={() => setFilter(f.id)}
                 className={`shrink-0 rounded-xl px-3.5 py-1.5 text-xs font-semibold transition ${
                   active ? chrome.chipActive : chrome.chip
@@ -428,23 +430,25 @@ export default function App() {
       </div>
 
       <main className="relative min-h-0 flex-1 overflow-hidden">
-        <MapView
-          spots={allSpots}
-          zones={PAID_ZONES}
-          filter={filter}
-          userLocation={userLocation}
-          flyTarget={flyTarget}
-          flyKey={flyKey}
-          route={route}
-          navigating={navigating}
-          onNavigate={openNav}
-          distanceFrom={userLocation}
-          onZoomChange={(z, mode) => {
-            setMapZoom(z)
-            setMapMode(mode)
-          }}
-          onViewportStats={setViewportStats}
-        />
+        <MapErrorBoundary>
+          <MapView
+            spots={allSpots}
+            zones={PAID_ZONES}
+            filter={filter}
+            userLocation={userLocation}
+            flyTarget={flyTarget}
+            flyKey={flyKey}
+            route={route}
+            navigating={navigating}
+            onNavigate={openNav}
+            distanceFrom={userLocation}
+            onZoomChange={(z, mode) => {
+              setMapZoom(z)
+              setMapMode(mode)
+            }}
+            onViewportStats={setViewportStats}
+          />
+        </MapErrorBoundary>
 
         {mapMode !== 'street' && !navigating ? (
           <div className="pointer-events-none absolute bottom-20 left-1/2 z-[5] -translate-x-1/2 rounded-full border border-ink/10 bg-paper/95 px-3.5 py-1.5 text-[11px] font-semibold text-ink-soft shadow-md backdrop-blur-sm sm:bottom-24">

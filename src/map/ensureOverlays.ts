@@ -213,6 +213,23 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
         'line-opacity': 0.95,
       },
     })
+    // Invisible wide stroke for easier tapping under 3D pitch
+    map.addLayer({
+      id: 'parking-street-lines-hit',
+      type: 'line',
+      source: PARKING_LINES_SOURCE,
+      minzoom: ZOOM.streetMin,
+      layout: {
+        visibility: 'visible',
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': '#000000',
+        'line-width': 18,
+        'line-opacity': 0,
+      },
+    })
   }
 
   // Point POIs (EV, inva, loading — not curb lines / lot areas)
@@ -314,6 +331,7 @@ const GEOM_LAYER_IDS = [
   PARKING_LOTS_LABEL_LAYER,
   PARKING_LINES_CASING_LAYER,
   PARKING_LINES_LAYER,
+  'parking-street-lines-hit',
 ] as const
 
 export function setParkingLayerVisibility(

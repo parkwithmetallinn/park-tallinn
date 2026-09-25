@@ -33,6 +33,7 @@ import {
   PARKING_LINES_LAYER,
   PARKING_LINES_SOURCE,
   PARKING_LOTS_FILL_LAYER,
+  PARKING_LOTS_LABEL_LAYER,
   PARKING_LOTS_SOURCE,
   streetLineColor,
 } from '../map/streetLineTheme'
@@ -162,7 +163,9 @@ export function MapView({
     let setupDone = false
     const parkingHitLayers = [
       PARKING_LOTS_FILL_LAYER,
+      PARKING_LOTS_LABEL_LAYER,
       PARKING_LINES_LAYER,
+      'parking-street-lines-hit',
       ...PARKING_PROVIDERS.map((k) => PARKING_LAYER_META[k].id),
     ]
 
@@ -319,9 +322,15 @@ export function MapView({
 
     /** Prefer parking features over large paid-zone fills (which would steal the click). */
     const onMapClick = (e: MapLayerMouseEvent) => {
-      const parkingHits = map.queryRenderedFeatures(e.point, {
-        layers: parkingHitLayers.filter((id) => map.getLayer(id)),
-      })
+      // Fat hit box — thin curb lines are hard to hit under 3D pitch
+      const pad = 10
+      const box: [[number, number], [number, number]] = [
+        [e.point.x - pad, e.point.y - pad],
+        [e.point.x + pad, e.point.y + pad],
+      ]
+      const layers = parkingHitLayers.filter((id) => map.getLayer(id))
+      const parkingHits =
+        layers.length > 0 ? map.queryRenderedFeatures(box, { layers }) : []
       const parking = parkingHits.find((f) => f.properties?.id)
       if (parking?.properties?.id) {
         const spot = parkingIndex.getById(String(parking.properties.id))
