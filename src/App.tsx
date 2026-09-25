@@ -87,6 +87,10 @@ export default function App() {
   const [sessionLoading, setSessionLoading] = useState(false)
   const [sessionAction, setSessionAction] = useState<'start' | 'stop' | 'status' | null>(null)
   const [activeSession, setActiveSession] = useState<ActiveParkingSession | null>(null)
+  const [sessionNotice, setSessionNotice] = useState<{
+    kind: 'success' | 'error' | 'info' | 'loading'
+    text: string
+  } | null>(null)
   const [toast, setToast] = useState<ToastState>(null)
   const geoAbort = useRef<AbortController | null>(null)
 
@@ -281,26 +285,36 @@ export default function App() {
     saveActiveSession(session)
   }
 
+  const showSessionFeedback = (
+    kind: 'success' | 'error' | 'info' | 'loading',
+    title: string,
+    detail?: string,
+  ) => {
+    const text = detail ? `${title} — ${detail}` : title
+    setSessionNotice({ kind, text })
+    setToast({ kind, title, detail })
+  }
+
   const beginParkingSession = async () => {
     if (!selected) return
     const zone = selected.zone_code
     const plate = carNumber.trim()
     if (!plate) {
-      setToast({ kind: 'error', title: 'Sisesta auto number' })
+      showSessionFeedback('error', 'Sisesta auto number')
       return
     }
     if (activeSession) {
-      setToast({
-        kind: 'error',
-        title: 'Sessioon juba käib',
-        detail: `Lõpeta enne ${activeSession.carNumber} · ${activeSession.zone}`,
-      })
+      showSessionFeedback(
+        'error',
+        'Sessioon juba käib',
+        `Lõpeta enne ${activeSession.carNumber} · ${activeSession.zone}`,
+      )
       return
     }
 
     setSessionLoading(true)
     setSessionAction('start')
-    setToast({ kind: 'loading', title: 'Alustan parkimissessiooni…', detail: `${plate} · ${zone}` })
+    showSessionFeedback('loading', 'Alustan parkimissessiooni…', `${plate} · ${zone}`)
 
     const result = await startParkingSession({ carNumber: plate, zone })
 
@@ -331,34 +345,30 @@ export default function App() {
       const startedLabel = formatSessionInstant(startedAt)
       if (startedLabel) detailParts.push(startedLabel)
       if (status) detailParts.push(status)
-      setToast({
-        kind: 'success',
-        title: 'Parkimine alanud',
-        detail: detailParts.filter(Boolean).join(' · '),
-      })
+      showSessionFeedback(
+        'success',
+        'Parkimine alanud',
+        detailParts.filter(Boolean).join(' · '),
+      )
     } else {
-      setToast({
-        kind: 'error',
-        title: 'Sessiooni ei alustatud',
-        detail: result.message,
-      })
+      showSessionFeedback('error', 'Sessiooni ei alustatud', result.message)
     }
   }
 
   const endParkingSession = async () => {
     const session = activeSession
     if (!session) {
-      setToast({ kind: 'error', title: 'Aktiivset sessiooni pole' })
+      showSessionFeedback('error', 'Aktiivset sessiooni pole')
       return
     }
 
     setSessionLoading(true)
     setSessionAction('stop')
-    setToast({
-      kind: 'loading',
-      title: 'Lõpetan parkimissessiooni…',
-      detail: `${session.carNumber} · ${session.zone}`,
-    })
+    showSessionFeedback(
+      'loading',
+      'Lõpetan parkimissessiooni…',
+      `${session.carNumber} · ${session.zone}`,
+    )
 
     const result = await stopParkingSession({
       carNumber: session.carNumber,
@@ -378,17 +388,13 @@ export default function App() {
       if (ended) detailParts.push(`lõpp ${ended}`)
       const status = result.sessionDetails?.status
       if (status) detailParts.push(String(status))
-      setToast({
-        kind: 'success',
-        title: 'Parkimine lõpetatud',
-        detail: detailParts.filter(Boolean).join(' · '),
-      })
+      showSessionFeedback(
+        'success',
+        'Parkimine lõpetatud',
+        detailParts.filter(Boolean).join(' · '),
+      )
     } else {
-      setToast({
-        kind: 'error',
-        title: 'Sessiooni ei lõpetatud',
-        detail: result.message,
-      })
+      showSessionFeedback('error', 'Sessiooni ei lõpetatud', result.message)
     }
   }
 
@@ -396,17 +402,17 @@ export default function App() {
     const plate = (carNumber.trim() || activeSession?.carNumber || '').trim()
     const zone = activeSession?.zone || selected?.zone_code || undefined
     if (!plate) {
-      setToast({ kind: 'error', title: 'Sisesta auto number' })
+      showSessionFeedback('error', 'Sisesta auto number')
       return
     }
 
     setSessionLoading(true)
     setSessionAction('status')
-    setToast({
-      kind: 'loading',
-      title: 'Kontrollin parkimise staatust…',
-      detail: zone ? `${plate} · ${zone}` : plate,
-    })
+    showSessionFeedback(
+      'loading',
+      'Kontrollin parkimise staatust…',
+      zone ? `${plate} · ${zone}` : plate,
+    )
 
     const result = await checkParkingStatus({ carNumber: plate, zone })
 
@@ -414,11 +420,7 @@ export default function App() {
     setSessionAction(null)
 
     if (!result.success) {
-      setToast({
-        kind: 'error',
-        title: 'Staatuse päring ebaõnnestus',
-        detail: result.message,
-      })
+      showSessionFeedback('error', 'Staatuse päring ebaõnnestus', result.message)
       return
     }
 
@@ -444,23 +446,23 @@ export default function App() {
       const started = formatSessionInstant(sessionStartIso(details))
       if (started) detailParts.push(`alates ${started}`)
       if (details.status) detailParts.push(String(details.status))
-      setToast({
-        kind: 'success',
-        title: 'Aktiivne parkimine',
-        detail: detailParts.filter(Boolean).join(' · '),
-      })
+      showSessionFeedback(
+        'success',
+        'Aktiivne parkimine',
+        detailParts.filter(Boolean).join(' · '),
+      )
     } else {
       persistActive(null)
       setTimerRunning(false)
       setTimerLabel('Aktiivset sessiooni ei leitud')
       const ended = formatSessionInstant(sessionEndIso(details))
-      setToast({
-        kind: 'info',
-        title: 'Aktiivset parkimist pole',
-        detail: [result.message, ended ? `lõpp ${ended}` : null, details?.status]
+      showSessionFeedback(
+        'info',
+        'Aktiivset parkimist pole',
+        [result.message, ended ? `lõpp ${ended}` : null, details?.status]
           .filter(Boolean)
           .join(' · '),
-      })
+      )
     }
   }
 
@@ -787,6 +789,24 @@ export default function App() {
               Nulli
             </button>
           </div>
+          {sessionNotice ? (
+            <p
+              data-testid="session-notice"
+              className={`mt-2 rounded-xl px-2.5 py-2 text-[11px] font-semibold leading-snug ${
+                sessionNotice.kind === 'success'
+                  ? 'bg-moss/12 text-moss'
+                  : sessionNotice.kind === 'error'
+                    ? 'bg-clay/15 text-clay'
+                    : sessionNotice.kind === 'loading'
+                      ? dark
+                        ? 'bg-white/10 text-white/80'
+                        : 'bg-ink/5 text-ink-soft'
+                      : 'bg-sea/12 text-sea'
+              }`}
+            >
+              {sessionNotice.text}
+            </p>
+          ) : null}
         </div>
       ) : null}
 
@@ -799,6 +819,7 @@ export default function App() {
           sessionLoading={sessionLoading}
           sessionAction={sessionAction}
           activeSession={activeSession}
+          sessionNotice={sessionNotice}
           onClose={closeSheet}
           onStartSession={() => void beginParkingSession()}
           onStopSession={() => void endParkingSession()}

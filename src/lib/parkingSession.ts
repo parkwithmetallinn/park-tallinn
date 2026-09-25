@@ -118,12 +118,21 @@ async function postSession(
 
   if (!res.ok) {
     const normalized = normalizeResponse(parsed, body.action)
-    if (!normalized.success) {
-      return {
-        success: false,
-        message: normalized.message || `Viga ${res.status}`,
-        sessionDetails: normalized.sessionDetails,
-      }
+    const msg =
+      normalized.message === 'Error in workflow'
+        ? 'n8n töövoog ebaõnnestus (serveri viga) — kontrolli webhook’i'
+        : normalized.message || `Viga ${res.status}`
+    return {
+      success: false,
+      message: msg,
+      sessionDetails: normalized.sessionDetails,
+    }
+  }
+
+  if (parsed == null || (typeof parsed === 'object' && parsed !== null && !('success' in (parsed as object)) && !('message' in (parsed as object)))) {
+    return {
+      success: false,
+      message: 'Tühi vastus serverilt',
     }
   }
 

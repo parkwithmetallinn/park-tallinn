@@ -15,6 +15,7 @@ export function ParkingBottomSheet({
   sessionLoading,
   sessionAction,
   activeSession,
+  sessionNotice,
   onClose,
   onStartSession,
   onStopSession,
@@ -29,6 +30,7 @@ export function ParkingBottomSheet({
   /** Which remote action is in flight, if any. */
   sessionAction?: 'start' | 'stop' | 'status' | null
   activeSession?: ActiveParkingSession | null
+  sessionNotice?: { kind: 'success' | 'error' | 'info' | 'loading'; text: string } | null
   onClose: () => void
   onStartSession: () => void
   onStopSession: () => void
@@ -185,6 +187,23 @@ export function ParkingBottomSheet({
               />
               {sessionAction === 'status' ? 'Kontrollin…' : 'Kontrolli staatust'}
             </button>
+
+            {sessionNotice ? (
+              <p
+                data-testid="session-notice"
+                className={`mt-3 rounded-2xl px-3 py-2.5 text-[12px] font-semibold leading-snug ${
+                  sessionNotice.kind === 'success'
+                    ? 'bg-moss/12 text-moss'
+                    : sessionNotice.kind === 'error'
+                      ? 'bg-clay/12 text-clay'
+                      : sessionNotice.kind === 'loading'
+                        ? 'bg-ink/5 text-ink-soft'
+                        : 'bg-sea/12 text-sea'
+                }`}
+              >
+                {sessionNotice.text}
+              </p>
+            ) : null}
           </div>
 
           <p className="text-[10px] font-bold tracking-wider text-ink-soft uppercase">
