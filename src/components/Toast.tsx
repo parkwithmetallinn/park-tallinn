@@ -1,5 +1,5 @@
-import { CheckCircle2, Loader2, X, XCircle } from 'lucide-react'
-import { useEffect } from 'react'
+import { CheckCircle2, Info, Loader2, X, XCircle } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 
 export type ToastKind = 'success' | 'error' | 'info' | 'loading'
 
@@ -9,6 +9,12 @@ export type ToastState = {
   detail?: string
 } | null
 
+const DISMISS_MS: Record<Exclude<ToastKind, 'loading'>, number> = {
+  success: 6500,
+  error: 7500,
+  info: 6500,
+}
+
 export function Toast({
   toast,
   onClose,
@@ -16,11 +22,21 @@ export function Toast({
   toast: ToastState
   onClose: () => void
 }) {
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+
+  // Dismiss based on toast identity (kind+title+detail), not onClose identity —
+  // parent re-renders (GPS / timer) must not reset or clear the toast early.
+  const toastKey = toast
+    ? `${toast.kind}|${toast.title}|${toast.detail ?? ''}`
+    : null
+
   useEffect(() => {
     if (!toast || toast.kind === 'loading') return
-    const t = window.setTimeout(onClose, toast.kind === 'error' ? 6500 : 4200)
+    const ms = DISMISS_MS[toast.kind]
+    const t = window.setTimeout(() => onCloseRef.current(), ms)
     return () => window.clearTimeout(t)
-  }, [toast, onClose])
+  }, [toastKey, toast])
 
   if (!toast) return null
 
@@ -30,7 +46,7 @@ export function Toast({
       : toast.kind === 'error'
         ? 'border-clay/30 bg-clay text-white'
         : toast.kind === 'loading'
-          ? 'border-white/40 bg-white/90 text-ink'
+          ? 'border-white/50 bg-white/95 text-ink'
           : 'border-sea/25 bg-sea text-white'
 
   const Icon =
@@ -40,16 +56,18 @@ export function Toast({
         ? XCircle
         : toast.kind === 'loading'
           ? Loader2
-          : CheckCircle2
+          : Info
 
   return (
     <div
-      className="pointer-events-none absolute inset-x-0 top-[max(5.5rem,env(safe-area-inset-top))] z-[60] flex justify-center px-3 sm:px-4"
+      className="pointer-events-none fixed inset-x-0 top-[max(5.25rem,env(safe-area-inset-top))] z-[200] flex justify-center px-3 sm:px-4"
       role="status"
       aria-live="polite"
+      data-testid="parking-toast"
+      data-toast-kind={toast.kind}
     >
       <div
-        className={`pointer-events-auto animate-slide-up flex max-w-md items-start gap-3 rounded-2xl border px-4 py-3 shadow-lg backdrop-blur-xl ${tone}`}
+        className={`pointer-events-auto animate-slide-up flex max-w-md items-start gap-3 rounded-2xl border px-4 py-3 shadow-[0_12px_40px_rgba(15,23,42,0.28)] backdrop-blur-xl ${tone}`}
       >
         <Icon
           className={`mt-0.5 h-5 w-5 shrink-0 ${toast.kind === 'loading' ? 'animate-spin text-sea' : ''}`}

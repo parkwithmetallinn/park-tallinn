@@ -90,6 +90,8 @@ export default function App() {
   const [toast, setToast] = useState<ToastState>(null)
   const geoAbort = useRef<AbortController | null>(null)
 
+  const dismissToast = useCallback(() => setToast(null), [])
+
   useEffect(() => {
     setCustomSpots(loadCustomSpots())
     setCarNumber(loadCarNumber())
@@ -762,7 +764,7 @@ export default function App() {
         />
       ) : null}
 
-      <Toast toast={toast} onClose={() => setToast(null)} />
+      <Toast toast={toast} onClose={dismissToast} />
 
       {infoOpen ? (
         <ModalShell onClose={() => setInfoOpen(false)} title="Tallinna parkimisreeglid">
