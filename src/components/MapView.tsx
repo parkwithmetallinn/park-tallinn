@@ -160,15 +160,25 @@ export function MapView({
     mapRef.current = map
 
     let setupDone = false
-    const finishSetup = () => {
-      if (setupDone) return
-      setupDone = true
-      ensureParkingOverlaySources(map)
-      map.resize()
-      map.setPitch(NAV_PITCH)
-      setReady(true)
-      void refreshViewport(map)
-      emitZoom(map)
+    const parkingHitLayers = [
+      PARKING_LOTS_FILL_LAYER,
+      PARKING_LINES_LAYER,
+      ...PARKING_PROVIDERS.map((k) => PARKING_LAYER_META[k].id),
+    ]
+
+    const setPointer = () => {
+      map.getCanvas().style.cursor = 'pointer'
+    }
+    const clearPointer = () => {
+      map.getCanvas().style.cursor = ''
+    }
+
+    const bindHover = () => {
+      for (const layerId of [...parkingHitLayers, 'district-fill', 'paid-zones-fill']) {
+        if (!map.getLayer(layerId)) continue
+        map.on('mouseenter', layerId, setPointer)
+        map.on('mouseleave', layerId, clearPointer)
+      }
     }
 
     const emitZoom = (m: MapLibreMapType) => {
@@ -218,6 +228,18 @@ export function MapView({
       })
     }
 
+    const finishSetup = () => {
+      if (setupDone) return
+      setupDone = true
+      ensureParkingOverlaySources(map)
+      bindHover()
+      map.resize()
+      map.setPitch(NAV_PITCH)
+      setReady(true)
+      void refreshViewport(map)
+      emitZoom(map)
+    }
+
     map.once('style.load', finishSetup)
     map.once('load', () => {
       if (map.isStyleLoaded()) finishSetup()
@@ -236,29 +258,6 @@ export function MapView({
     }
     map.on('moveend', scheduleRefresh)
     map.on('zoomend', scheduleRefresh)
-
-    map.on('click', 'district-fill', (e: MapLayerMouseEvent) => {
-      const feature = e.features?.[0]
-      if (!feature || feature.geometry.type !== 'Polygon') return
-      const ring = feature.geometry.coordinates[0]
-      let minX = Infinity
-      let minY = Infinity
-      let maxX = -Infinity
-      let maxY = -Infinity
-      for (const [x, y] of ring) {
-        minX = Math.min(minX, x)
-        maxX = Math.max(maxX, x)
-        minY = Math.min(minY, y)
-        maxY = Math.max(maxY, y)
-      }
-      map.fitBounds(
-        [
-          [minX, minY],
-          [maxX, maxY],
-        ],
-        { padding: 48, duration: 900, pitch: NAV_PITCH, maxZoom: ZOOM.streetMin + 0.6 },
-      )
-    })
 
     const openSpotPopup = (spot: ParkingSpot, lngLat: [number, number]) => {
       popupRef.current?.remove()
@@ -318,55 +317,63 @@ export function MapView({
       })
     }
 
-    const onFeatureClick = (e: MapLayerMouseEvent) => {
-      const f = e.features?.[0]
-      const id = f?.properties?.id as string | undefined
-      if (!id) return
-      const spot = parkingIndex.getById(id)
-      if (!spot) return
-      openSpotPopup(spot, [e.lngLat.lng, e.lngLat.lat])
-    }
-
-    for (const layerKey of PARKING_PROVIDERS) {
-      const layerId = PARKING_LAYER_META[layerKey].id
-      map.on('click', layerId, onFeatureClick)
-      map.on('mouseenter', layerId, () => {
-        map.getCanvas().style.cursor = 'pointer'
+    /** Prefer parking features over large paid-zone fills (which would steal the click). */
+    const onMapClick = (e: MapLayerMouseEvent) => {
+      const parkingHits = map.queryRenderedFeatures(e.point, {
+        layers: parkingHitLayers.filter((id) => map.getLayer(id)),
       })
-      map.on('mouseleave', layerId, () => {
-        map.getCanvas().style.cursor = ''
-      })
-    }
+      const parking = parkingHits.find((f) => f.properties?.id)
+      if (parking?.properties?.id) {
+        const spot = parkingIndex.getById(String(parking.properties.id))
+        if (spot) {
+          openSpotPopup(spot, [e.lngLat.lng, e.lngLat.lat])
+          return
+        }
+      }
 
-    for (const layerId of [PARKING_LINES_LAYER, PARKING_LOTS_FILL_LAYER]) {
-      map.on('click', layerId, onFeatureClick)
-      map.on('mouseenter', layerId, () => {
-        map.getCanvas().style.cursor = 'pointer'
+      const districtHits = map.queryRenderedFeatures(e.point, {
+        layers: map.getLayer('district-fill') ? ['district-fill'] : [],
       })
-      map.on('mouseleave', layerId, () => {
-        map.getCanvas().style.cursor = ''
-      })
-    }
-
-    map.on('mouseenter', 'district-fill', () => {
-      map.getCanvas().style.cursor = 'pointer'
-    })
-    map.on('mouseleave', 'district-fill', () => {
-      map.getCanvas().style.cursor = ''
-    })
-
-    map.on('click', 'paid-zones-fill', (e: MapLayerMouseEvent) => {
-      const f = e.features?.[0]
-      if (!f) return
-      popupRef.current?.remove()
-      const zoneCode = f.properties?.zone_code ? ` · ${f.properties.zone_code}` : ''
-      popupRef.current = new Popup({ offset: 8, className: 'park-popup', maxWidth: '240px' })
-        .setLngLat(e.lngLat)
-        .setHTML(
-          `<div class="ml-popup"><h4>${f.properties?.name ?? ''}${zoneCode}</h4><p class="ml-desc">${f.properties?.note ?? ''}</p></div>`,
+      const district = districtHits[0]
+      if (district && district.geometry.type === 'Polygon') {
+        const ring = district.geometry.coordinates[0]
+        let minX = Infinity
+        let minY = Infinity
+        let maxX = -Infinity
+        let maxY = -Infinity
+        for (const [x, y] of ring) {
+          minX = Math.min(minX, x)
+          maxX = Math.max(maxX, x)
+          minY = Math.min(minY, y)
+          maxY = Math.max(maxY, y)
+        }
+        map.fitBounds(
+          [
+            [minX, minY],
+            [maxX, maxY],
+          ],
+          { padding: 48, duration: 900, pitch: NAV_PITCH, maxZoom: ZOOM.streetMin + 0.6 },
         )
-        .addTo(map)
-    })
+        return
+      }
+
+      const zoneHits = map.queryRenderedFeatures(e.point, {
+        layers: map.getLayer('paid-zones-fill') ? ['paid-zones-fill'] : [],
+      })
+      const zone = zoneHits[0]
+      if (zone) {
+        popupRef.current?.remove()
+        const zoneCode = zone.properties?.zone_code ? ` · ${zone.properties.zone_code}` : ''
+        popupRef.current = new Popup({ offset: 8, className: 'park-popup', maxWidth: '240px' })
+          .setLngLat(e.lngLat)
+          .setHTML(
+            `<div class="ml-popup"><h4>${zone.properties?.name ?? ''}${zoneCode}</h4><p class="ml-desc">${zone.properties?.note ?? ''}</p></div>`,
+          )
+          .addTo(map)
+      }
+    }
+
+    map.on('click', onMapClick)
 
     const ro = new ResizeObserver(() => map.resize())
     ro.observe(containerRef.current)

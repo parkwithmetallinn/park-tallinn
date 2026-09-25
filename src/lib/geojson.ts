@@ -303,7 +303,7 @@ function resolvePolygon(s: ParkingSpot): [number, number][] {
     if (aLat !== bLat || aLng !== bLng) ring.push([aLat, aLng])
     return ring
   }
-  return stubLotPolygon(s.lat, s.lng)
+  return stubLotPolygon(s.lat, s.lng, s.landmark ? 45 : 32, s.landmark ? 35 : 24)
 }
 
 type Feat = {
