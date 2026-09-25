@@ -186,6 +186,25 @@ export default function App() {
     return [...mocks, ...curated, ...custom]
   }, [customSpots])
 
+  // Deep-link: /?spot=<id> opens the parking sheet (no map click needed)
+  const deepLinkApplied = useRef(false)
+  useEffect(() => {
+    if (deepLinkApplied.current || allSpots.length === 0) return
+    const params = new URLSearchParams(window.location.search)
+    const spotId = params.get('spot')?.trim()
+    if (!spotId) return
+    const match = allSpots.find((s) => s.id === spotId)
+    if (!match) return
+    deepLinkApplied.current = true
+    setSelected(match)
+    setFlyTarget([match.lat, match.lng])
+    setFlyZoom(16.5)
+    setFlyKey((k) => k + 1)
+    if (params.get('panel') === '1' || params.get('timer') === '1') {
+      setTimerOpen(true)
+    }
+  }, [allSpots])
+
   useEffect(() => {
     parkingIndex.bulkLoad(allSpots)
   }, [allSpots])
@@ -670,7 +689,7 @@ export default function App() {
         </button>
       </div>
 
-      {/* Compact timer / active session drawer */}
+      {/* Compact timer / parking session control panel */}
       {timerOpen ? (
         <div
           className={`absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-3 z-30 w-[min(100%-5.5rem,20rem)] px-3.5 py-3 sm:left-4 ${panel}`}
@@ -694,6 +713,21 @@ export default function App() {
                 : ''}
             </div>
           ) : null}
+          <label className={`mb-1 block text-[10px] font-semibold ${muted}`}>Auto number</label>
+          <input
+            value={carNumber}
+            onChange={(e) => handleCarNumberChange(e.target.value.toUpperCase())}
+            placeholder="nt 123ABC"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
+            disabled={sessionLoading}
+            className={`mb-2 w-full rounded-xl border px-2.5 py-2 font-mono text-xs font-semibold tracking-wider outline-none focus:ring-2 focus:ring-moss/25 ${
+              dark
+                ? 'border-white/10 bg-white/5 text-white'
+                : 'border-ink/10 bg-white/80 text-ink'
+            }`}
+          />
           <div className="mb-2 flex gap-1">
             {[15, 30, 60, 120].map((m) => (
               <button
@@ -715,6 +749,15 @@ export default function App() {
                 className="flex-1 rounded-xl bg-clay py-2 text-xs font-bold text-white disabled:opacity-55"
               >
                 {sessionAction === 'stop' ? 'Lõpetan…' : 'Lõpeta sessioon'}
+              </button>
+            ) : selected ? (
+              <button
+                type="button"
+                disabled={sessionLoading || carNumber.trim().length < 2}
+                onClick={() => void beginParkingSession()}
+                className="flex-1 rounded-xl bg-moss py-2 text-xs font-bold text-white disabled:opacity-55"
+              >
+                {sessionAction === 'start' ? 'Alustan…' : 'Alusta'}
               </button>
             ) : (
               <button

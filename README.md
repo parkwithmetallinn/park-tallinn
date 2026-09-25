@@ -42,3 +42,7 @@ Bottom sheet / kellapaneel saadavad POST:
 - **status** — kontrolli aktiivset parkimist (**Kontrolli staatust** / **Staatus**)
 
 Vastus: `{ success, message, sessionDetails }` — kuvatakse toast’ina. CORS-probleemi korral kasutatakse `/api/parkimine` proxy’t.
+
+Deep-link testimiseks (ilma kaardiklõpsuta):
+
+`http://127.0.0.1:43127/?spot=ev-ignitis-ahtri`
