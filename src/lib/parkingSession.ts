@@ -1,6 +1,11 @@
 /**
  * Parking session API — n8n webhook backend.
- * POST { action, carNumber, zone } → { success, message, sessionDetails }
+ * POST { action, carNumber?, zone? } → { success, message, sessionDetails }
+ *
+ * Actions:
+ * - start  — requires carNumber + zone
+ * - stop   — requires carNumber + zone
+ * - status — checks active parking (carNumber recommended; zone optional)
  */
 
 export const PARKING_WEBHOOK_URL =
@@ -10,12 +15,12 @@ export const PARKING_WEBHOOK_URL =
 /** Same-origin proxy path (Vite / Vercel) — used when direct CORS fails. */
 const PARKING_WEBHOOK_PROXY = '/api/parkimine'
 
-export type ParkingSessionAction = 'start' | 'stop'
+export type ParkingSessionAction = 'start' | 'stop' | 'status'
 
 export type ParkingSessionRequest = {
   action: ParkingSessionAction
-  carNumber: string
-  zone: string
+  carNumber?: string
+  zone?: string
 }
 
 export type ParkingSessionDetails = {
@@ -38,7 +43,7 @@ export type ParkingSessionResponse = {
   sessionDetails?: ParkingSessionDetails | null
 }
 
-/** Local snapshot of an ACTIVE backend session (for stop UI). */
+/** Local snapshot of an ACTIVE backend session (for stop / status UI). */
 export type ActiveParkingSession = {
   carNumber: string
   zone: string
@@ -50,6 +55,9 @@ export type ActiveParkingSession = {
 function defaultMessage(action: ParkingSessionAction, success: boolean): string {
   if (action === 'stop') {
     return success ? 'Parkimissessioon lõpetatud' : 'Sessiooni lõpetamine ebaõnnestus'
+  }
+  if (action === 'status') {
+    return success ? 'Staatus kontrollitud' : 'Staatuse päring ebaõnnestus'
   }
   return success ? 'Parkimissessioon alustatud' : 'Sessiooni alustamine ebaõnnestus'
 }
@@ -74,6 +82,15 @@ function normalizeResponse(
   return { success, message, sessionDetails }
 }
 
+function buildPayload(body: ParkingSessionRequest): Record<string, string> {
+  const payload: Record<string, string> = { action: body.action }
+  const plate = body.carNumber?.trim()
+  const zone = body.zone?.trim()
+  if (plate) payload.carNumber = plate.toUpperCase()
+  if (zone) payload.zone = zone
+  return payload
+}
+
 async function postSession(
   url: string,
   body: ParkingSessionRequest,
@@ -85,11 +102,7 @@ async function postSession(
       Accept: 'application/json',
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      action: body.action,
-      carNumber: body.carNumber.trim().toUpperCase(),
-      zone: body.zone.trim(),
-    }),
+    body: JSON.stringify(buildPayload(body)),
     signal,
   })
 
@@ -123,27 +136,38 @@ async function postSession(
   )
 }
 
+function validateRequest(input: ParkingSessionRequest): string | null {
+  const carNumber = input.carNumber?.trim() ?? ''
+  const zone = input.zone?.trim() ?? ''
+
+  if (input.action === 'status') {
+    // Status may be called with plate only; empty body is allowed by backend
+    // but the UI always sends at least carNumber when available.
+    return null
+  }
+
+  if (!carNumber) return 'Sisesta auto number'
+  if (!zone) return 'Tsoon puudub'
+  return null
+}
+
 /**
- * Start or stop a parking session via the n8n webhook.
+ * Send a parking session action via the n8n webhook.
  * Tries the public URL first; falls back to same-origin proxy on network/CORS failure.
  */
 export async function sendParkingSession(
   input: ParkingSessionRequest,
   signal?: AbortSignal,
 ): Promise<ParkingSessionResponse> {
-  const carNumber = input.carNumber.trim()
-  const zone = input.zone.trim()
-  if (!carNumber) {
-    return { success: false, message: 'Sisesta auto number' }
-  }
-  if (!zone) {
-    return { success: false, message: 'Tsoon puudub' }
+  const validationError = validateRequest(input)
+  if (validationError) {
+    return { success: false, message: validationError }
   }
 
   const body: ParkingSessionRequest = {
     action: input.action,
-    carNumber,
-    zone,
+    carNumber: input.carNumber?.trim() || undefined,
+    zone: input.zone?.trim() || undefined,
   }
 
   try {
@@ -161,17 +185,24 @@ export async function sendParkingSession(
 }
 
 export function startParkingSession(
-  input: Omit<ParkingSessionRequest, 'action'>,
+  input: { carNumber: string; zone: string },
   signal?: AbortSignal,
 ): Promise<ParkingSessionResponse> {
   return sendParkingSession({ ...input, action: 'start' }, signal)
 }
 
 export function stopParkingSession(
-  input: Omit<ParkingSessionRequest, 'action'>,
+  input: { carNumber: string; zone: string },
   signal?: AbortSignal,
 ): Promise<ParkingSessionResponse> {
   return sendParkingSession({ ...input, action: 'stop' }, signal)
+}
+
+export function checkParkingStatus(
+  input: { carNumber?: string; zone?: string } = {},
+  signal?: AbortSignal,
+): Promise<ParkingSessionResponse> {
+  return sendParkingSession({ ...input, action: 'status' }, signal)
 }
 
 export function sessionStartIso(details?: ParkingSessionDetails | null): string | undefined {
@@ -197,4 +228,40 @@ export function formatSessionInstant(iso?: string): string | undefined {
     minute: '2-digit',
     second: '2-digit',
   })
+}
+
+/** True when backend sessionDetails look like an active parking session. */
+export function isActiveSessionStatus(
+  details?: ParkingSessionDetails | null,
+): boolean {
+  if (!details) return false
+  const status = String(details.status ?? '').toUpperCase()
+  if (status === 'STOPPED' || status === 'ENDED' || status === 'INACTIVE') {
+    return false
+  }
+  if (status === 'ACTIVE' || status === 'RUNNING' || status === 'STARTED') {
+    return true
+  }
+  // Fallback: has plate + zone and no end time → treat as active
+  return Boolean(
+    (details.carNumber || details.zone) &&
+      !details.endTime &&
+      !details.endedAt,
+  )
+}
+
+export function activeSessionFromDetails(
+  details: ParkingSessionDetails,
+  fallback?: Partial<ActiveParkingSession>,
+): ActiveParkingSession | null {
+  const carNumber = String(details.carNumber ?? fallback?.carNumber ?? '').trim()
+  const zone = String(details.zone ?? fallback?.zone ?? '').trim()
+  if (!carNumber || !zone) return null
+  return {
+    carNumber: carNumber.toUpperCase(),
+    zone,
+    spotName: fallback?.spotName,
+    startedAt: sessionStartIso(details) ?? fallback?.startedAt,
+    status: String(details.status ?? 'ACTIVE'),
+  }
 }

@@ -1,4 +1,4 @@
-import { MapPin, Navigation, Square, X } from 'lucide-react'
+import { MapPin, Navigation, RefreshCw, Square, X } from 'lucide-react'
 import { useState } from 'react'
 import type { ActiveParkingSession } from '../lib/parkingSession'
 import { formatSessionInstant } from '../lib/parkingSession'
@@ -18,6 +18,7 @@ export function ParkingBottomSheet({
   onClose,
   onStartSession,
   onStopSession,
+  onCheckStatus,
   onTimer,
 }: {
   spot: ParkingSpot
@@ -26,11 +27,12 @@ export function ParkingBottomSheet({
   onCarNumberChange: (value: string) => void
   sessionLoading?: boolean
   /** Which remote action is in flight, if any. */
-  sessionAction?: 'start' | 'stop' | null
+  sessionAction?: 'start' | 'stop' | 'status' | null
   activeSession?: ActiveParkingSession | null
   onClose: () => void
   onStartSession: () => void
   onStopSession: () => void
+  onCheckStatus: () => void
   onTimer?: () => void
 }) {
   const links = navLinks(spot.lat, spot.lng)
@@ -167,6 +169,22 @@ export function ParkingBottomSheet({
                 {sessionAction === 'start' ? 'Alustan…' : 'Alusta parkimissessiooni'}
               </button>
             )}
+
+            <button
+              type="button"
+              disabled={sessionLoading || !carOk}
+              onClick={() => {
+                setTouched(true)
+                if (!carOk) return
+                onCheckStatus()
+              }}
+              className="mt-2 flex w-full items-center justify-center gap-2 rounded-2xl border border-sea/25 bg-sea/8 px-4 py-3 text-sm font-bold text-sea transition hover:bg-sea/12 disabled:cursor-not-allowed disabled:opacity-55 active:scale-[0.99]"
+            >
+              <RefreshCw
+                className={`h-4 w-4 ${sessionAction === 'status' ? 'animate-spin' : ''}`}
+              />
+              {sessionAction === 'status' ? 'Kontrollin…' : 'Kontrolli staatust'}
+            </button>
           </div>
 
           <p className="text-[10px] font-bold tracking-wider text-ink-soft uppercase">

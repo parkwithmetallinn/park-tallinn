@@ -23,7 +23,10 @@ import { searchAddress, type GeocodeResult } from './lib/geocode'
 import { normalizeSpot } from './lib/geojson'
 import { formatHMS, minutesFromBadge, TYPE_LABELS } from './lib/parking'
 import {
+  activeSessionFromDetails,
+  checkParkingStatus,
   formatSessionInstant,
+  isActiveSessionStatus,
   sessionEndIso,
   sessionStartIso,
   startParkingSession,
@@ -82,7 +85,7 @@ export default function App() {
   const [timerOpen, setTimerOpen] = useState(false)
   const [carNumber, setCarNumber] = useState('')
   const [sessionLoading, setSessionLoading] = useState(false)
-  const [sessionAction, setSessionAction] = useState<'start' | 'stop' | null>(null)
+  const [sessionAction, setSessionAction] = useState<'start' | 'stop' | 'status' | null>(null)
   const [activeSession, setActiveSession] = useState<ActiveParkingSession | null>(null)
   const [toast, setToast] = useState<ToastState>(null)
   const geoAbort = useRef<AbortController | null>(null)
@@ -364,6 +367,78 @@ export default function App() {
         kind: 'error',
         title: 'Sessiooni ei lõpetatud',
         detail: result.message,
+      })
+    }
+  }
+
+  const refreshParkingStatus = async () => {
+    const plate = (carNumber.trim() || activeSession?.carNumber || '').trim()
+    const zone = activeSession?.zone || selected?.zone_code || undefined
+    if (!plate) {
+      setToast({ kind: 'error', title: 'Sisesta auto number' })
+      return
+    }
+
+    setSessionLoading(true)
+    setSessionAction('status')
+    setToast({
+      kind: 'loading',
+      title: 'Kontrollin parkimise staatust…',
+      detail: zone ? `${plate} · ${zone}` : plate,
+    })
+
+    const result = await checkParkingStatus({ carNumber: plate, zone })
+
+    setSessionLoading(false)
+    setSessionAction(null)
+
+    if (!result.success) {
+      setToast({
+        kind: 'error',
+        title: 'Staatuse päring ebaõnnestus',
+        detail: result.message,
+      })
+      return
+    }
+
+    const details = result.sessionDetails
+    if (isActiveSessionStatus(details) && details) {
+      const synced = activeSessionFromDetails(details, {
+        carNumber: plate,
+        zone,
+        spotName: activeSession?.spotName ?? selected?.name,
+      })
+      if (synced) {
+        persistActive(synced)
+        setTimerLabel(`Sessioon: ${synced.spotName ?? synced.zone} · ${synced.carNumber}`)
+        setTimerOpen(true)
+        if (synced.carNumber && synced.carNumber !== carNumber.trim().toUpperCase()) {
+          setCarNumber(synced.carNumber)
+          saveCarNumber(synced.carNumber)
+        }
+      }
+
+      const detailParts = [result.message]
+      if (synced) detailParts.push(`${synced.carNumber} · ${synced.zone}`)
+      const started = formatSessionInstant(sessionStartIso(details))
+      if (started) detailParts.push(`alates ${started}`)
+      if (details.status) detailParts.push(String(details.status))
+      setToast({
+        kind: 'success',
+        title: 'Aktiivne parkimine',
+        detail: detailParts.filter(Boolean).join(' · '),
+      })
+    } else {
+      persistActive(null)
+      setTimerRunning(false)
+      setTimerLabel('Aktiivset sessiooni ei leitud')
+      const ended = formatSessionInstant(sessionEndIso(details))
+      setToast({
+        kind: 'info',
+        title: 'Aktiivset parkimist pole',
+        detail: [result.message, ended ? `lõpp ${ended}` : null, details?.status]
+          .filter(Boolean)
+          .join(' · '),
       })
     }
   }
@@ -652,6 +727,15 @@ export default function App() {
             )}
             <button
               type="button"
+              disabled={sessionLoading || !(carNumber.trim() || activeSession?.carNumber)}
+              onClick={() => void refreshParkingStatus()}
+              className={`rounded-xl px-3 py-2 text-xs font-bold ${chip} disabled:opacity-55`}
+              title="Kontrolli staatust"
+            >
+              {sessionAction === 'status' ? '…' : 'Staatus'}
+            </button>
+            <button
+              type="button"
               onClick={resetTimer}
               className={`rounded-xl px-3 py-2 text-xs font-bold ${chip}`}
             >
@@ -673,6 +757,7 @@ export default function App() {
           onClose={closeSheet}
           onStartSession={() => void beginParkingSession()}
           onStopSession={() => void endParkingSession()}
+          onCheckStatus={() => void refreshParkingStatus()}
           onTimer={autoTimerFromSpot}
         />
       ) : null}
