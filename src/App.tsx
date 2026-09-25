@@ -15,14 +15,16 @@ import { MapErrorBoundary } from './components/MapErrorBoundary'
 import { MapView } from './components/MapView'
 import { ModalShell } from './components/ModalShell'
 import { ParkingBottomSheet } from './components/ParkingBottomSheet'
+import { Toast, type ToastState } from './components/Toast'
 import { MOCK_KESKLINN_SPOTS } from './data/mockKesklinn'
 import { PARKING_SPOTS, TALLINN_CENTER } from './data/parking'
 import { distanceMeters, formatDistance } from './lib/geo'
 import { searchAddress, type GeocodeResult } from './lib/geocode'
 import { normalizeSpot } from './lib/geojson'
 import { formatHMS, minutesFromBadge, TYPE_LABELS } from './lib/parking'
+import { startParkingSession } from './lib/parkingSession'
 import { parkingIndex } from './lib/spatialIndex'
-import { loadCustomSpots, saveCustomSpot } from './lib/storage'
+import { loadCarNumber, loadCustomSpots, saveCarNumber, saveCustomSpot } from './lib/storage'
 import { PARKING_LAYER_META } from './map/parkingLayers'
 import type { FilterId, ParkingSpot, SpotType } from './types'
 
@@ -64,10 +66,14 @@ export default function App() {
   const [timerRunning, setTimerRunning] = useState(false)
   const [timerLabel, setTimerLabel] = useState('Määra aeg või vali kellaga koht')
   const [timerOpen, setTimerOpen] = useState(false)
+  const [carNumber, setCarNumber] = useState('')
+  const [sessionLoading, setSessionLoading] = useState(false)
+  const [toast, setToast] = useState<ToastState>(null)
   const geoAbort = useRef<AbortController | null>(null)
 
   useEffect(() => {
     setCustomSpots(loadCustomSpots())
+    setCarNumber(loadCarNumber())
   }, [])
 
   useEffect(() => {
@@ -215,6 +221,54 @@ export default function App() {
     setTimerRunning(true)
     setTimerOpen(true)
     closeSheet()
+  }
+
+  const handleCarNumberChange = (value: string) => {
+    setCarNumber(value)
+    saveCarNumber(value)
+  }
+
+  const beginParkingSession = async () => {
+    if (!selected) return
+    const zone = selected.zone_code
+    const plate = carNumber.trim()
+    if (!plate) {
+      setToast({ kind: 'error', title: 'Sisesta auto number' })
+      return
+    }
+
+    setSessionLoading(true)
+    setToast({ kind: 'loading', title: 'Alustan parkimissessiooni…', detail: `${plate} · ${zone}` })
+
+    const result = await startParkingSession({ carNumber: plate, zone })
+
+    setSessionLoading(false)
+    if (result.success) {
+      const mins = minutesFromBadge(selected.badge) || selected.free_minutes || 60
+      setTimerSeconds(mins * 60)
+      setTimerLabel(`Sessioon: ${selected.name} · ${plate}`)
+      setTimerRunning(true)
+      setTimerOpen(true)
+      closeSheet()
+
+      const detailParts = [result.message]
+      const details = result.sessionDetails
+      if (details?.sessionId) detailParts.push(`ID ${details.sessionId}`)
+      const started = details?.startedAt ?? details?.startTime
+      if (started) detailParts.push(String(started))
+      if (details?.status) detailParts.push(String(details.status))
+      setToast({
+        kind: 'success',
+        title: 'Parkimine alanud',
+        detail: detailParts.filter(Boolean).join(' · '),
+      })
+    } else {
+      setToast({
+        kind: 'error',
+        title: 'Sessiooni ei alustatud',
+        detail: result.message,
+      })
+    }
   }
 
   const submitReport = (e: FormEvent<HTMLFormElement>) => {
@@ -490,10 +544,16 @@ export default function App() {
         <ParkingBottomSheet
           spot={selected}
           distanceLabel={selectedDist}
+          carNumber={carNumber}
+          onCarNumberChange={handleCarNumberChange}
+          sessionLoading={sessionLoading}
           onClose={closeSheet}
+          onStartSession={() => void beginParkingSession()}
           onTimer={autoTimerFromSpot}
         />
       ) : null}
+
+      <Toast toast={toast} onClose={() => setToast(null)} />
 
       {infoOpen ? (
         <ModalShell onClose={() => setInfoOpen(false)} title="Tallinna parkimisreeglid">

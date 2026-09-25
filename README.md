@@ -19,6 +19,14 @@ Ava [http://127.0.0.1:43127](http://127.0.0.1:43127).
 - **Bottom sheet** — Waze, Google Maps, Apple Maps navigeerimine
 - **Floating glass UI** — ümarad paneelid + backdrop-blur
 
-## Stack
+## Parkimissessioon (n8n)
 
-Vite · React · TypeScript · Tailwind · MapLibre GL
+Bottom sheet → **Alusta parkimissessiooni** saadab POST:
+
+`https://mairon8n.app.n8n.cloud/webhook/parkimine`
+
+```json
+{ "carNumber": "123ABC", "zone": "KESKLINN" }
+```
+
+Vastus: `{ success, message, sessionDetails }` — kuvatakse toast’ina. CORS-probleemi korral kasutatakse `/api/parkimine` proxy’t.

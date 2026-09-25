@@ -1,4 +1,5 @@
 import { MapPin, Navigation, X } from 'lucide-react'
+import { useState } from 'react'
 import type { ParkingSpot } from '../types'
 import { navLinks } from '../lib/geocode'
 import { PARKING_LAYER_META } from '../map/parkingLayers'
@@ -7,12 +8,20 @@ import { streetLineColor } from '../map/streetLineTheme'
 export function ParkingBottomSheet({
   spot,
   distanceLabel,
+  carNumber,
+  onCarNumberChange,
+  sessionLoading,
   onClose,
+  onStartSession,
   onTimer,
 }: {
   spot: ParkingSpot
   distanceLabel?: string | null
+  carNumber: string
+  onCarNumberChange: (value: string) => void
+  sessionLoading?: boolean
   onClose: () => void
+  onStartSession: () => void
   onTimer?: () => void
 }) {
   const links = navLinks(spot.lat, spot.lng)
@@ -24,6 +33,8 @@ export function ParkingBottomSheet({
     spot.price_per_hour > 0 ? `${spot.price_per_hour.toFixed(2)} €/h` : 'Tasuta'
   const free =
     spot.free_minutes > 0 ? `${spot.free_minutes} min tasuta` : null
+  const [touched, setTouched] = useState(false)
+  const carOk = carNumber.trim().length >= 2
 
   return (
     <div
@@ -75,7 +86,45 @@ export function ParkingBottomSheet({
           <p className="leading-relaxed text-ink-soft/90">{spot.desc}</p>
         </div>
 
-        <div className="space-y-2 border-t border-ink/6 px-5 py-4">
+        <div className="space-y-3 border-t border-ink/6 px-5 py-4">
+          <div>
+            <p className="mb-2 text-[10px] font-bold tracking-wider text-ink-soft uppercase">
+              Alusta parkimist
+            </p>
+            <label className="mb-1 block text-[11px] font-semibold text-ink-soft">
+              Auto number
+            </label>
+            <input
+              value={carNumber}
+              onChange={(e) => onCarNumberChange(e.target.value.toUpperCase())}
+              onBlur={() => setTouched(true)}
+              placeholder="nt 123ABC"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
+              className="w-full rounded-2xl border border-ink/10 bg-white/80 px-3.5 py-3 font-mono text-sm font-semibold tracking-wider text-ink outline-none focus:border-moss/40 focus:ring-2 focus:ring-moss/20"
+            />
+            {touched && !carOk ? (
+              <p className="mt-1 text-[11px] font-medium text-clay">Sisesta kehtiv auto number</p>
+            ) : (
+              <p className="mt-1 text-[11px] text-ink-soft">
+                Tsoon: <span className="font-semibold text-ink">{spot.zone_code}</span>
+              </p>
+            )}
+            <button
+              type="button"
+              disabled={sessionLoading || !carOk}
+              onClick={() => {
+                setTouched(true)
+                if (!carOk) return
+                onStartSession()
+              }}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-moss px-4 py-3.5 text-sm font-bold text-white shadow-md shadow-moss/25 transition hover:bg-moss-deep disabled:cursor-not-allowed disabled:opacity-55 active:scale-[0.99]"
+            >
+              {sessionLoading ? 'Alustan…' : 'Alusta parkimissessiooni'}
+            </button>
+          </div>
+
           <p className="text-[10px] font-bold tracking-wider text-ink-soft uppercase">
             Navigeeri
           </p>
@@ -121,7 +170,7 @@ export function ParkingBottomSheet({
               onClick={onTimer}
               className="mt-1 w-full rounded-2xl border border-sea/25 bg-sea/8 py-2.5 text-xs font-semibold text-sea transition hover:bg-sea/12"
             >
-              Sea parkimiskella taimer
+              Sea ainult kohalik taimer
             </button>
           ) : null}
         </div>

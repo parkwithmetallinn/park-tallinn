@@ -2,6 +2,7 @@ import { normalizeSpot } from './geojson'
 import type { ParkingSpot } from '../types'
 
 const STORAGE_KEY = 'park_tallinn_custom_spots'
+const CAR_NUMBER_KEY = 'park_tallinn_car_number'
 
 export function loadCustomSpots(): ParkingSpot[] {
   try {
@@ -19,4 +20,20 @@ export function saveCustomSpot(spot: ParkingSpot): void {
   const existing = loadCustomSpots()
   existing.push(normalizeSpot(spot))
   localStorage.setItem(STORAGE_KEY, JSON.stringify(existing))
+}
+
+export function loadCarNumber(): string {
+  try {
+    return localStorage.getItem(CAR_NUMBER_KEY)?.trim() ?? ''
+  } catch {
+    return ''
+  }
+}
+
+export function saveCarNumber(value: string): void {
+  try {
+    localStorage.setItem(CAR_NUMBER_KEY, value.trim().toUpperCase())
+  } catch {
+    /* ignore */
+  }
 }

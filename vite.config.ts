@@ -24,6 +24,12 @@ export default defineConfig({
           'User-Agent': 'ParkTallinn/1.0 (parking-map)',
         },
       },
+      // n8n parking session webhook (CORS fallback)
+      '/api/parkimine': {
+        target: 'https://mairon8n.app.n8n.cloud',
+        changeOrigin: true,
+        rewrite: () => '/webhook/parkimine',
+      },
     },
   },
 })

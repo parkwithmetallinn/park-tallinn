@@ -3,6 +3,10 @@
     {
       "source": "/api/nominatim/:path*",
       "destination": "https://nominatim.openstreetmap.org/:path*"
+    },
+    {
+      "source": "/api/parkimine",
+      "destination": "https://mairon8n.app.n8n.cloud/webhook/parkimine"
     }
   ]
 }
