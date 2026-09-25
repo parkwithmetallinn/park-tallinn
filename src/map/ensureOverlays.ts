@@ -213,7 +213,9 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
         'line-opacity': 0.95,
       },
     })
-    // Invisible wide stroke for easier tapping under 3D pitch
+    // Near-invisible wide stroke for easier tapping under 3D pitch.
+    // IMPORTANT: MapLibre omits fully transparent (opacity 0) features from
+    // queryRenderedFeatures — keep a tiny opacity so hits register.
     map.addLayer({
       id: 'parking-street-lines-hit',
       type: 'line',
@@ -226,8 +228,8 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       },
       paint: {
         'line-color': '#000000',
-        'line-width': 18,
-        'line-opacity': 0,
+        'line-width': 22,
+        'line-opacity': 0.01,
       },
     })
   }

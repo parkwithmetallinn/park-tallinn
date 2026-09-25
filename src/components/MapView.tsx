@@ -366,19 +366,22 @@ export function MapView({
         return
       }
 
-      const zoneHits = map.queryRenderedFeatures(e.point, {
-        layers: map.getLayer('paid-zones-fill') ? ['paid-zones-fill'] : [],
-      })
-      const zone = zoneHits[0]
-      if (zone) {
-        popupRef.current?.remove()
-        const zoneCode = zone.properties?.zone_code ? ` · ${zone.properties.zone_code}` : ''
-        popupRef.current = new Popup({ offset: 8, className: 'park-popup', maxWidth: '240px' })
-          .setLngLat(e.lngLat)
-          .setHTML(
-            `<div class="ml-popup"><h4>${zone.properties?.name ?? ''}${zoneCode}</h4><p class="ml-desc">${zone.properties?.note ?? ''}</p></div>`,
-          )
-          .addTo(map)
+      // At street zoom, ignore large paid-zone fills — they drown curb-line clicks.
+      if (map.getZoom() < ZOOM.streetMin && map.getLayer('paid-zones-fill')) {
+        const zoneHits = map.queryRenderedFeatures(e.point, {
+          layers: ['paid-zones-fill'],
+        })
+        const zone = zoneHits[0]
+        if (zone) {
+          popupRef.current?.remove()
+          const zoneCode = zone.properties?.zone_code ? ` · ${zone.properties.zone_code}` : ''
+          popupRef.current = new Popup({ offset: 8, className: 'park-popup', maxWidth: '240px' })
+            .setLngLat(e.lngLat)
+            .setHTML(
+              `<div class="ml-popup"><h4>${zone.properties?.name ?? ''}${zoneCode}</h4><p class="ml-desc">${zone.properties?.note ?? ''}</p></div>`,
+            )
+            .addTo(map)
+        }
       }
     }
 
