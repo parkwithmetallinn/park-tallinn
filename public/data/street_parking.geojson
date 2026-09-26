@@ -1,0 +1,264 @@
+{
+  "type": "FeatureCollection",
+  "name": "tallinn-street-parking",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "street-liivalaia-kesklinn",
+      "properties": {
+        "id": "street-liivalaia-kesklinn",
+        "name": "Liivalaia tn",
+        "street": "Liivalaia tn",
+        "zone_code": "KESKLINN",
+        "zone": "KESKLINN",
+        "rules": "paid",
+        "operator": "Tallinna Linn",
+        "layer": "municipal",
+        "free_minutes": 15,
+        "price_per_hour": 2.5,
+        "badge": "KESKLINN",
+        "address": "Liivalaia tn, Kesklinn",
+        "desc": "Tasuline munitsipaaltänav — teeäärne parkimine Liivalaial."
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [24.7526, 59.43298],
+          [24.7532, 59.43292],
+          [24.7538, 59.43286],
+          [24.7544, 59.43280],
+          [24.7550, 59.43274],
+          [24.7556, 59.43268],
+          [24.7562, 59.43262],
+          [24.7568, 59.43256],
+          [24.7574, 59.43250]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "street-viru-sudalinn",
+      "properties": {
+        "id": "street-viru-sudalinn",
+        "name": "Viru tn",
+        "street": "Viru tn",
+        "zone_code": "SÜDALINN",
+        "zone": "SÜDALINN",
+        "rules": "paid",
+        "operator": "AS Ühisteenused",
+        "layer": "municipal",
+        "free_minutes": 15,
+        "price_per_hour": 4.5,
+        "badge": "SÜDALINN",
+        "address": "Viru tn / Viru väljak, Südalinn",
+        "desc": "Südalinna tasuline teeäär Viru väljaku ääres."
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [24.7526, 59.43655],
+          [24.7530, 59.43658],
+          [24.7534, 59.43662],
+          [24.7538, 59.43666],
+          [24.7542, 59.43670],
+          [24.7546, 59.43674],
+          [24.7550, 59.43678],
+          [24.7554, 59.43682],
+          [24.7558, 59.43686]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "street-harju-clock",
+      "properties": {
+        "id": "street-harju-clock",
+        "name": "Harju tn · 15 min",
+        "street": "Harju tn",
+        "zone_code": "VANALINN",
+        "zone": "CLOCK",
+        "rules": "clock",
+        "operator": "Tallinna Linn",
+        "layer": "timed",
+        "free_minutes": 15,
+        "price_per_hour": 6.0,
+        "badge": "15 min",
+        "address": "Harju tn, Vanalinn",
+        "desc": "Kellaga peatus — esimesed 15 min tasuta."
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [24.7440, 59.43655],
+          [24.7443, 59.43645],
+          [24.7446, 59.43635],
+          [24.7449, 59.43625],
+          [24.7452, 59.43615],
+          [24.7455, 59.43605],
+          [24.7458, 59.43595],
+          [24.74605, 59.43585],
+          [24.7463, 59.43575]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "street-vene-clock",
+      "properties": {
+        "id": "street-vene-clock",
+        "name": "Vene tn · 30 min",
+        "street": "Vene tn",
+        "zone_code": "VANALINN",
+        "zone": "CLOCK",
+        "rules": "clock",
+        "operator": "Tallinna Linn",
+        "layer": "timed",
+        "free_minutes": 30,
+        "price_per_hour": 6.0,
+        "badge": "30 min",
+        "address": "Vene tn, Vanalinn",
+        "desc": "Ajapiiranguga tänavalõik Vanalinnas — 30 min kellaga."
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [24.7478, 59.43835],
+          [24.7481, 59.43822],
+          [24.7484, 59.43810],
+          [24.74865, 59.43797],
+          [24.7489, 59.43785],
+          [24.7491, 59.43772],
+          [24.7493, 59.43760],
+          [24.74945, 59.43747],
+          [24.7496, 59.43735]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "street-kooli-free",
+      "properties": {
+        "id": "street-kooli-free",
+        "name": "Kooli tn",
+        "street": "Kooli tn",
+        "zone_code": "FREE",
+        "zone": "FREE",
+        "rules": "free",
+        "operator": "Tallinna Linn",
+        "layer": "free_street",
+        "free_minutes": 0,
+        "price_per_hour": 0,
+        "badge": "TÄNAV",
+        "address": "Kooli tn, Vanalinn / Toompea serv",
+        "desc": "Tasuta tänavaäär väljaspool tasulist tsooni."
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [24.7397, 59.43970],
+          [24.7400, 59.43955],
+          [24.7403, 59.43940],
+          [24.7406, 59.43925],
+          [24.7409, 59.43910],
+          [24.7412, 59.43897],
+          [24.7415, 59.43885]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "street-ravala-clock",
+      "properties": {
+        "id": "street-ravala-clock",
+        "name": "Rävala pst · 1h",
+        "street": "Rävala pst",
+        "zone_code": "KESKLINN",
+        "zone": "CLOCK",
+        "rules": "clock",
+        "operator": "Tallinna Linn",
+        "layer": "timed",
+        "free_minutes": 60,
+        "price_per_hour": 2.5,
+        "badge": "1h",
+        "address": "Rävala pst, Kesklinn",
+        "desc": "Kesklinna tänav 1h tasuta kellaga, seejärel tariif."
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [24.7546, 59.43420],
+          [24.7551, 59.43402],
+          [24.7556, 59.43385],
+          [24.7561, 59.43367],
+          [24.7566, 59.43350],
+          [24.7570, 59.43332],
+          [24.7574, 59.43315]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "street-estonia-europark",
+      "properties": {
+        "id": "street-estonia-europark",
+        "name": "Estonia pst · EuroPark juurdepääs",
+        "street": "Estonia pst",
+        "zone_code": "EP12",
+        "zone": "EUROPARK",
+        "rules": "paid",
+        "operator": "EuroPark",
+        "layer": "europark",
+        "free_minutes": 0,
+        "price_per_hour": 3.5,
+        "badge": "EuroPark",
+        "address": "Estonia pst, Solaris",
+        "desc": "EuroPark juurdepääsu teeäär Solaris / Estonia puiesteel."
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [24.7488, 59.43355],
+          [24.7494, 59.43362],
+          [24.7500, 59.43370],
+          [24.7506, 59.43380],
+          [24.7512, 59.43390],
+          [24.7518, 59.43400],
+          [24.7524, 59.43410],
+          [24.7530, 59.43418],
+          [24.7535, 59.43425]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "street-ahtri-free-edge",
+      "properties": {
+        "id": "street-ahtri-free-edge",
+        "name": "Ahtri tn serv",
+        "street": "Ahtri tn",
+        "zone_code": "FREE",
+        "zone": "FREE",
+        "rules": "free",
+        "operator": "Tallinna Linn",
+        "layer": "free_street",
+        "free_minutes": 0,
+        "price_per_hour": 0,
+        "badge": "TÄNAV",
+        "address": "Ahtri tn, sadama serv",
+        "desc": "Tasuta teeäär sadama lähistel väljaspool peamist tsooni."
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [24.7608, 59.44010],
+          [24.7612, 59.44018],
+          [24.7616, 59.44026],
+          [24.7620, 59.44034],
+          [24.7624, 59.44042],
+          [24.7628, 59.44050],
+          [24.7632, 59.44058]
+        ]
+      }
+    }
+  ]
+}

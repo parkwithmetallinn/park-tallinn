@@ -101,6 +101,7 @@ export default function App() {
   const [toast, setToast] = useState<ToastState>(null)
   const [pitch3d, setPitch3d] = useState(true)
   const [preciseSpots, setPreciseSpots] = useState<ParkingSpot[]>([])
+  const [streetSpots, setStreetSpots] = useState<ParkingSpot[]>([])
   const geoAbort = useRef<AbortController | null>(null)
 
   const dismissToast = useCallback(() => setToast(null), [])
@@ -198,20 +199,26 @@ export default function App() {
     )
     const mocks = MOCK_KESKLINN_SPOTS.map((s) => normalizeSpot(s))
     const custom = customSpots.map((s) => normalizeSpot(s))
-    // Precise GeoJSON lots take precedence over stub mocks with same footprint names
-    const preciseIds = new Set(preciseSpots.map((s) => s.id))
+    // Precise GeoJSON lots / street lines take precedence over stub mocks
     const mockWithoutDupes = mocks.filter((m) => {
-      if (!m.polygon) return true
-      return !preciseSpots.some(
-        (p) =>
-          p.layer === m.layer &&
-          Math.abs(p.lat - m.lat) < 0.001 &&
-          Math.abs(p.lng - m.lng) < 0.001,
-      )
+      if (m.polygon) {
+        return !preciseSpots.some(
+          (p) =>
+            p.layer === m.layer &&
+            Math.abs(p.lat - m.lat) < 0.001 &&
+            Math.abs(p.lng - m.lng) < 0.001,
+        )
+      }
+      if (m.featureType === 'on-street-line' || m.kind === 'street') {
+        return !streetSpots.some(
+          (s) =>
+            Math.abs(s.lat - m.lat) < 0.0015 && Math.abs(s.lng - m.lng) < 0.0015,
+        )
+      }
+      return true
     })
-    void preciseIds
-    return [...preciseSpots, ...mockWithoutDupes, ...curated, ...custom]
-  }, [customSpots, preciseSpots])
+    return [...preciseSpots, ...streetSpots, ...mockWithoutDupes, ...curated, ...custom]
+  }, [customSpots, preciseSpots, streetSpots])
 
   // Deep-link: /?spot=<id> opens the parking sheet (no map click needed)
   const deepLinkApplied = useRef(false)
@@ -595,6 +602,7 @@ export default function App() {
             onBackgroundClick={dismissMapOverlays}
             onZoomChange={() => {}}
             onPreciseSpotsLoaded={setPreciseSpots}
+            onStreetSpotsLoaded={setStreetSpots}
           />
         </MapErrorBoundary>
       </div>

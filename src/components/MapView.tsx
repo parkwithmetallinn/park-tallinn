@@ -25,6 +25,16 @@ import {
   type PreciseParkingCollection,
   type PreciseParkingFeature,
 } from '../lib/preciseParkingPolygons'
+import {
+  loadStreetParking,
+  STREET_PARKING_HIT_LAYER,
+  STREET_PARKING_LINE_LAYER,
+  STREET_PARKING_SOURCE,
+  streetCollectionToSpots,
+  streetFeatureToSpot,
+  type StreetParkingCollection,
+  type StreetParkingFeature,
+} from '../lib/streetParkingLines'
 import { parkingIndex } from '../lib/spatialIndex'
 import type { DrivingRoute } from '../lib/routing'
 import { createBasemapStyle } from '../map/createBasemapStyle'
@@ -57,6 +67,7 @@ const SELECT_SOURCES = [
   PARKING_LOTS_SOURCE,
   PARKING_VIEWPORT_SOURCE,
   PRECISE_PARKING_SOURCE,
+  STREET_PARKING_SOURCE,
 ] as const
 
 const PRECISE_HIT_LAYERS = [
@@ -67,6 +78,8 @@ const PRECISE_HIT_LAYERS = [
   PRECISE_MULTISTOREY_BADGE_LAYER,
   'parking-fill-underground-hatch',
 ] as const
+
+const STREET_HIT_LAYERS = [STREET_PARKING_LINE_LAYER, STREET_PARKING_HIT_LAYER] as const
 
 function makeUserEl() {
   const wrap = document.createElement('div')
@@ -137,6 +150,7 @@ export function MapView({
   onZoomChange,
   onViewportStats,
   onPreciseSpotsLoaded,
+  onStreetSpotsLoaded,
 }: {
   spots: ParkingSpot[]
   filter: FilterId
@@ -161,6 +175,8 @@ export function MapView({
   onViewportStats?: (stats: { rendered: number; skipped: boolean }) => void
   /** Precise GeoJSON lots registered into the app index. */
   onPreciseSpotsLoaded?: (spots: ParkingSpot[]) => void
+  /** Street LineString parking from GeoJSON. */
+  onStreetSpotsLoaded?: (spots: ParkingSpot[]) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMapType | null>(null)
@@ -170,7 +186,9 @@ export function MapView({
   const onBackgroundClickRef = useRef(onBackgroundClick)
   const onSearchPinClickRef = useRef(onSearchPinClick)
   const onPreciseSpotsLoadedRef = useRef(onPreciseSpotsLoaded)
+  const onStreetSpotsLoadedRef = useRef(onStreetSpotsLoaded)
   const preciseFcRef = useRef<PreciseParkingCollection | null>(null)
+  const streetFcRef = useRef<StreetParkingCollection | null>(null)
   const filterRef = useRef(filter)
   const selectedIdRef = useRef(selectedId)
   const pitch3dRef = useRef(pitch3d)
@@ -182,6 +200,7 @@ export function MapView({
   onBackgroundClickRef.current = onBackgroundClick
   onSearchPinClickRef.current = onSearchPinClick
   onPreciseSpotsLoadedRef.current = onPreciseSpotsLoaded
+  onStreetSpotsLoadedRef.current = onStreetSpotsLoaded
   filterRef.current = filter
   selectedIdRef.current = selectedId
   pitch3dRef.current = pitch3d
@@ -211,6 +230,7 @@ export function MapView({
     let setupDone = false
     const parkingHitLayers = [
       ...PRECISE_HIT_LAYERS,
+      ...STREET_HIT_LAYERS,
       PARKING_LOTS_FILL_LAYER,
       PARKING_LOTS_LABEL_LAYER,
       PARKING_LINES_LAYER,
@@ -278,7 +298,8 @@ export function MapView({
       }
 
       ;(m.getSource(PARKING_VIEWPORT_SOURCE) as GeoJSONSource | undefined)?.setData(geo.points)
-      ;(m.getSource(PARKING_LINES_SOURCE) as GeoJSONSource | undefined)?.setData(geo.lines)
+      // Street lines come only from street_parking.geojson — never invent diagonals
+      ;(m.getSource(PARKING_LINES_SOURCE) as GeoJSONSource | undefined)?.setData(empty)
       // Stub lot polygons stay empty — precise GeoJSON owns lot boundaries
       ;(m.getSource(PARKING_LOTS_SOURCE) as GeoJSONSource | undefined)?.setData(empty)
 
@@ -324,6 +345,20 @@ export function MapView({
         })
         .catch((err) => {
           console.warn('parking_polygons.geojson failed to load', err)
+        })
+
+      void loadStreetParking()
+        .then((fc) => {
+          streetFcRef.current = fc
+          const src = map.getSource(STREET_PARKING_SOURCE) as GeoJSONSource | undefined
+          src?.setData(fc as never)
+          const spots = streetCollectionToSpots(fc)
+          for (const s of spots) parkingIndex.insert(s)
+          onStreetSpotsLoadedRef.current?.(spots)
+          applySelectionHighlight(map, selectedIdRef.current)
+        })
+        .catch((err) => {
+          console.warn('street_parking.geojson failed to load', err)
         })
     }
 
@@ -373,6 +408,34 @@ export function MapView({
             maxZoom: 17.2,
             duration: 900,
             pitch: pitch3dRef.current ? NAV_PITCH : 0,
+            essential: true,
+          })
+        }
+        if (spot) {
+          if (!parkingIndex.getById(spot.id)) parkingIndex.insert(spot)
+          onNavigateRef.current(spot)
+        }
+        return
+      }
+
+      // Street-side curb LineStrings
+      const streetHit = hits.find((f) =>
+        (STREET_HIT_LAYERS as readonly string[]).includes(f.layer?.id ?? ''),
+      )
+      if (streetHit?.properties?.id) {
+        const id = String(streetHit.properties.id)
+        const fromFc = streetFcRef.current?.features.find((f) => f.properties.id === id)
+        const spot =
+          parkingIndex.getById(id) ??
+          (fromFc ? streetFeatureToSpot(fromFc as StreetParkingFeature) : undefined)
+        if (fromFc?.geometry?.coordinates?.length) {
+          const coords = fromFc.geometry.coordinates
+          const mid = coords[Math.floor(coords.length / 2)]
+          map.easeTo({
+            center: [mid[0], mid[1]],
+            zoom: Math.max(map.getZoom(), 16.5),
+            pitch: pitch3dRef.current ? NAV_PITCH : 0,
+            duration: 850,
             essential: true,
           })
         }

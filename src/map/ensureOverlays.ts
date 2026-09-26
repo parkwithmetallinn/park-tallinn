@@ -9,6 +9,12 @@ import {
   PRECISE_PARKING_SOURCE,
 } from '../lib/preciseParkingPolygons'
 import {
+  STREET_PARKING_CASING_LAYER,
+  STREET_PARKING_HIT_LAYER,
+  STREET_PARKING_LINE_LAYER,
+  STREET_PARKING_SOURCE,
+} from '../lib/streetParkingLines'
+import {
   PARKING_LAYER_META,
   PARKING_PROVIDERS,
   PARKING_VIEWPORT_SOURCE,
@@ -107,6 +113,10 @@ function syncLodZoomLimits(map: MapLibreMapType) {
   setMin(PRECISE_OUTLINE_UNDERGROUND_LAYER, ZOOM.lotMin)
   setMin(PRECISE_LABEL_LAYER, ZOOM.lotMin)
   setMin(PRECISE_MULTISTOREY_BADGE_LAYER, ZOOM.lotMin)
+
+  setMin(STREET_PARKING_CASING_LAYER, ZOOM.detailMin)
+  setMin(STREET_PARKING_LINE_LAYER, ZOOM.detailMin)
+  setMin(STREET_PARKING_HIT_LAYER, ZOOM.detailMin)
 
   for (const id of [
     PARKING_LINES_CASING_LAYER,
@@ -405,7 +415,120 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
     })
   }
 
-  // ——— Street curb lines (detail ≥ 15 only) ———
+  // ——— Street-side parking lines from street_parking.geojson (minzoom 15) ———
+  if (!map.getSource(STREET_PARKING_SOURCE)) {
+    map.addSource(STREET_PARKING_SOURCE, {
+      type: 'geojson',
+      promoteId: 'id',
+      data: { type: 'FeatureCollection', features: [] },
+    })
+
+    map.addLayer({
+      id: STREET_PARKING_CASING_LAYER,
+      type: 'line',
+      source: STREET_PARKING_SOURCE,
+      minzoom: ZOOM.detailMin,
+      layout: {
+        visibility: 'visible',
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': '#FFFFFF',
+        'line-width': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          15,
+          5,
+          18,
+          10,
+        ],
+        'line-opacity': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          15,
+          0,
+          15.35,
+          0.35,
+          16,
+          0.75,
+        ],
+      },
+    })
+
+    map.addLayer({
+      id: STREET_PARKING_LINE_LAYER,
+      type: 'line',
+      source: STREET_PARKING_SOURCE,
+      minzoom: ZOOM.detailMin,
+      layout: {
+        visibility: 'visible',
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': ['get', 'color'],
+        // 3px @ z15 → 7px @ z18
+        'line-width': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          15,
+          [
+            'case',
+            ['boolean', ['feature-state', 'selected'], false],
+            4.5,
+            3,
+          ],
+          18,
+          [
+            'case',
+            ['boolean', ['feature-state', 'selected'], false],
+            9,
+            7,
+          ],
+        ] as never,
+        // Completely hidden below 15 (minzoom); fade in 15→16
+        'line-opacity': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          15,
+          0,
+          15.4,
+          0.55,
+          16,
+          [
+            'case',
+            ['boolean', ['feature-state', 'selected'], false],
+            1,
+            0.92,
+          ],
+        ] as never,
+      },
+    })
+
+    map.addLayer({
+      id: STREET_PARKING_HIT_LAYER,
+      type: 'line',
+      source: STREET_PARKING_SOURCE,
+      minzoom: ZOOM.detailMin,
+      layout: {
+        visibility: 'visible',
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': '#000000',
+        'line-width': 22,
+        'line-opacity': 0.01,
+      },
+    })
+  }
+
+  // ——— Legacy viewport street lines (kept empty — GeoJSON owns curb lines) ———
   if (!map.getSource(PARKING_LINES_SOURCE)) {
     map.addSource(PARKING_LINES_SOURCE, {
       type: 'geojson',
@@ -620,6 +743,9 @@ const GEOM_LAYER_IDS = [
   PRECISE_OUTLINE_UNDERGROUND_LAYER,
   PRECISE_LABEL_LAYER,
   PRECISE_MULTISTOREY_BADGE_LAYER,
+  STREET_PARKING_CASING_LAYER,
+  STREET_PARKING_LINE_LAYER,
+  STREET_PARKING_HIT_LAYER,
   PARKING_LINES_CASING_LAYER,
   PARKING_LINES_GLOW_LAYER,
   PARKING_LINES_LAYER,

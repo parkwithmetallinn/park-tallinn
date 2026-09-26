@@ -118,6 +118,17 @@ export function ParkingBottomSheet({
               <MapPin className="h-3.5 w-3.5 shrink-0 opacity-70" />
               {spot.address}
             </p>
+            {spot.featureType === 'on-street-line' || spot.kind === 'street' ? (
+              <p className="mt-2 text-[12px] font-semibold text-[#636366]">
+                Teeäärne tsoon · {spot.zone_code}
+                {spot.free_minutes > 0 ? ` · +${spot.free_minutes} min` : ''}
+                {spot.price_per_hour > 0
+                  ? ` · ${spot.price_per_hour.toFixed(2)} €/h`
+                  : spot.price_per_hour === 0 && spot.free_minutes === 0
+                    ? ' · Tasuta'
+                    : ''}
+              </p>
+            ) : null}
           </div>
           <button
             type="button"
