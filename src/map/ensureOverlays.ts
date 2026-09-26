@@ -58,6 +58,39 @@ const noOverlapSymbol = {
   'symbol-z-order': 'source' as const,
 }
 
+/** Keep LOD zoom gates in sync even when layers already exist (HMR / remount). */
+function syncLodZoomLimits(map: MapLibreMapType) {
+  const setMin = (id: string, z: number) => {
+    if (map.getLayer(id)) map.setLayerZoomRange(id, z, 24)
+  }
+  const setMax = (id: string, z: number) => {
+    if (map.getLayer(id)) map.setLayerZoomRange(id, 0, z)
+  }
+
+  setMax(DISTRICT_FILL_LAYER, ZOOM.lotMin)
+  setMax(DISTRICT_OUTLINE_LAYER, ZOOM.lotMin)
+  setMax(DISTRICT_LABEL_LAYER, ZOOM.lotMin)
+
+  setMin(PARKING_LOTS_FILL_LAYER, ZOOM.lotMin)
+  setMin(PARKING_LOTS_OUTLINE_LAYER, ZOOM.lotMin)
+  setMin(PARKING_LOTS_LABEL_LAYER, ZOOM.lotMin)
+
+  for (const id of [
+    PARKING_LINES_CASING_LAYER,
+    PARKING_LINES_GLOW_LAYER,
+    PARKING_LINES_LAYER,
+    'parking-street-lines-hit',
+  ]) {
+    setMin(id, ZOOM.detailMin)
+  }
+
+  for (const layerKey of PARKING_PROVIDERS) {
+    const meta = PARKING_LAYER_META[layerKey]
+    setMin(meta.id, ZOOM.detailMin)
+    setMin(`${meta.id}-label`, ZOOM.detailMin)
+  }
+}
+
 /** Clean parking overlays — soft fills/lines with selection highlight + LOD. */
 export function ensureParkingOverlaySources(map: MapLibreMapType) {
   // ——— District badges (city macro, zoom < 13) ———
@@ -74,7 +107,7 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       layout: { visibility: 'visible' },
       paint: {
         'fill-color': ['get', 'color'],
-        'fill-opacity': 0.14,
+        'fill-opacity': 0.12,
       },
     })
     map.addLayer({
@@ -89,8 +122,9 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': 1.4,
-        'line-opacity': 0.55,
+        'line-width': 1.2,
+        'line-opacity': 0.4,
+        'line-dasharray': [2, 1.5],
       },
     })
     map.addLayer({
@@ -386,6 +420,8 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       },
     })
   }
+
+  syncLodZoomLimits(map)
 }
 
 const GEOM_LAYER_IDS = [

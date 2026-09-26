@@ -210,6 +210,16 @@ export default function App() {
     setFlyTarget([match.lat, match.lng])
     setFlyZoom(16.5)
     setFlyKey((k) => k + 1)
+    // Drop ?spot= so a hard refresh lands on a clean map (not stuck on deep-link zoom)
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('spot')
+      url.searchParams.delete('panel')
+      url.searchParams.delete('timer')
+      window.history.replaceState({}, '', url.pathname + url.search)
+    } catch {
+      /* ignore */
+    }
     if (params.get('panel') === '1' || params.get('timer') === '1') {
       setTimerOpen(true)
     }
