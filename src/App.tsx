@@ -1,10 +1,10 @@
 import {
+  Box,
   CircleHelp,
   Clock3,
   LocateFixed,
-  MapPin,
+  Map as MapIcon,
   Moon,
-  Navigation,
   Plus,
   Search,
   Sun,
@@ -45,23 +45,20 @@ import {
 import { PARKING_LAYER_META } from './map/parkingLayers'
 import type { FilterId, ParkingSpot, SpotType } from './types'
 
+/** Apple HIG quick filters — primary parking intents */
 const FILTERS: { id: FilterId; label: string; color?: string }[] = [
   { id: 'all', label: 'Kõik' },
-  { id: 'municipal', label: 'Linnatsoon', color: PARKING_LAYER_META.municipal.color },
   { id: 'free_street', label: 'Tasuta', color: PARKING_LAYER_META.free_street.color },
   { id: 'timed', label: 'Kellaga', color: PARKING_LAYER_META.timed.color },
   { id: 'europark', label: 'EuroPark', color: PARKING_LAYER_META.europark.color },
   { id: 'snabb', label: 'Snabb', color: PARKING_LAYER_META.snabb.color },
-  { id: 'citypark', label: 'Citypark', color: PARKING_LAYER_META.citypark.color },
-  { id: 'ev', label: 'EV', color: PARKING_LAYER_META.ev.color },
-  { id: 'inva', label: 'Inva', color: PARKING_LAYER_META.inva.color },
-  { id: 'park_ride', label: 'P&R', color: PARKING_LAYER_META.park_ride.color },
+  { id: 'ev', label: 'Elektriauto', color: PARKING_LAYER_META.ev.color },
 ]
 
 const glass =
-  'rounded-[1.35rem] border border-white/50 bg-white/75 shadow-[0_8px_32px_rgba(15,23,42,0.12)] backdrop-blur-2xl'
+  'rounded-2xl border border-white/55 bg-white/72 shadow-[0_8px_28px_rgba(15,23,42,0.12)] backdrop-blur-md'
 const glassDark =
-  'rounded-[1.35rem] border border-white/10 bg-[#15201b]/80 shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-2xl'
+  'rounded-2xl border border-white/10 bg-[#1C1C1E]/78 shadow-[0_8px_28px_rgba(0,0,0,0.4)] backdrop-blur-md'
 
 export default function App() {
   const [dark, setDark] = useState(false)
@@ -92,6 +89,7 @@ export default function App() {
     text: string
   } | null>(null)
   const [toast, setToast] = useState<ToastState>(null)
+  const [pitch3d, setPitch3d] = useState(true)
   const geoAbort = useRef<AbortController | null>(null)
 
   const dismissToast = useCallback(() => setToast(null), [])
@@ -212,27 +210,6 @@ export default function App() {
   useEffect(() => {
     parkingIndex.bulkLoad(allSpots)
   }, [allSpots])
-
-  const nearest = useMemo(() => {
-    const candidates = allSpots.filter(
-      (s) =>
-        s.landmark &&
-        !s.id.startsWith('gen-') &&
-        !s.id.includes('15min') &&
-        !s.id.includes('center-evening'),
-    )
-    let best: ParkingSpot | null = null
-    let bestD = Infinity
-    for (const spot of candidates) {
-      const d = distanceMeters(userLocation[0], userLocation[1], spot.lat, spot.lng)
-      if (d < bestD) {
-        bestD = d
-        best = spot
-      }
-    }
-    if (!best) return null
-    return { spot: best, dist: formatDistance(bestD) }
-  }, [allSpots, userLocation])
 
   const openSheet = useCallback((spot: ParkingSpot) => {
     setSelected(spot)
@@ -502,18 +479,20 @@ export default function App() {
   }, [dark])
 
   const panel = dark ? glassDark : glass
-  const muted = dark ? 'text-[#9bb0a4]' : 'text-ink-soft'
-  const text = dark ? 'text-[#e8f0eb]' : 'text-ink'
+  const muted = dark ? 'text-[#98989D]' : 'text-[#8E8E93]'
+  const text = dark ? 'text-[#F5F5F7]' : 'text-[#1C1C1E]'
   const chip = dark
-    ? 'bg-white/10 text-[#c9d9d0] hover:bg-white/15'
-    : 'bg-white/60 text-ink-soft hover:bg-white/90'
-  const chipActive = dark ? 'bg-[#e8f0eb] text-[#0f1714]' : 'bg-ink text-paper'
+    ? 'bg-white/10 text-[#EBEBF5] hover:bg-white/16'
+    : 'bg-white/70 text-[#3A3A3C] hover:bg-white'
+  const chipActive = dark ? 'bg-white text-[#1C1C1E]' : 'bg-[#1C1C1E] text-white'
 
   const selectedDist = selected
     ? formatDistance(
         distanceMeters(userLocation[0], userLocation[1], selected.lat, selected.lng),
       )
     : null
+
+  const fabClass = `flex h-[52px] w-[52px] items-center justify-center rounded-full ${panel} ${text} shadow-[0_4px_16px_rgba(15,23,42,0.14)] transition active:scale-95`
 
   return (
     <div className={`relative h-full overflow-hidden ${dark ? 'bg-[#0f1714]' : 'bg-transparent'}`}>
@@ -527,6 +506,8 @@ export default function App() {
             flyTarget={flyTarget}
             flyKey={flyKey}
             flyZoom={flyZoom}
+            pitch3d={pitch3d}
+            selectedId={selected?.id ?? null}
             route={null}
             navigating={false}
             onNavigate={openSheet}
@@ -535,97 +516,83 @@ export default function App() {
         </MapErrorBoundary>
       </div>
 
-      {/* Floating top chrome */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-4">
-        <div className="pointer-events-auto mx-auto max-w-lg space-y-2.5">
-          <div className={`flex items-center gap-2.5 px-3 py-2.5 ${panel}`}>
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-moss text-white shadow-md shadow-moss/25">
-              <MapPin className="h-5 w-5" strokeWidth={2.4} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <h1 className={`font-display text-xl leading-none tracking-tight ${text}`}>
-                Park Tallinn
-              </h1>
-              <p className={`mt-0.5 text-[11px] font-medium ${muted}`}>Tasuta · kellaga · P&R</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setInfoOpen(true)}
-              className={`rounded-xl p-2 transition ${chip}`}
-              title="Reeglid"
-            >
-              <CircleHelp className="h-4.5 w-4.5 h-5 w-5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setDark((d) => !d)}
-              className={`rounded-xl p-2 transition ${chip}`}
-              title="Hele / tume"
-            >
-              {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-            </button>
-            <button
-              type="button"
-              onClick={recenter}
-              className="rounded-xl bg-sea p-2 text-white shadow-md shadow-sea/25 transition hover:brightness-110"
-              title="Minu asukoht"
-            >
-              <LocateFixed className="h-5 w-5" />
-            </button>
-          </div>
-
-          <div className={`relative px-1 py-1 ${panel}`}>
-            <div className="relative">
-              <Search
-                className={`pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 ${muted} opacity-70`}
-              />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Otsi aadressi (nt Estonia pst 1)…"
-                className={`w-full rounded-[1.1rem] border-0 bg-transparent py-3 pr-10 pl-10 text-sm outline-none ${text} placeholder:opacity-45`}
-                autoComplete="off"
-                enterKeyHint="search"
-              />
-              {query ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuery('')
-                    setGeoResults([])
-                  }}
-                  className={`absolute top-1/2 right-3 -translate-y-1/2 ${muted}`}
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              ) : null}
+      {/* Top floating search + filter pills (Apple HIG) */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 px-3 pt-[max(0.65rem,env(safe-area-inset-top))] sm:px-4">
+        <div className="pointer-events-auto mx-auto max-w-lg space-y-2">
+          <div className={`relative ${panel}`}>
+            <div className="flex items-center gap-1 px-2 py-1.5">
+              <div className="relative min-w-0 flex-1">
+                <Search
+                  className={`pointer-events-none absolute top-1/2 left-3 h-[18px] w-[18px] -translate-y-1/2 ${muted}`}
+                  strokeWidth={2.2}
+                />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Otsi aadressi või kohta"
+                  className={`w-full rounded-2xl border-0 bg-transparent py-3 pr-10 pl-10 text-[16px] outline-none ${text} placeholder:text-[#8E8E93]`}
+                  autoComplete="off"
+                  enterKeyHint="search"
+                />
+                {query ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuery('')
+                      setGeoResults([])
+                    }}
+                    className={`absolute top-1/2 right-2 -translate-y-1/2 rounded-full p-1.5 ${muted} bg-black/5`}
+                    aria-label="Tühjenda"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => setInfoOpen(true)}
+                className={`rounded-full p-2.5 ${chip}`}
+                title="Reeglid"
+              >
+                <CircleHelp className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setDark((d) => !d)}
+                className={`rounded-full p-2.5 ${chip}`}
+                title="Hele / tume"
+              >
+                {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </button>
             </div>
 
             {(geoLoading || geoResults.length > 0 || geoError) && query.trim().length >= 3 ? (
-              <div className="mt-1 max-h-52 overflow-y-auto border-t border-ink/6 px-1 py-1">
+              <div className="max-h-52 overflow-y-auto border-t border-black/6 px-1 py-1">
                 {geoLoading ? (
-                  <p className={`px-3 py-2 text-xs ${muted}`}>Otsin aadresse…</p>
+                  <p className={`px-3 py-2.5 text-[13px] ${muted}`}>Otsin…</p>
                 ) : null}
-                {geoError ? <p className="px-3 py-2 text-xs text-clay">{geoError}</p> : null}
+                {geoError ? (
+                  <p className="px-3 py-2.5 text-[13px] text-[#FF3B30]">{geoError}</p>
+                ) : null}
                 {geoResults.map((r) => (
                   <button
                     key={r.id}
                     type="button"
                     onClick={() => flyToGeocode(r)}
-                    className={`flex w-full items-start gap-2 rounded-xl px-3 py-2.5 text-left transition hover:bg-moss/8 ${text}`}
+                    className={`flex w-full items-start gap-2.5 rounded-xl px-3 py-2.5 text-left transition hover:bg-black/4 ${text}`}
                   >
-                    <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-moss" />
-                    <span className="text-xs leading-snug font-medium">{r.label}</span>
+                    <Search className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#007AFF]" />
+                    <span className="text-[14px] leading-snug font-medium">{r.label}</span>
                   </button>
                 ))}
                 {!geoLoading && !geoError && geoResults.length === 0 ? (
-                  <p className={`px-3 py-2 text-xs ${muted}`}>Tulemusi ei leitud</p>
+                  <p className={`px-3 py-2.5 text-[13px] ${muted}`}>Tulemusi ei leitud</p>
                 ) : null}
               </div>
             ) : null}
           </div>
 
-          <div className={`no-scrollbar flex gap-1.5 overflow-x-auto px-2 py-2 ${panel}`}>
+          <div className="no-scrollbar flex gap-2 overflow-x-auto px-0.5 py-0.5">
             {FILTERS.map((f) => {
               const active = filter === f.id
               return (
@@ -634,13 +601,13 @@ export default function App() {
                   type="button"
                   data-filter={f.id}
                   onClick={() => setFilter(f.id)}
-                  className={`shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition ${
-                    active ? chipActive : chip
+                  className={`shrink-0 rounded-full px-4 py-2 text-[13px] font-semibold shadow-sm transition active:scale-[0.97] ${
+                    active ? chipActive : `${panel} ${chip}`
                   }`}
                 >
                   {f.color && !active ? (
                     <span
-                      className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full"
+                      className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle"
                       style={{ backgroundColor: f.color }}
                     />
                   ) : null}
@@ -649,45 +616,51 @@ export default function App() {
               )
             })}
           </div>
-
-          {nearest ? (
-            <button
-              type="button"
-              onClick={() => openSheet(nearest.spot)}
-              className="flex w-full items-center justify-between rounded-[1.35rem] bg-gradient-to-r from-moss to-sea px-4 py-2.5 text-left text-white shadow-lg shadow-moss/25 transition hover:brightness-105"
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                <Navigation className="h-4 w-4 shrink-0 opacity-90" />
-                <span className="truncate text-sm font-semibold">
-                  {nearest.spot.name} · {nearest.dist}
-                </span>
-              </span>
-              <span className="shrink-0 text-xs font-bold opacity-90">Ava →</span>
-            </button>
-          ) : null}
         </div>
       </div>
 
-      {/* Floating actions */}
-      <div className="absolute right-3 bottom-[max(5.5rem,env(safe-area-inset-bottom))] z-20 flex flex-col gap-2 sm:right-4">
+      {/* Floating Action Buttons — location + 3D */}
+      <div className="absolute right-3 bottom-[max(6.5rem,env(safe-area-inset-bottom))] z-20 flex flex-col gap-2.5 sm:right-4">
+        <button
+          type="button"
+          onClick={recenter}
+          className={fabClass}
+          title="Minu asukoht"
+          aria-label="Minu asukoht"
+        >
+          <LocateFixed className={`h-[22px] w-[22px] ${hasGps ? 'text-[#007AFF]' : muted}`} />
+        </button>
+        <button
+          type="button"
+          onClick={() => setPitch3d((v) => !v)}
+          className={fabClass}
+          title={pitch3d ? '2D vaade' : '3D vaade'}
+          aria-label={pitch3d ? '2D vaade' : '3D vaade'}
+        >
+          {pitch3d ? (
+            <MapIcon className="h-[22px] w-[22px] text-[#007AFF]" />
+          ) : (
+            <Box className="h-[22px] w-[22px] text-[#007AFF]" />
+          )}
+        </button>
         <button
           type="button"
           onClick={() => setTimerOpen((o) => !o)}
-          className={`relative flex h-12 w-12 items-center justify-center rounded-2xl ${panel} ${text} transition hover:scale-105`}
+          className={`relative ${fabClass}`}
           title={activeSession ? 'Aktiivne sessioon' : 'Parkimiskell'}
         >
-          <Clock3 className={`h-5 w-5 ${activeSession ? 'text-moss' : 'text-sea'}`} />
+          <Clock3 className={`h-[22px] w-[22px] ${activeSession ? 'text-[#34C759]' : muted}`} />
           {activeSession ? (
-            <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-moss ring-2 ring-white" />
+            <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-[#34C759] ring-2 ring-white" />
           ) : null}
         </button>
         <button
           type="button"
           onClick={() => setReportOpen(true)}
-          className="flex h-12 w-12 items-center justify-center rounded-2xl bg-moss text-white shadow-lg shadow-moss/30 transition hover:scale-105 hover:bg-moss-deep"
+          className="flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[#34C759] text-white shadow-[0_4px_16px_rgba(52,199,89,0.35)] transition active:scale-95"
           title="Lisa koht"
         >
-          <Plus className="h-5 w-5" />
+          <Plus className="h-6 w-6" strokeWidth={2.4} />
         </button>
       </div>
 

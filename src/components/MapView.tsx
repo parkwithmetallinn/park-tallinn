@@ -2,7 +2,6 @@ import {
   GeoJSONSource,
   Map as MapLibreMap,
   Marker,
-  NavigationControl,
   setWorkerUrl,
   type Map as MapLibreMapType,
   type MapLayerMouseEvent,
@@ -38,6 +37,8 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 
 setWorkerUrl(maplibreWorker)
 
+const SELECT_SOURCES = [PARKING_LINES_SOURCE, PARKING_LOTS_SOURCE, PARKING_VIEWPORT_SOURCE] as const
+
 function makeUserEl() {
   const wrap = document.createElement('div')
   wrap.className = 'user-location-wrap'
@@ -51,6 +52,30 @@ function filterToLayers(filter: FilterId): ParkingLayerKey[] | 'all' {
   return 'all'
 }
 
+function applySelectionHighlight(map: MapLibreMapType, selectedId: string | null) {
+  const prev = (map as MapLibreMapType & { __selectedId?: string | null }).__selectedId
+  if (prev) {
+    for (const source of SELECT_SOURCES) {
+      if (!map.getSource(source)) continue
+      try {
+        map.setFeatureState({ source, id: prev }, { selected: false })
+      } catch {
+        /* feature may be gone after data refresh */
+      }
+    }
+  }
+  ;(map as MapLibreMapType & { __selectedId?: string | null }).__selectedId = selectedId
+  if (!selectedId) return
+  for (const source of SELECT_SOURCES) {
+    if (!map.getSource(source)) continue
+    try {
+      map.setFeatureState({ source, id: selectedId }, { selected: true })
+    } catch {
+      /* ok — feature not in this source */
+    }
+  }
+}
+
 export function MapView({
   spots,
   filter,
@@ -58,6 +83,8 @@ export function MapView({
   flyTarget,
   flyKey,
   flyZoom,
+  pitch3d = true,
+  selectedId = null,
   route,
   navigating,
   onNavigate,
@@ -70,6 +97,9 @@ export function MapView({
   flyTarget: [number, number] | null
   flyKey: number
   flyZoom?: number
+  /** When true, use Apple Maps–style pitched 3D; when false, flat 2D. */
+  pitch3d?: boolean
+  selectedId?: string | null
   route: DrivingRoute | null
   navigating: boolean
   onNavigate: (spot: ParkingSpot) => void
@@ -81,11 +111,15 @@ export function MapView({
   const userMarkerRef = useRef<Marker | null>(null)
   const onNavigateRef = useRef(onNavigate)
   const filterRef = useRef(filter)
+  const selectedIdRef = useRef(selectedId)
+  const pitch3dRef = useRef(pitch3d)
   const loadGenRef = useRef(0)
   const [ready, setReady] = useState(false)
 
   onNavigateRef.current = onNavigate
   filterRef.current = filter
+  selectedIdRef.current = selectedId
+  pitch3dRef.current = pitch3d
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -95,8 +129,8 @@ export function MapView({
       style: createBasemapStyle(),
       center: [24.7535, 59.437],
       zoom: 14.2,
-      pitch: NAV_PITCH,
-      bearing: -22,
+      pitch: pitch3dRef.current ? NAV_PITCH : 0,
+      bearing: pitch3dRef.current ? -22 : 0,
       maxPitch: 70,
       attributionControl: { compact: true },
       canvasContextAttributes: {
@@ -106,10 +140,6 @@ export function MapView({
       },
     })
 
-    map.addControl(
-      new NavigationControl({ visualizePitch: true, showCompass: true }),
-      'bottom-right',
-    )
     mapRef.current = map
 
     let setupDone = false
@@ -174,6 +204,9 @@ export function MapView({
       ;(m.getSource(PARKING_LINES_SOURCE) as GeoJSONSource | undefined)?.setData(geo.lines)
       ;(m.getSource(PARKING_LOTS_SOURCE) as GeoJSONSource | undefined)?.setData(geo.polygons)
 
+      // setData clears feature-state — re-apply selection highlight
+      applySelectionHighlight(m, selectedIdRef.current)
+
       onViewportStats?.({
         rendered: visibleSpots.length,
         skipped: result.skippedForZoom || result.skippedForExtent,
@@ -186,7 +219,7 @@ export function MapView({
       ensureParkingOverlaySources(map)
       bindHover()
       map.resize()
-      map.setPitch(NAV_PITCH)
+      map.setPitch(pitch3dRef.current ? NAV_PITCH : 0)
       setReady(true)
       void refreshViewport(map)
       emitZoom(map)
@@ -244,7 +277,6 @@ export function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Keep index in sync — App also bulkLoads; spots prop used for filter refresh only
   useEffect(() => {
     void spots
   }, [spots])
@@ -288,10 +320,26 @@ export function MapView({
     map.easeTo({
       center: [flyTarget[1], flyTarget[0]],
       zoom: flyZoom ?? Math.max(map.getZoom(), ZOOM.streetMin + 0.8),
-      pitch: NAV_PITCH,
+      pitch: pitch3dRef.current ? NAV_PITCH : 0,
       duration: 1200,
     })
   }, [flyTarget, flyKey, flyZoom, ready])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    map.easeTo({
+      pitch: pitch3d ? NAV_PITCH : 0,
+      bearing: pitch3d ? map.getBearing() || -22 : 0,
+      duration: 700,
+    })
+  }, [pitch3d, ready])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    applySelectionHighlight(map, selectedId)
+  }, [selectedId, ready])
 
   useEffect(() => {
     const map = mapRef.current

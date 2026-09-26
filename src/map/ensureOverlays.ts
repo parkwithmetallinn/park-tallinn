@@ -6,6 +6,7 @@ import {
 } from './parkingLayers'
 import {
   PARKING_LINES_CASING_LAYER,
+  PARKING_LINES_GLOW_LAYER,
   PARKING_LINES_LAYER,
   PARKING_LINES_SOURCE,
   PARKING_LOTS_FILL_LAYER,
@@ -17,11 +18,38 @@ import { ZOOM } from './zoom'
 
 const ROUTE_SOURCE = 'nav-route'
 
-/** Clean parking overlays only — no district hexes / paid-zone debug fills. */
+const selectedFillOpacity = [
+  'case',
+  ['boolean', ['feature-state', 'selected'], false],
+  0.58,
+  0.26,
+]
+
+const selectedLineWidth = [
+  'interpolate',
+  ['linear'],
+  ['zoom'],
+  14,
+  ['case', ['boolean', ['feature-state', 'selected'], false], 6.5, 3.2],
+  17,
+  ['case', ['boolean', ['feature-state', 'selected'], false], 10, 5.5],
+  18,
+  ['case', ['boolean', ['feature-state', 'selected'], false], 12, 7],
+]
+
+const selectedLineOpacity = [
+  'case',
+  ['boolean', ['feature-state', 'selected'], false],
+  1,
+  0.78,
+]
+
+/** Clean parking overlays — soft fills/lines with selection highlight. */
 export function ensureParkingOverlaySources(map: MapLibreMapType) {
   if (!map.getSource(PARKING_LOTS_SOURCE)) {
     map.addSource(PARKING_LOTS_SOURCE, {
       type: 'geojson',
+      promoteId: 'id',
       data: { type: 'FeatureCollection', features: [] },
     })
     map.addLayer({
@@ -32,7 +60,7 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       layout: { visibility: 'visible' },
       paint: {
         'fill-color': ['get', 'color'],
-        'fill-opacity': 0.42,
+        'fill-opacity': selectedFillOpacity as never,
       },
     })
     map.addLayer({
@@ -43,8 +71,16 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       layout: { visibility: 'visible' },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': ['interpolate', ['linear'], ['zoom'], 14, 1.5, 17, 2.5],
-        'line-opacity': 0.95,
+        'line-width': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          14,
+          ['case', ['boolean', ['feature-state', 'selected'], false], 2.8, 1.2],
+          17,
+          ['case', ['boolean', ['feature-state', 'selected'], false], 4, 2],
+        ] as never,
+        'line-opacity': selectedLineOpacity as never,
       },
     })
     map.addLayer({
@@ -70,6 +106,7 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
   if (!map.getSource(PARKING_LINES_SOURCE)) {
     map.addSource(PARKING_LINES_SOURCE, {
       type: 'geojson',
+      promoteId: 'id',
       data: { type: 'FeatureCollection', features: [] },
     })
     map.addLayer({
@@ -84,8 +121,38 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       },
       paint: {
         'line-color': '#FFFFFF',
-        'line-width': ['interpolate', ['linear'], ['zoom'], 14, 5, 17, 10, 18, 13],
-        'line-opacity': 0.9,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 14, 5, 17, 9, 18, 12],
+        'line-opacity': 0.72,
+      },
+    })
+    map.addLayer({
+      id: PARKING_LINES_GLOW_LAYER,
+      type: 'line',
+      source: PARKING_LINES_SOURCE,
+      minzoom: ZOOM.streetMin,
+      layout: {
+        visibility: 'visible',
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-width': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          14,
+          ['case', ['boolean', ['feature-state', 'selected'], false], 14, 0],
+          17,
+          ['case', ['boolean', ['feature-state', 'selected'], false], 20, 0],
+        ] as never,
+        'line-opacity': [
+          'case',
+          ['boolean', ['feature-state', 'selected'], false],
+          0.28,
+          0,
+        ] as never,
+        'line-blur': 4,
       },
     })
     map.addLayer({
@@ -100,8 +167,8 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': ['interpolate', ['linear'], ['zoom'], 14, 3.5, 17, 6, 18, 8],
-        'line-opacity': 0.95,
+        'line-width': selectedLineWidth as never,
+        'line-opacity': selectedLineOpacity as never,
       },
     })
     map.addLayer({
@@ -125,6 +192,7 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
   if (!map.getSource(PARKING_VIEWPORT_SOURCE)) {
     map.addSource(PARKING_VIEWPORT_SOURCE, {
       type: 'geojson',
+      promoteId: 'id',
       data: { type: 'FeatureCollection', features: [] },
     })
 
@@ -148,13 +216,33 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
             ['linear'],
             ['zoom'],
             14,
-            meta.circleRadius * 0.9,
+            [
+              'case',
+              ['boolean', ['feature-state', 'selected'], false],
+              meta.circleRadius * 1.25,
+              meta.circleRadius * 0.85,
+            ],
             17,
-            meta.circleRadius * 1.3,
-          ],
-          'circle-stroke-width': 2,
+            [
+              'case',
+              ['boolean', ['feature-state', 'selected'], false],
+              meta.circleRadius * 1.7,
+              meta.circleRadius * 1.2,
+            ],
+          ] as never,
+          'circle-stroke-width': [
+            'case',
+            ['boolean', ['feature-state', 'selected'], false],
+            3.5,
+            2,
+          ] as never,
           'circle-stroke-color': '#ffffff',
-          'circle-opacity': 0.95,
+          'circle-opacity': [
+            'case',
+            ['boolean', ['feature-state', 'selected'], false],
+            1,
+            0.82,
+          ] as never,
         },
       })
       map.addLayer({
@@ -195,9 +283,9 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       source: ROUTE_SOURCE,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': '#6B21A8',
+        'line-color': '#5E5CE6',
         'line-width': 14,
-        'line-opacity': 0.9,
+        'line-opacity': 0.85,
       },
     })
     map.addLayer({
@@ -219,6 +307,7 @@ const GEOM_LAYER_IDS = [
   PARKING_LOTS_OUTLINE_LAYER,
   PARKING_LOTS_LABEL_LAYER,
   PARKING_LINES_CASING_LAYER,
+  PARKING_LINES_GLOW_LAYER,
   PARKING_LINES_LAYER,
   'parking-street-lines-hit',
 ] as const
