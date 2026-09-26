@@ -1,6 +1,14 @@
 import type { Map as MapLibreMapType } from 'maplibre-gl'
 import { districtsToGeoJSON } from '../lib/districtsGeoJSON'
 import {
+  PRECISE_FILL_LAYER,
+  PRECISE_LABEL_LAYER,
+  PRECISE_MULTISTOREY_BADGE_LAYER,
+  PRECISE_OUTLINE_LAYER,
+  PRECISE_OUTLINE_UNDERGROUND_LAYER,
+  PRECISE_PARKING_SOURCE,
+} from '../lib/preciseParkingPolygons'
+import {
   PARKING_LAYER_META,
   PARKING_PROVIDERS,
   PARKING_VIEWPORT_SOURCE,
@@ -61,6 +69,8 @@ const noOverlapSymbol = {
 const SYMBOL_LAYER_IDS = [
   DISTRICT_LABEL_LAYER,
   PARKING_LOTS_LABEL_LAYER,
+  PRECISE_LABEL_LAYER,
+  PRECISE_MULTISTOREY_BADGE_LAYER,
   ...PARKING_PROVIDERS.map((k) => `${PARKING_LAYER_META[k].id}-label`),
 ]
 
@@ -92,6 +102,12 @@ function syncLodZoomLimits(map: MapLibreMapType) {
   setMin(PARKING_LOTS_OUTLINE_LAYER, ZOOM.lotMin)
   setMin(PARKING_LOTS_LABEL_LAYER, ZOOM.lotMin)
 
+  setMin(PRECISE_FILL_LAYER, ZOOM.lotMin)
+  setMin(PRECISE_OUTLINE_LAYER, ZOOM.lotMin)
+  setMin(PRECISE_OUTLINE_UNDERGROUND_LAYER, ZOOM.lotMin)
+  setMin(PRECISE_LABEL_LAYER, ZOOM.lotMin)
+  setMin(PRECISE_MULTISTOREY_BADGE_LAYER, ZOOM.lotMin)
+
   for (const id of [
     PARKING_LINES_CASING_LAYER,
     PARKING_LINES_GLOW_LAYER,
@@ -108,8 +124,27 @@ function syncLodZoomLimits(map: MapLibreMapType) {
   }
 }
 
+function ensureUndergroundHatch(map: MapLibreMapType) {
+  if (map.hasImage('underground-hatch')) return
+  const size = 16
+  const data = new Uint8Array(size * size * 4)
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 4
+      const on = (x + y) % 4 === 0
+      data[i] = 255
+      data[i + 1] = 255
+      data[i + 2] = 255
+      data[i + 3] = on ? 90 : 0
+    }
+  }
+  map.addImage('underground-hatch', { width: size, height: size, data }, { pixelRatio: 2 })
+}
+
 /** Clean parking overlays — soft fills/lines with selection highlight + LOD. */
 export function ensureParkingOverlaySources(map: MapLibreMapType) {
+  ensureUndergroundHatch(map)
+
   // ——— District badges (city macro, zoom < 13) ———
   if (!map.getSource(DISTRICT_SOURCE)) {
     map.addSource(DISTRICT_SOURCE, {
@@ -169,7 +204,136 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
     })
   }
 
-  // ——— Lot polygons (zone view ≥ 13) ———
+  // ——— High-precision parking polygons (public/data/parking_polygons.geojson) ———
+  if (!map.getSource(PRECISE_PARKING_SOURCE)) {
+    map.addSource(PRECISE_PARKING_SOURCE, {
+      type: 'geojson',
+      promoteId: 'id',
+      data: { type: 'FeatureCollection', features: [] },
+    })
+
+    // Fill — translucent operator colors (opacity 0.35)
+    map.addLayer({
+      id: PRECISE_FILL_LAYER,
+      type: 'fill',
+      source: PRECISE_PARKING_SOURCE,
+      minzoom: ZOOM.lotMin,
+      layout: { visibility: 'visible' },
+      paint: {
+        'fill-color': ['get', 'color'],
+        'fill-opacity': [
+          'case',
+          ['boolean', ['feature-state', 'selected'], false],
+          0.48,
+          0.35,
+        ] as never,
+      },
+    })
+
+    // Subtle hatch for underground lots
+    map.addLayer({
+      id: 'parking-fill-underground-hatch',
+      type: 'fill',
+      source: PRECISE_PARKING_SOURCE,
+      minzoom: ZOOM.lotMin,
+      filter: ['==', ['get', 'type'], 'underground'],
+      layout: { visibility: 'visible' },
+      paint: {
+        'fill-pattern': 'underground-hatch',
+        'fill-opacity': 0.55,
+      },
+    })
+
+    // Solid curb-to-curb outline (surface + multi_storey)
+    map.addLayer({
+      id: PRECISE_OUTLINE_LAYER,
+      type: 'line',
+      source: PRECISE_PARKING_SOURCE,
+      minzoom: ZOOM.lotMin,
+      filter: ['!=', ['get', 'type'], 'underground'],
+      layout: {
+        visibility: 'visible',
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-width': 2,
+        'line-opacity': 1,
+      },
+    })
+
+    // Dashed outline for underground
+    map.addLayer({
+      id: PRECISE_OUTLINE_UNDERGROUND_LAYER,
+      type: 'line',
+      source: PRECISE_PARKING_SOURCE,
+      minzoom: ZOOM.lotMin,
+      filter: ['==', ['get', 'type'], 'underground'],
+      layout: {
+        visibility: 'visible',
+        'line-cap': 'butt',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-width': 2,
+        'line-opacity': 1,
+        'line-dasharray': [1.2, 1.6],
+      },
+    })
+
+    // Lot name labels
+    map.addLayer({
+      id: PRECISE_LABEL_LAYER,
+      type: 'symbol',
+      source: PRECISE_PARKING_SOURCE,
+      minzoom: ZOOM.lotMin,
+      layout: {
+        'text-field': ['get', 'badge'],
+        'text-font': ['Noto Sans Bold'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 13, 11, 17, 13],
+        'text-max-width': 8,
+        'symbol-placement': 'point',
+        'symbol-sort-key': ['get', 'labelRank'],
+        'text-padding': 4,
+        'text-optional': true,
+        ...noOverlapSymbol,
+      },
+      paint: {
+        'text-color': ['get', 'color'],
+        'text-halo-color': '#F8FAFC',
+        'text-halo-width': 1.8,
+      },
+    })
+
+    // Floating multi-storey height badge (P+N)
+    map.addLayer({
+      id: PRECISE_MULTISTOREY_BADGE_LAYER,
+      type: 'symbol',
+      source: PRECISE_PARKING_SOURCE,
+      minzoom: ZOOM.lotMin,
+      filter: ['==', ['get', 'type'], 'multi_storey'],
+      layout: {
+        'text-field': ['get', 'floors_label'],
+        'text-font': ['Noto Sans Bold'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 13, 10, 17, 13],
+        'text-offset': [0, -1.35],
+        'text-anchor': 'bottom',
+        'symbol-placement': 'point',
+        'symbol-sort-key': 0,
+        'text-padding': 2,
+        ...noOverlapSymbol,
+      },
+      paint: {
+        'text-color': '#1C1C1E',
+        'text-halo-color': '#FFFFFF',
+        'text-halo-width': 2,
+      },
+    })
+  }
+
+  // ——— Legacy stub lot polygons (kept empty when precise GeoJSON is loaded) ———
   if (!map.getSource(PARKING_LOTS_SOURCE)) {
     map.addSource(PARKING_LOTS_SOURCE, {
       type: 'geojson',
@@ -450,6 +614,12 @@ const GEOM_LAYER_IDS = [
   PARKING_LOTS_FILL_LAYER,
   PARKING_LOTS_OUTLINE_LAYER,
   PARKING_LOTS_LABEL_LAYER,
+  PRECISE_FILL_LAYER,
+  'parking-fill-underground-hatch',
+  PRECISE_OUTLINE_LAYER,
+  PRECISE_OUTLINE_UNDERGROUND_LAYER,
+  PRECISE_LABEL_LAYER,
+  PRECISE_MULTISTOREY_BADGE_LAYER,
   PARKING_LINES_CASING_LAYER,
   PARKING_LINES_GLOW_LAYER,
   PARKING_LINES_LAYER,

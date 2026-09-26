@@ -149,6 +149,33 @@ export function ParkingBottomSheet({
               <p className="mt-0.5 text-[15px] font-semibold text-[#1C1C1E]">{spot.operator}</p>
             </div>
           </div>
+          {spot.structureType || typeof spot.floors === 'number' ? (
+            <div className="flex items-center justify-between gap-3 border-t border-black/6 px-4 py-2.5">
+              <div>
+                <p className="text-[11px] font-semibold tracking-wide text-[#8E8E93] uppercase">
+                  Tüüp
+                </p>
+                <p className="mt-0.5 text-[14px] font-semibold text-[#1C1C1E]">
+                  {spot.structureType === 'underground'
+                    ? 'Underground'
+                    : spot.structureType === 'multi_storey'
+                      ? 'Multi-storey'
+                      : 'Surface'}
+                  {spot.structureType === 'multi_storey' && spot.floors
+                    ? ` · P+${spot.floors}`
+                    : null}
+                </p>
+              </div>
+              {spot.zone_code ? (
+                <span
+                  className="rounded-full px-2.5 py-1 text-[11px] font-bold text-white"
+                  style={{ backgroundColor: color }}
+                >
+                  {spot.zone_code}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         {/* Large navigation CTAs */}

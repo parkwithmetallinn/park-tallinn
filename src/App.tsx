@@ -100,6 +100,7 @@ export default function App() {
   } | null>(null)
   const [toast, setToast] = useState<ToastState>(null)
   const [pitch3d, setPitch3d] = useState(true)
+  const [preciseSpots, setPreciseSpots] = useState<ParkingSpot[]>([])
   const geoAbort = useRef<AbortController | null>(null)
 
   const dismissToast = useCallback(() => setToast(null), [])
@@ -197,9 +198,20 @@ export default function App() {
     )
     const mocks = MOCK_KESKLINN_SPOTS.map((s) => normalizeSpot(s))
     const custom = customSpots.map((s) => normalizeSpot(s))
-    // Curated mock + public lots only — no dense synthetic grid clutter
-    return [...mocks, ...curated, ...custom]
-  }, [customSpots])
+    // Precise GeoJSON lots take precedence over stub mocks with same footprint names
+    const preciseIds = new Set(preciseSpots.map((s) => s.id))
+    const mockWithoutDupes = mocks.filter((m) => {
+      if (!m.polygon) return true
+      return !preciseSpots.some(
+        (p) =>
+          p.layer === m.layer &&
+          Math.abs(p.lat - m.lat) < 0.001 &&
+          Math.abs(p.lng - m.lng) < 0.001,
+      )
+    })
+    void preciseIds
+    return [...preciseSpots, ...mockWithoutDupes, ...curated, ...custom]
+  }, [customSpots, preciseSpots])
 
   // Deep-link: /?spot=<id> opens the parking sheet (no map click needed)
   const deepLinkApplied = useRef(false)
@@ -582,6 +594,7 @@ export default function App() {
             onNavigate={openSheet}
             onBackgroundClick={dismissMapOverlays}
             onZoomChange={() => {}}
+            onPreciseSpotsLoaded={setPreciseSpots}
           />
         </MapErrorBoundary>
       </div>

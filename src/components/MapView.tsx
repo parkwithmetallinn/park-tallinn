@@ -1,5 +1,6 @@
 import {
   GeoJSONSource,
+  LngLatBounds,
   Map as MapLibreMap,
   Marker,
   setWorkerUrl,
@@ -10,6 +11,20 @@ import maplibreWorker from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import { useEffect, useRef, useState } from 'react'
 import { spotsToMapGeoJSON } from '../lib/geojson'
 import { queryParkingInViewport } from '../lib/parkingRepository'
+import {
+  featureBounds,
+  loadParkingPolygons,
+  PRECISE_FILL_LAYER,
+  PRECISE_LABEL_LAYER,
+  PRECISE_MULTISTOREY_BADGE_LAYER,
+  PRECISE_OUTLINE_LAYER,
+  PRECISE_OUTLINE_UNDERGROUND_LAYER,
+  PRECISE_PARKING_SOURCE,
+  preciseCollectionToSpots,
+  preciseFeatureToSpot,
+  type PreciseParkingCollection,
+  type PreciseParkingFeature,
+} from '../lib/preciseParkingPolygons'
 import { parkingIndex } from '../lib/spatialIndex'
 import type { DrivingRoute } from '../lib/routing'
 import { createBasemapStyle } from '../map/createBasemapStyle'
@@ -37,7 +52,21 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 
 setWorkerUrl(maplibreWorker)
 
-const SELECT_SOURCES = [PARKING_LINES_SOURCE, PARKING_LOTS_SOURCE, PARKING_VIEWPORT_SOURCE] as const
+const SELECT_SOURCES = [
+  PARKING_LINES_SOURCE,
+  PARKING_LOTS_SOURCE,
+  PARKING_VIEWPORT_SOURCE,
+  PRECISE_PARKING_SOURCE,
+] as const
+
+const PRECISE_HIT_LAYERS = [
+  PRECISE_FILL_LAYER,
+  PRECISE_OUTLINE_LAYER,
+  PRECISE_OUTLINE_UNDERGROUND_LAYER,
+  PRECISE_LABEL_LAYER,
+  PRECISE_MULTISTOREY_BADGE_LAYER,
+  'parking-fill-underground-hatch',
+] as const
 
 function makeUserEl() {
   const wrap = document.createElement('div')
@@ -107,6 +136,7 @@ export function MapView({
   onBackgroundClick,
   onZoomChange,
   onViewportStats,
+  onPreciseSpotsLoaded,
 }: {
   spots: ParkingSpot[]
   filter: FilterId
@@ -129,6 +159,8 @@ export function MapView({
   onBackgroundClick?: () => void
   onZoomChange?: (zoom: number, mode: 'district' | 'cluster' | 'street') => void
   onViewportStats?: (stats: { rendered: number; skipped: boolean }) => void
+  /** Precise GeoJSON lots registered into the app index. */
+  onPreciseSpotsLoaded?: (spots: ParkingSpot[]) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMapType | null>(null)
@@ -137,6 +169,8 @@ export function MapView({
   const onNavigateRef = useRef(onNavigate)
   const onBackgroundClickRef = useRef(onBackgroundClick)
   const onSearchPinClickRef = useRef(onSearchPinClick)
+  const onPreciseSpotsLoadedRef = useRef(onPreciseSpotsLoaded)
+  const preciseFcRef = useRef<PreciseParkingCollection | null>(null)
   const filterRef = useRef(filter)
   const selectedIdRef = useRef(selectedId)
   const pitch3dRef = useRef(pitch3d)
@@ -147,6 +181,7 @@ export function MapView({
   onNavigateRef.current = onNavigate
   onBackgroundClickRef.current = onBackgroundClick
   onSearchPinClickRef.current = onSearchPinClick
+  onPreciseSpotsLoadedRef.current = onPreciseSpotsLoaded
   filterRef.current = filter
   selectedIdRef.current = selectedId
   pitch3dRef.current = pitch3d
@@ -175,6 +210,7 @@ export function MapView({
 
     let setupDone = false
     const parkingHitLayers = [
+      ...PRECISE_HIT_LAYERS,
       PARKING_LOTS_FILL_LAYER,
       PARKING_LOTS_LABEL_LAYER,
       PARKING_LINES_LAYER,
@@ -243,7 +279,8 @@ export function MapView({
 
       ;(m.getSource(PARKING_VIEWPORT_SOURCE) as GeoJSONSource | undefined)?.setData(geo.points)
       ;(m.getSource(PARKING_LINES_SOURCE) as GeoJSONSource | undefined)?.setData(geo.lines)
-      ;(m.getSource(PARKING_LOTS_SOURCE) as GeoJSONSource | undefined)?.setData(geo.polygons)
+      // Stub lot polygons stay empty — precise GeoJSON owns lot boundaries
+      ;(m.getSource(PARKING_LOTS_SOURCE) as GeoJSONSource | undefined)?.setData(empty)
 
       // setData clears feature-state — re-apply selection highlight
       applySelectionHighlight(m, selectedIdRef.current)
@@ -274,6 +311,20 @@ export function MapView({
       setReady(true)
       void refreshViewport(map)
       emitZoom(map)
+
+      void loadParkingPolygons()
+        .then((fc) => {
+          preciseFcRef.current = fc
+          const src = map.getSource(PRECISE_PARKING_SOURCE) as GeoJSONSource | undefined
+          src?.setData(fc as never)
+          const spots = preciseCollectionToSpots(fc)
+          for (const s of spots) parkingIndex.insert(s)
+          onPreciseSpotsLoadedRef.current?.(spots)
+          applySelectionHighlight(map, selectedIdRef.current)
+        })
+        .catch((err) => {
+          console.warn('parking_polygons.geojson failed to load', err)
+        })
     }
 
     map.once('style.load', finishSetup)
@@ -303,6 +354,35 @@ export function MapView({
       ]
       const layers = parkingHitLayers.filter((id) => map.getLayer(id))
       const hits = layers.length ? map.queryRenderedFeatures(box, { layers }) : []
+
+      // Prefer precise parking polygons — fit bounds then open sheet
+      const preciseHit = hits.find((f) =>
+        (PRECISE_HIT_LAYERS as readonly string[]).includes(f.layer?.id ?? ''),
+      )
+      if (preciseHit?.properties?.id) {
+        const id = String(preciseHit.properties.id)
+        const fromFc = preciseFcRef.current?.features.find((f) => f.properties.id === id)
+        const spot =
+          parkingIndex.getById(id) ??
+          (fromFc ? preciseFeatureToSpot(fromFc as PreciseParkingFeature) : undefined)
+        if (fromFc?.geometry) {
+          const [[west, south], [east, north]] = featureBounds(fromFc.geometry)
+          const bounds = new LngLatBounds([west, south], [east, north])
+          map.fitBounds(bounds, {
+            padding: { top: 80, bottom: 220, left: 48, right: 48 },
+            maxZoom: 17.2,
+            duration: 900,
+            pitch: pitch3dRef.current ? NAV_PITCH : 0,
+            essential: true,
+          })
+        }
+        if (spot) {
+          if (!parkingIndex.getById(spot.id)) parkingIndex.insert(spot)
+          onNavigateRef.current(spot)
+        }
+        return
+      }
+
       const hit = hits.find((f) => f.properties?.id)
       if (!hit?.properties?.id) {
         onBackgroundClickRef.current?.()

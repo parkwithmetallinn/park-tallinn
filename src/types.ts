@@ -41,6 +41,9 @@ export type ParkingLayerKey =
   | 'loading'
   | 'park_ride'
 
+/** Precise lot structure from parking_polygons.geojson */
+export type ParkingStructureType = 'surface' | 'underground' | 'multi_storey'
+
 export interface ParkingSpot {
   id: string
   name: string
@@ -75,6 +78,13 @@ export interface ParkingSpot {
    * When set (or off-street operator lot), rendered as a filled polygon.
    */
   polygon?: [number, number][]
+  /**
+   * Physical structure from precise GeoJSON polygons.
+   * surface | underground | multi_storey
+   */
+  structureType?: ParkingStructureType
+  /** Storeys for multi-storey lots (badge height). */
+  floors?: number
   /** @deprecated use featureType / layer — kept for gradual migration */
   type?: 'free' | 'timed' | 'pr' | 'paid'
   kind?: 'lot' | 'street'
@@ -128,5 +138,7 @@ export type ParkingSpotSeed = Omit<
       | 'kind'
       | 'line'
       | 'polygon'
+      | 'structureType'
+      | 'floors'
     >
   >

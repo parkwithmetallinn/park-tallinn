@@ -1,0 +1,278 @@
+{
+  "type": "FeatureCollection",
+  "name": "tallinn-parking-polygons",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "poly-ep-solaris",
+      "properties": {
+        "id": "poly-ep-solaris",
+        "name": "EuroPark Solaris",
+        "zone_code": "EP12",
+        "operator": "EuroPark",
+        "layer": "europark",
+        "type": "multi_storey",
+        "floors": 4,
+        "free_minutes": 0,
+        "price_per_hour": 3.5,
+        "badge": "EuroPark",
+        "address": "Estonia pst 9, Kesklinn",
+        "desc": "Solaris parkimismaja — täpne hoonejalajälg."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [24.74915, 59.43288],
+            [24.74948, 59.43268],
+            [24.75092, 59.43268],
+            [24.75125, 59.43288],
+            [24.75125, 59.43336],
+            [24.75092, 59.43356],
+            [24.74948, 59.43356],
+            [24.74915, 59.43336],
+            [24.74915, 59.43288]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "poly-ep-viru",
+      "properties": {
+        "id": "poly-ep-viru",
+        "name": "EuroPark Viru Keskus",
+        "zone_code": "EP08",
+        "operator": "EuroPark",
+        "layer": "europark",
+        "type": "underground",
+        "floors": 2,
+        "free_minutes": 60,
+        "price_per_hour": 3.2,
+        "badge": "EuroPark",
+        "address": "Viru väljak 4, Kesklinn",
+        "desc": "Viru Keskuse maa-alune parkla — punktiirpiir tähistab maa-alust ala."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [24.75445, 59.43622],
+            [24.75492, 59.43598],
+            [24.75638, 59.43598],
+            [24.75685, 59.43622],
+            [24.75685, 59.43682],
+            [24.75638, 59.43706],
+            [24.75492, 59.43706],
+            [24.75445, 59.43682],
+            [24.75445, 59.43622]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "poly-snabb-rotermann",
+      "properties": {
+        "id": "poly-snabb-rotermann",
+        "name": "Snabb Rotermann",
+        "zone_code": "SN1",
+        "operator": "Snabb",
+        "layer": "snabb",
+        "type": "surface",
+        "floors": 1,
+        "free_minutes": 0,
+        "price_per_hour": 3.2,
+        "badge": "Snabb",
+        "address": "Rotermanni tn, Kesklinn",
+        "desc": "Snabb avatud pealispinna parkla Rotermanni kvartalis."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [24.75648, 59.43858],
+            [24.75688, 59.43838],
+            [24.75812, 59.43838],
+            [24.75852, 59.43858],
+            [24.75852, 59.43906],
+            [24.75812, 59.43926],
+            [24.75688, 59.43926],
+            [24.75648, 59.43906],
+            [24.75648, 59.43858]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "poly-citypark-stockmann",
+      "properties": {
+        "id": "poly-citypark-stockmann",
+        "name": "Citypark Stockmann",
+        "zone_code": "CP-ST",
+        "operator": "Citypark",
+        "layer": "citypark",
+        "type": "multi_storey",
+        "floors": 5,
+        "free_minutes": 30,
+        "price_per_hour": 3.0,
+        "badge": "Citypark",
+        "address": "Liivalaia 53, Kesklinn",
+        "desc": "Stockmanni mitmekorruseline parkimismaja."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [24.75175, 59.43452],
+            [24.75218, 59.43428],
+            [24.75342, 59.43428],
+            [24.75385, 59.43452],
+            [24.75385, 59.43512],
+            [24.75342, 59.43536],
+            [24.75218, 59.43536],
+            [24.75175, 59.43512],
+            [24.75175, 59.43452]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "poly-ut-ahtri",
+      "properties": {
+        "id": "poly-ut-ahtri",
+        "name": "Ühisteenused Ahtri",
+        "zone_code": "UT-AH",
+        "operator": "AS Ühisteenused",
+        "layer": "uhisteenused",
+        "type": "surface",
+        "floors": 1,
+        "free_minutes": 0,
+        "price_per_hour": 2.8,
+        "badge": "Ühisteenused",
+        "address": "Ahtri 6, Kesklinn",
+        "desc": "Sadamaäärne pealispinna parkla."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [24.76148, 59.43998],
+            [24.76188, 59.43978],
+            [24.76312, 59.43978],
+            [24.76352, 59.43998],
+            [24.76352, 59.44046],
+            [24.76312, 59.44066],
+            [24.76188, 59.44066],
+            [24.76148, 59.44046],
+            [24.76148, 59.43998]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "poly-parkit-porto",
+      "properties": {
+        "id": "poly-parkit-porto",
+        "name": "Citypark Porto Franco",
+        "zone_code": "CP-PF",
+        "operator": "Citypark",
+        "layer": "citypark",
+        "type": "underground",
+        "floors": 2,
+        "free_minutes": 0,
+        "price_per_hour": 3.4,
+        "badge": "Citypark",
+        "address": "Sadama / Porto Franco, Kesklinn",
+        "desc": "Porto Franco maa-alune parkla."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [24.75795, 59.44122],
+            [24.75835, 59.44102],
+            [24.75955, 59.44102],
+            [24.75995, 59.44122],
+            [24.75995, 59.44172],
+            [24.75955, 59.44192],
+            [24.75835, 59.44192],
+            [24.75795, 59.44172],
+            [24.75795, 59.44122]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "poly-snabb-fahle",
+      "properties": {
+        "id": "poly-snabb-fahle",
+        "name": "Snabb Fahle",
+        "zone_code": "SN4",
+        "operator": "Snabb",
+        "layer": "snabb",
+        "type": "surface",
+        "floors": 1,
+        "free_minutes": 15,
+        "price_per_hour": 2.9,
+        "badge": "Snabb",
+        "address": "Tartu mnt 80, Kesklinn",
+        "desc": "Fahle maja juures Snabb pealispinna parkla."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [24.75755, 59.42922],
+            [24.75795, 59.42902],
+            [24.75915, 59.42902],
+            [24.75955, 59.42922],
+            [24.75955, 59.42972],
+            [24.75915, 59.42992],
+            [24.75795, 59.42992],
+            [24.75755, 59.42972],
+            [24.75755, 59.42922]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "id": "poly-ep-t1",
+      "properties": {
+        "id": "poly-ep-t1",
+        "name": "EuroPark T1 Mall",
+        "zone_code": "EP-T1",
+        "operator": "EuroPark",
+        "layer": "europark",
+        "type": "multi_storey",
+        "floors": 3,
+        "free_minutes": 120,
+        "price_per_hour": 2.5,
+        "badge": "EuroPark",
+        "address": "Peterburi tee 2, Lasnamäe",
+        "desc": "T1 Mall mitmekorruseline parkla."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [24.8082, 59.4228],
+            [24.8088, 59.4225],
+            [24.8112, 59.4225],
+            [24.8118, 59.4228],
+            [24.8118, 59.4238],
+            [24.8112, 59.4241],
+            [24.8088, 59.4241],
+            [24.8082, 59.4238],
+            [24.8082, 59.4228]
+          ]
+        ]
+      }
+    }
+  ]
+}
