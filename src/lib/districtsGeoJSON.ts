@@ -24,7 +24,7 @@ type FeatColl = { type: 'FeatureCollection'; features: Feat[] }
 export function districtsToGeoJSON(
   zones: DistrictZone[] = DISTRICT_ZONES,
 ): FeatColl {
-  const features: Feat[] = zones.map((z) => {
+  const features: Feat[] = zones.map((z, i) => {
     const ring = z.coords.map(([lat, lng]) => [lng, lat] as [number, number])
     const [aLng, aLat] = ring[0]
     const [bLng, bLat] = ring[ring.length - 1]
@@ -38,7 +38,8 @@ export function districtsToGeoJSON(
         color: z.color,
         kind: z.kind,
         summary: z.summary,
-        labelRank: 0,
+        // Unique ranks so overlapping district labels collide cleanly
+        labelRank: i,
       },
       geometry: {
         type: 'Polygon',

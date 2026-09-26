@@ -157,6 +157,8 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
         'text-letter-spacing': 0.02,
         'symbol-placement': 'point',
         'symbol-sort-key': ['get', 'labelRank'],
+        'text-padding': 4,
+        'text-optional': true,
         ...noOverlapSymbol,
       },
       paint: {
@@ -227,6 +229,8 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
         'text-max-width': 8,
         'symbol-placement': 'point',
         'symbol-sort-key': ['get', 'labelRank'],
+        'text-padding': 4,
+        'text-optional': true,
         ...noOverlapSymbol,
       },
       paint: {

@@ -1,9 +1,5 @@
 import type { ParkingSpotSeed } from '../types'
 import {
-  LINE_HARJU,
-  LINE_KOOLI,
-  LINE_LIIVALAIA,
-  LINE_RAVALA,
   LINE_VENE,
   LINE_VIRU,
   POLY_AHTRI,
@@ -257,7 +253,6 @@ export const MOCK_KESKLINN_SPOTS: ParkingSpotSeed[] = [
     address: 'Kooli tn, Vanalinn/Toompea serv',
     desc: 'Tsoonipiiri tagused tasuta tänavaäärsed kohad. Kontrolli märke!',
     landmark: true,
-    line: LINE_KOOLI,
   },
   {
     id: 'street-timed-15-harju',
@@ -278,7 +273,6 @@ export const MOCK_KESKLINN_SPOTS: ParkingSpotSeed[] = [
     desc: 'Lühike peatus — pane kell esiklaasile esimeseks 15 minutiks.',
     hours: 'Tasulistel tundidel',
     landmark: true,
-    line: LINE_HARJU,
   },
   {
     id: 'street-timed-30-vene',
@@ -318,7 +312,6 @@ export const MOCK_KESKLINN_SPOTS: ParkingSpotSeed[] = [
     address: 'Rävala pst, Kesklinn',
     desc: 'Kesklinna tänav 1h tasuta ajaga, seejärel tavaline tariif.',
     landmark: true,
-    line: LINE_RAVALA,
   },
   {
     id: 'street-timed-2h-kentmanni',
@@ -594,6 +587,5 @@ export const MOCK_KESKLINN_SPOTS: ParkingSpotSeed[] = [
     address: 'Liivalaia tn, Kesklinn',
     desc: 'Tasuline munitsipaaltänav — lühike teeäärne joon teelõigu servas.',
     landmark: true,
-    line: LINE_LIIVALAIA,
   },
 ]

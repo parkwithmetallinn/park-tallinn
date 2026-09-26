@@ -424,12 +424,15 @@ export function spotsToMapGeoJSON(spots: ParkingSpot[]): ParkingMapGeoJSON {
       continue
     }
 
-    // Points only for true POIs (EV / inva / loading / P&R)
+    // Points for POIs and for timed/street spots without a trusted curb line
     if (
       s.featureType === 'ev-charger' ||
       s.featureType === 'inva' ||
       s.featureType === 'loading' ||
-      s.featureType === 'park-ride'
+      s.featureType === 'park-ride' ||
+      s.featureType === 'on-street-line' ||
+      s.layer === 'timed' ||
+      s.layer === 'free_street'
     ) {
       points.push({
         type: 'Feature',
