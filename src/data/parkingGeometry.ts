@@ -1,94 +1,9 @@
 /**
- * Curb / carriageway LineStrings for Kesklinn streets.
- * Short, densely sampled road-following segments only — never
- * city-scale diagonals that cut across building blocks.
+ * Off-street lot footprints only.
+ * No curb LineStrings here — hand-drawn corridors cut through buildings
+ * as diagonal debug artifacts. Street parking at detail zoom uses pins
+ * until OSM / Maa-amet road-snapped geometry is wired in.
  */
-
-/** Liivalaia — short E–W curb near Solaris (not full corridor) */
-export const LINE_LIIVALAIA: [number, number][] = [
-  [59.43295, 24.7528],
-  [59.43290, 24.7534],
-  [59.43285, 24.7540],
-  [59.43280, 24.7546],
-  [59.43275, 24.7552],
-  [59.43270, 24.7558],
-  [59.43265, 24.7564],
-  [59.43260, 24.7570],
-]
-
-/** Viru tn — short curb near Viru väljak */
-export const LINE_VIRU: [number, number][] = [
-  [59.43655, 24.7526],
-  [59.43658, 24.7530],
-  [59.43662, 24.7534],
-  [59.43666, 24.7538],
-  [59.43670, 24.7542],
-  [59.43674, 24.7546],
-  [59.43678, 24.7550],
-  [59.43682, 24.7554],
-  [59.43686, 24.7558],
-]
-
-/** Harju tn — Vanalinn */
-export const LINE_HARJU: [number, number][] = [
-  [59.43655, 24.7440],
-  [59.43645, 24.7443],
-  [59.43635, 24.7446],
-  [59.43625, 24.7449],
-  [59.43615, 24.7452],
-  [59.43605, 24.7455],
-  [59.43595, 24.7458],
-  [59.43585, 24.74605],
-  [59.43575, 24.7463],
-]
-
-/** Vene tn — Vanalinn */
-export const LINE_VENE: [number, number][] = [
-  [59.43835, 24.7478],
-  [59.43822, 24.7481],
-  [59.43810, 24.7484],
-  [59.43797, 24.74865],
-  [59.43785, 24.7489],
-  [59.43772, 24.7491],
-  [59.43760, 24.7493],
-  [59.43747, 24.74945],
-  [59.43735, 24.7496],
-]
-
-/** Rävala puiestee — short timed curb */
-export const LINE_RAVALA: [number, number][] = [
-  [59.43420, 24.7546],
-  [59.43402, 24.7551],
-  [59.43385, 24.7556],
-  [59.43367, 24.7561],
-  [59.43350, 24.7566],
-  [59.43332, 24.7570],
-  [59.43315, 24.7574],
-]
-
-/** Estonia puiestee */
-export const LINE_ESTONIA: [number, number][] = [
-  [59.43355, 24.7488],
-  [59.43362, 24.7494],
-  [59.43370, 24.7500],
-  [59.43380, 24.7506],
-  [59.43390, 24.7512],
-  [59.43400, 24.7518],
-  [59.43410, 24.7524],
-  [59.43418, 24.7530],
-  [59.43425, 24.7535],
-]
-
-/** Kooli tn — Toompea / Vanalinn edge (free street) */
-export const LINE_KOOLI: [number, number][] = [
-  [59.43970, 24.7397],
-  [59.43955, 24.7400],
-  [59.43940, 24.7403],
-  [59.43925, 24.7406],
-  [59.43910, 24.7409],
-  [59.43897, 24.7412],
-  [59.43885, 24.7415],
-]
 
 /** Soft chamfered lot footprints (pastel overlays read cleaner under 3D buildings). */
 

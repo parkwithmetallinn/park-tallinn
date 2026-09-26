@@ -49,12 +49,12 @@ const selectedLineOpacity = [
   0.72,
 ]
 
-/** Soft collision-safe symbol layout shared by parking labels. */
+/** Soft collision-safe symbol layout — required on every parking label layer. */
 const noOverlapSymbol = {
-  'icon-allow-overlap': false,
-  'text-allow-overlap': false,
-  'icon-ignore-placement': false,
-  'text-ignore-placement': false,
+  'icon-allow-overlap': false as const,
+  'text-allow-overlap': false as const,
+  'icon-ignore-placement': false as const,
+  'text-ignore-placement': false as const,
   'symbol-z-order': 'source' as const,
 }
 

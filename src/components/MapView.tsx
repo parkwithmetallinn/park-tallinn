@@ -221,7 +221,9 @@ export function MapView({
           ? { points: empty, lines: empty, polygons: empty }
           : spotsToMapGeoJSON(visibleSpots)
 
-      // Strict LOD: pins + curb lines only at detail (≥15); districts-only below 13
+      // LOD: zoom < 13 → empty overlays (districts only)
+      //      zoom 13–15 → lot polygons only
+      //      zoom ≥ 15 → pins (EV / timed / INVA) + future curb lines
       if (result.lod !== 'detail') {
         geo = { ...geo, points: empty, lines: empty }
       }

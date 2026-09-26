@@ -284,8 +284,9 @@ export function stubLotPolygon(
 }
 
 export function isOnStreetFeature(s: ParkingSpot): boolean {
-  // Only surveyed / road-snapped polylines — never invent stubs through buildings
-  return Boolean(s.line && s.line.length >= 4)
+  // Overlay curb lines disabled until road-snapped geometry exists
+  void s
+  return false
 }
 
 export function isLotPolygonFeature(s: ParkingSpot): boolean {
@@ -301,55 +302,13 @@ export function isLotPolygonFeature(s: ParkingSpot): boolean {
   )
 }
 
-function segmentMeters(a: [number, number], b: [number, number]): number {
-  const [aLat, aLng] = a
-  const [bLat, bLng] = b
-  return Math.hypot(
-    (aLat - bLat) * 111_320,
-    (aLng - bLng) * 111_320 * Math.cos((aLat * Math.PI) / 180),
-  )
-}
-
-/** Densify long straight segments so lines never look like building-cutting diagonals. */
-function densifyLine(line: [number, number][], maxSegM = 35): [number, number][] {
-  if (line.length < 2) return line
-  const out: [number, number][] = [line[0]]
-  for (let i = 0; i < line.length - 1; i++) {
-    const a = line[i]
-    const b = line[i + 1]
-    const meters = segmentMeters(a, b)
-    const steps = Math.max(1, Math.ceil(meters / maxSegM))
-    for (let s = 1; s <= steps; s++) {
-      const t = s / steps
-      out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t])
-    }
-  }
-  return out
-}
-
 /**
- * Only accept surveyed, road-following curb polylines.
- * Rejects stubs, sparse jumps, and city-scale near-straight diagonals.
+ * Parking curb LineStrings are disabled.
+ * Hand-authored diagonals cut through buildings — do not emit them.
+ * Re-enable only for OSM / Maa-amet road-snapped segments.
  */
-function resolveLine(s: ParkingSpot): [number, number][] | null {
-  if (!s.line || s.line.length < 4) return null
-
-  const maxJumpM = 70
-  let pathM = 0
-  for (let i = 0; i < s.line.length - 1; i++) {
-    const meters = segmentMeters(s.line[i], s.line[i + 1])
-    if (meters > maxJumpM) return null
-    pathM += meters
-  }
-
-  // Cap overall corridor — only short curb segments at street zoom
-  if (pathM > 500) return null
-
-  const chordM = segmentMeters(s.line[0], s.line[s.line.length - 1])
-  // City-scale near-straight span → building-cutting diagonal artifact
-  if (chordM > 280 && pathM / Math.max(chordM, 1) < 1.1) return null
-
-  return densifyLine(s.line, 25)
+function resolveLine(_s: ParkingSpot): [number, number][] | null {
+  return null
 }
 
 function resolvePolygon(s: ParkingSpot): [number, number][] | null {
@@ -390,6 +349,7 @@ export function spotsToMapGeoJSON(spots: ParkingSpot[]): ParkingMapGeoJSON {
   const polygons: Feat[] = []
 
   for (const s of spots) {
+    // resolveLine always returns null today — no debug diagonals over buildings
     const line = resolveLine(s)
     if (line) {
       lines.push({
@@ -424,7 +384,7 @@ export function spotsToMapGeoJSON(spots: ParkingSpot[]): ParkingMapGeoJSON {
       continue
     }
 
-    // Points for POIs and for timed/street spots without a trusted curb line
+    // Detail pins: EV, INVA, loading, P&R, timed (+15m/+30m), free street
     if (
       s.featureType === 'ev-charger' ||
       s.featureType === 'inva' ||
