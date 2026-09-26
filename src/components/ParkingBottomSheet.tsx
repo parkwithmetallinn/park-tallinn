@@ -3,7 +3,7 @@ import { useState } from 'react'
 import type { ActiveParkingSession } from '../lib/parkingSession'
 import { formatSessionInstant } from '../lib/parkingSession'
 import type { ParkingSpot } from '../types'
-import { navLinks } from '../lib/geocode'
+import { navLinks, openAppleMaps } from '../lib/geocode'
 import { PARKING_LAYER_META } from '../map/parkingLayers'
 import { streetLineColor } from '../map/streetLineTheme'
 
@@ -165,15 +165,14 @@ export function ParkingBottomSheet({
               <MapPin className="h-5 w-5 text-white" strokeWidth={2.5} />
               <span className="text-[12px] font-bold text-white">Google</span>
             </a>
-            <a
-              href={links.apple}
-              target="_blank"
-              rel="noreferrer"
+            <button
+              type="button"
+              onClick={() => openAppleMaps(spot.lat, spot.lng)}
               className="flex flex-col items-center justify-center gap-1.5 rounded-2xl bg-[#1C1C1E] px-2 py-3.5 text-center shadow-sm transition active:scale-[0.98]"
             >
               <MapPin className="h-5 w-5 text-white" strokeWidth={2.5} />
               <span className="text-[12px] font-bold text-white">Apple</span>
-            </a>
+            </button>
           </div>
         </div>
 

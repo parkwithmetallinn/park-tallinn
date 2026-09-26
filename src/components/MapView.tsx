@@ -46,6 +46,19 @@ function makeUserEl() {
   return wrap
 }
 
+function makeSearchPinEl(onClick: () => void) {
+  const wrap = document.createElement('button')
+  wrap.type = 'button'
+  wrap.className = 'search-pin'
+  wrap.setAttribute('aria-label', 'Ava asukoha info')
+  wrap.innerHTML = `<span class="search-pin-dot"></span>`
+  wrap.addEventListener('click', (e) => {
+    e.stopPropagation()
+    onClick()
+  })
+  return wrap
+}
+
 function filterToLayers(filter: FilterId): ParkingLayerKey[] | 'all' {
   if (filter === 'all') return 'all'
   if ((PARKING_PROVIDERS as string[]).includes(filter)) return [filter as ParkingLayerKey]
@@ -85,6 +98,8 @@ export function MapView({
   flyZoom,
   pitch3d = true,
   selectedId = null,
+  searchPin = null,
+  onSearchPinClick,
   route,
   navigating,
   onNavigate,
@@ -100,6 +115,9 @@ export function MapView({
   /** When true, use Apple Maps–style pitched 3D; when false, flat 2D. */
   pitch3d?: boolean
   selectedId?: string | null
+  /** Dropped search / address pin */
+  searchPin?: { lat: number; lng: number } | null
+  onSearchPinClick?: () => void
   route: DrivingRoute | null
   navigating: boolean
   onNavigate: (spot: ParkingSpot) => void
@@ -109,7 +127,9 @@ export function MapView({
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMapType | null>(null)
   const userMarkerRef = useRef<Marker | null>(null)
+  const searchMarkerRef = useRef<Marker | null>(null)
   const onNavigateRef = useRef(onNavigate)
+  const onSearchPinClickRef = useRef(onSearchPinClick)
   const filterRef = useRef(filter)
   const selectedIdRef = useRef(selectedId)
   const pitch3dRef = useRef(pitch3d)
@@ -117,6 +137,7 @@ export function MapView({
   const [ready, setReady] = useState(false)
 
   onNavigateRef.current = onNavigate
+  onSearchPinClickRef.current = onSearchPinClick
   filterRef.current = filter
   selectedIdRef.current = selectedId
   pitch3dRef.current = pitch3d
@@ -271,6 +292,7 @@ export function MapView({
       window.clearTimeout(moveTimer)
       ro.disconnect()
       userMarkerRef.current?.remove()
+      searchMarkerRef.current?.remove()
       map.remove()
       mapRef.current = null
     }
@@ -313,6 +335,28 @@ export function MapView({
       userMarkerRef.current.setLngLat([userLocation[1], userLocation[0]])
     }
   }, [userLocation, ready])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+
+    if (!searchPin) {
+      searchMarkerRef.current?.remove()
+      searchMarkerRef.current = null
+      return
+    }
+
+    if (!searchMarkerRef.current) {
+      searchMarkerRef.current = new Marker({
+        element: makeSearchPinEl(() => onSearchPinClickRef.current?.()),
+        anchor: 'bottom',
+      })
+        .setLngLat([searchPin.lng, searchPin.lat])
+        .addTo(map)
+    } else {
+      searchMarkerRef.current.setLngLat([searchPin.lng, searchPin.lat])
+    }
+  }, [searchPin, ready])
 
   useEffect(() => {
     const map = mapRef.current

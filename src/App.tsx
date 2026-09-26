@@ -14,12 +14,18 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { MapErrorBoundary } from './components/MapErrorBoundary'
 import { MapView } from './components/MapView'
 import { ModalShell } from './components/ModalShell'
+import { LocationInfoSheet } from './components/LocationInfoSheet'
 import { ParkingBottomSheet } from './components/ParkingBottomSheet'
 import { Toast, type ToastState } from './components/Toast'
 import { MOCK_KESKLINN_SPOTS } from './data/mockKesklinn'
 import { PARKING_SPOTS, TALLINN_CENTER } from './data/parking'
 import { distanceMeters, formatDistance } from './lib/geo'
-import { searchAddress, type GeocodeResult } from './lib/geocode'
+import {
+  geocodeToSearchLocation,
+  searchAddress,
+  type GeocodeResult,
+  type SearchLocation,
+} from './lib/geocode'
 import { normalizeSpot } from './lib/geojson'
 import { formatHMS, minutesFromBadge, TYPE_LABELS } from './lib/parking'
 import {
@@ -74,6 +80,8 @@ export default function App() {
   const [flyKey, setFlyKey] = useState(0)
   const [customSpots, setCustomSpots] = useState<ParkingSpot[]>([])
   const [selected, setSelected] = useState<ParkingSpot | null>(null)
+  const [searchLocation, setSearchLocation] = useState<SearchLocation | null>(null)
+  const [searchSheetOpen, setSearchSheetOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
   const [timerSeconds, setTimerSeconds] = useState(0)
@@ -212,10 +220,25 @@ export default function App() {
   }, [allSpots])
 
   const openSheet = useCallback((spot: ParkingSpot) => {
+    setSearchSheetOpen(false)
     setSelected(spot)
   }, [])
 
   const closeSheet = () => setSelected(null)
+
+  const clearSearchLocation = useCallback(() => {
+    setSearchLocation(null)
+    setSearchSheetOpen(false)
+    setQuery('')
+    setGeoResults([])
+    setGeoError(null)
+  }, [])
+
+  const openSearchSheet = useCallback(() => {
+    if (!searchLocation) return
+    setSelected(null)
+    setSearchSheetOpen(true)
+  }, [searchLocation])
 
   const recenter = () => {
     setFlyTarget([...userLocation] as [number, number])
@@ -224,11 +247,16 @@ export default function App() {
   }
 
   const flyToGeocode = (r: GeocodeResult) => {
-    setFlyTarget([r.lat, r.lng])
-    setFlyZoom(16.2)
+    const loc = geocodeToSearchLocation(r)
+    setSelected(null)
+    setSearchLocation(loc)
+    setSearchSheetOpen(true)
+    setFlyTarget([loc.lat, loc.lng])
+    setFlyZoom(16.4)
     setFlyKey((k) => k + 1)
-    setQuery(r.label.split(',')[0] ?? r.label)
+    setQuery(loc.name)
     setGeoResults([])
+    setGeoError(null)
   }
 
   const addMinutes = (mins: number) => setTimerSeconds((s) => s + mins * 60)
@@ -508,6 +536,12 @@ export default function App() {
             flyZoom={flyZoom}
             pitch3d={pitch3d}
             selectedId={selected?.id ?? null}
+            searchPin={
+              searchLocation
+                ? { lat: searchLocation.lat, lng: searchLocation.lng }
+                : null
+            }
+            onSearchPinClick={openSearchSheet}
             route={null}
             navigating={false}
             onNavigate={openSheet}
@@ -798,6 +832,14 @@ export default function App() {
           onStopSession={() => void endParkingSession()}
           onCheckStatus={() => void refreshParkingStatus()}
           onTimer={autoTimerFromSpot}
+        />
+      ) : null}
+
+      {searchSheetOpen && searchLocation && !selected ? (
+        <LocationInfoSheet
+          location={searchLocation}
+          onClose={() => setSearchSheetOpen(false)}
+          onClear={clearSearchLocation}
         />
       ) : null}
 

@@ -12,6 +12,16 @@ export type GeocodeResult = {
   kind: string
 }
 
+/** Dropped / selected place for the location info sheet (search or map pick). */
+export type SearchLocation = {
+  id: string
+  name: string
+  label: string
+  lat: number
+  lng: number
+  kind?: string
+}
+
 export async function searchAddress(
   query: string,
   signal?: AbortSignal,
@@ -55,7 +65,39 @@ export async function searchAddress(
 export function navLinks(lat: number, lng: number) {
   return {
     waze: `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`,
-    google: `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`,
-    apple: `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=d`,
+    google: `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`,
+    /** Native iOS / macOS Apple Maps scheme */
+    appleNative: `maps://maps.apple.com/?daddr=${lat},${lng}`,
+    /** HTTPS fallback for desktop / when native scheme is unavailable */
+    apple: `https://maps.apple.com/?daddr=${lat},${lng}`,
   }
+}
+
+/** Open Apple Maps via native scheme with HTTPS fallback. */
+export function openAppleMaps(lat: number, lng: number) {
+  const links = navLinks(lat, lng)
+  const started = Date.now()
+  window.location.href = links.appleNative
+  window.setTimeout(() => {
+    // If the page is still visible shortly after, native app likely did not open
+    if (Date.now() - started < 1600 && !document.hidden) {
+      window.open(links.apple, '_blank', 'noopener,noreferrer')
+    }
+  }, 700)
+}
+
+export function geocodeToSearchLocation(r: GeocodeResult): SearchLocation {
+  const short = r.label.split(',')[0]?.trim() || r.label
+  return {
+    id: r.id,
+    name: short,
+    label: r.label,
+    lat: r.lat,
+    lng: r.lng,
+    kind: r.kind,
+  }
+}
+
+export function formatCoords(lat: number, lng: number): string {
+  return `${lat.toFixed(5)}, ${lng.toFixed(5)}`
 }

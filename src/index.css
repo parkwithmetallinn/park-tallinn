@@ -136,6 +136,31 @@ body {
   box-shadow: 0 0 10px rgb(0 0 0 / 0.25);
 }
 
+.search-pin {
+  width: 28px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  filter: drop-shadow(0 4px 10px rgb(0 112 255 / 0.35));
+}
+
+.search-pin-dot {
+  display: block;
+  width: 28px;
+  height: 28px;
+  border-radius: 50% 50% 50% 0;
+  background: #007aff;
+  border: 3px solid #fff;
+  transform: rotate(-45deg);
+  margin-top: 2px;
+}
+
+.search-pin:active {
+  transform: scale(0.94);
+}
+
 .marker-pin {
   display: inline-flex;
   align-items: center;
