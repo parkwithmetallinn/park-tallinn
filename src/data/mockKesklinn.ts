@@ -1,7 +1,5 @@
 import type { ParkingSpotSeed } from '../types'
 import {
-  LINE_VENE,
-  LINE_VIRU,
   POLY_AHTRI,
   POLY_ROTERMANN,
   POLY_SOLARIS,
@@ -53,7 +51,6 @@ export const MOCK_KESKLINN_SPOTS: ParkingSpotSeed[] = [
     address: 'Viru väljak, Südalinn',
     desc: 'Südalinna tsoon AS Ühisteenused halduses. Öösel & pühapäeval tasuta.',
     landmark: true,
-    line: LINE_VIRU,
   },
   {
     id: 'mun-kesklinn-liivalaia',
@@ -292,7 +289,6 @@ export const MOCK_KESKLINN_SPOTS: ParkingSpotSeed[] = [
     address: 'Vene tn, Vanalinn',
     desc: 'Ajapiiranguga tänavalõik Vanalinnas — 30 min kellaga.',
     landmark: true,
-    line: LINE_VENE,
   },
   {
     id: 'street-timed-1h-ravala',
