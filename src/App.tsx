@@ -78,6 +78,8 @@ export default function App() {
   const [flyTarget, setFlyTarget] = useState<[number, number] | null>(null)
   const [flyZoom, setFlyZoom] = useState<number | undefined>(undefined)
   const [flyKey, setFlyKey] = useState(0)
+  const [flyMode, setFlyMode] = useState<'fly' | 'ease'>('ease')
+  const searchSheetTimer = useRef<number | null>(null)
   const [customSpots, setCustomSpots] = useState<ParkingSpot[]>([])
   const [selected, setSelected] = useState<ParkingSpot | null>(null)
   const [searchLocation, setSearchLocation] = useState<SearchLocation | null>(null)
@@ -112,6 +114,9 @@ export default function App() {
         `Sessioon: ${saved.spotName ?? saved.zone} · ${saved.carNumber}`,
       )
       setTimerOpen(true)
+    }
+    return () => {
+      if (searchSheetTimer.current) window.clearTimeout(searchSheetTimer.current)
     }
   }, [])
 
@@ -207,6 +212,7 @@ export default function App() {
     if (!match) return
     deepLinkApplied.current = true
     setSelected(match)
+    setFlyMode('fly')
     setFlyTarget([match.lat, match.lng])
     setFlyZoom(16.5)
     setFlyKey((k) => k + 1)
@@ -234,7 +240,14 @@ export default function App() {
     setSelected(spot)
   }, [])
 
-  const closeSheet = () => setSelected(null)
+  const closeSheet = useCallback(() => setSelected(null), [])
+
+  const dismissMapOverlays = useCallback(() => {
+    setSelected(null)
+    setSearchSheetOpen(false)
+    setGeoResults([])
+    setGeoError(null)
+  }, [])
 
   const clearSearchLocation = useCallback(() => {
     setSearchLocation(null)
@@ -251,22 +264,33 @@ export default function App() {
   }, [searchLocation])
 
   const recenter = () => {
+    setFlyMode('ease')
     setFlyTarget([...userLocation] as [number, number])
-    setFlyZoom(15.5)
+    setFlyZoom(16)
     setFlyKey((k) => k + 1)
   }
 
   const flyToGeocode = (r: GeocodeResult) => {
     const loc = geocodeToSearchLocation(r)
+    if (searchSheetTimer.current) {
+      window.clearTimeout(searchSheetTimer.current)
+      searchSheetTimer.current = null
+    }
     setSelected(null)
+    setSearchSheetOpen(false)
     setSearchLocation(loc)
-    setSearchSheetOpen(true)
+    setFlyMode('fly')
     setFlyTarget([loc.lat, loc.lng])
-    setFlyZoom(16.4)
+    setFlyZoom(16.5)
     setFlyKey((k) => k + 1)
     setQuery(loc.name)
     setGeoResults([])
     setGeoError(null)
+    // Fly first, then open the info sheet
+    searchSheetTimer.current = window.setTimeout(() => {
+      setSearchSheetOpen(true)
+      searchSheetTimer.current = null
+    }, 720)
   }
 
   const addMinutes = (mins: number) => setTimerSeconds((s) => s + mins * 60)
@@ -544,6 +568,7 @@ export default function App() {
             flyTarget={flyTarget}
             flyKey={flyKey}
             flyZoom={flyZoom}
+            flyMode={flyMode}
             pitch3d={pitch3d}
             selectedId={selected?.id ?? null}
             searchPin={
@@ -555,6 +580,7 @@ export default function App() {
             route={null}
             navigating={false}
             onNavigate={openSheet}
+            onBackgroundClick={dismissMapOverlays}
             onZoomChange={() => {}}
           />
         </MapErrorBoundary>

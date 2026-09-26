@@ -96,6 +96,7 @@ export function MapView({
   flyTarget,
   flyKey,
   flyZoom,
+  flyMode = 'ease',
   pitch3d = true,
   selectedId = null,
   searchPin = null,
@@ -103,6 +104,7 @@ export function MapView({
   route,
   navigating,
   onNavigate,
+  onBackgroundClick,
   onZoomChange,
   onViewportStats,
 }: {
@@ -112,6 +114,8 @@ export function MapView({
   flyTarget: [number, number] | null
   flyKey: number
   flyZoom?: number
+  /** `fly` = MapLibre flyTo (search); `ease` = easeTo (recenter). */
+  flyMode?: 'fly' | 'ease'
   /** When true, use Apple Maps–style pitched 3D; when false, flat 2D. */
   pitch3d?: boolean
   selectedId?: string | null
@@ -121,6 +125,8 @@ export function MapView({
   route: DrivingRoute | null
   navigating: boolean
   onNavigate: (spot: ParkingSpot) => void
+  /** Empty map tap — close sheets / search popup. */
+  onBackgroundClick?: () => void
   onZoomChange?: (zoom: number, mode: 'district' | 'cluster' | 'street') => void
   onViewportStats?: (stats: { rendered: number; skipped: boolean }) => void
 }) {
@@ -129,18 +135,22 @@ export function MapView({
   const userMarkerRef = useRef<Marker | null>(null)
   const searchMarkerRef = useRef<Marker | null>(null)
   const onNavigateRef = useRef(onNavigate)
+  const onBackgroundClickRef = useRef(onBackgroundClick)
   const onSearchPinClickRef = useRef(onSearchPinClick)
   const filterRef = useRef(filter)
   const selectedIdRef = useRef(selectedId)
   const pitch3dRef = useRef(pitch3d)
+  const flyModeRef = useRef(flyMode)
   const loadGenRef = useRef(0)
   const [ready, setReady] = useState(false)
 
   onNavigateRef.current = onNavigate
+  onBackgroundClickRef.current = onBackgroundClick
   onSearchPinClickRef.current = onSearchPinClick
   filterRef.current = filter
   selectedIdRef.current = selectedId
   pitch3dRef.current = pitch3d
+  flyModeRef.current = flyMode
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -294,7 +304,10 @@ export function MapView({
       const layers = parkingHitLayers.filter((id) => map.getLayer(id))
       const hits = layers.length ? map.queryRenderedFeatures(box, { layers }) : []
       const hit = hits.find((f) => f.properties?.id)
-      if (!hit?.properties?.id) return
+      if (!hit?.properties?.id) {
+        onBackgroundClickRef.current?.()
+        return
+      }
       const spot = parkingIndex.getById(String(hit.properties.id))
       if (spot) onNavigateRef.current(spot)
     }
@@ -381,12 +394,28 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready || !flyTarget) return
-    map.easeTo({
-      center: [flyTarget[1], flyTarget[0]],
-      zoom: flyZoom ?? Math.max(map.getZoom(), ZOOM.detailMin + 0.4),
-      pitch: pitch3dRef.current ? NAV_PITCH : 0,
-      duration: 1200,
-    })
+    const center: [number, number] = [flyTarget[1], flyTarget[0]]
+    const zoom = flyZoom ?? Math.max(map.getZoom(), ZOOM.detailMin + 0.4)
+    const pitch = pitch3dRef.current ? NAV_PITCH : 0
+
+    if (flyModeRef.current === 'fly') {
+      map.flyTo({
+        center,
+        zoom,
+        pitch,
+        speed: 1.2,
+        curve: 1.4,
+        essential: true,
+      })
+    } else {
+      map.easeTo({
+        center,
+        zoom,
+        pitch,
+        duration: 900,
+        essential: true,
+      })
+    }
   }, [flyTarget, flyKey, flyZoom, ready])
 
   useEffect(() => {
@@ -395,7 +424,8 @@ export function MapView({
     map.easeTo({
       pitch: pitch3d ? NAV_PITCH : 0,
       bearing: pitch3d ? map.getBearing() || -22 : 0,
-      duration: 700,
+      duration: 750,
+      essential: true,
     })
   }, [pitch3d, ready])
 

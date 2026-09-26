@@ -1,11 +1,12 @@
 import { MapPin, Navigation, RefreshCw, Square, X } from 'lucide-react'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { ActiveParkingSession } from '../lib/parkingSession'
 import { formatSessionInstant } from '../lib/parkingSession'
 import type { ParkingSpot } from '../types'
 import { navLinks, openAppleMaps } from '../lib/geocode'
 import { PARKING_LAYER_META } from '../map/parkingLayers'
 import { streetLineColor } from '../map/streetLineTheme'
+import { useSheetClose } from './AnimatedBottomSheet'
 
 function priceSummary(spot: ParkingSpot): { headline: string; detail: string } {
   const free = spot.free_minutes > 0 ? `${spot.free_minutes} min tasuta` : null
@@ -56,6 +57,8 @@ export function ParkingBottomSheet({
   onCheckStatus: () => void
   onTimer?: () => void
 }) {
+  const stableClose = useCallback(() => onClose(), [onClose])
+  const { requestClose, sheetClassName } = useSheetClose(stableClose)
   const links = navLinks(spot.lat, spot.lng)
   const color =
     spot.line || spot.featureType === 'on-street-line'
@@ -70,7 +73,7 @@ export function ParkingBottomSheet({
 
   return (
     <div
-      className="animate-slide-up absolute inset-x-0 bottom-0 z-40 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-4"
+      className={`${sheetClassName} absolute inset-x-0 bottom-0 z-40 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-4`}
       role="dialog"
       aria-modal="true"
       aria-label={title}
@@ -78,7 +81,14 @@ export function ParkingBottomSheet({
       <div className="mx-auto max-w-lg overflow-hidden rounded-[1.75rem] border border-black/5 bg-white/92 shadow-[0_16px_48px_rgba(15,23,42,0.18)] backdrop-blur-xl">
         {/* iOS grabber */}
         <div className="flex justify-center pt-2.5 pb-1">
-          <span className="h-1 w-9 rounded-full bg-black/15" />
+          <button
+            type="button"
+            onClick={requestClose}
+            className="flex w-full justify-center py-1"
+            aria-label="Sulge"
+          >
+            <span className="h-1 w-9 rounded-full bg-black/15" />
+          </button>
         </div>
 
         <div className="flex items-start justify-between gap-3 px-5 pt-1 pb-3">
@@ -111,7 +121,7 @@ export function ParkingBottomSheet({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F2F2F7] text-[#8E8E93] transition active:scale-95"
             aria-label="Sulge"
           >

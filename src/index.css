@@ -83,6 +83,35 @@ body {
   }
 }
 
+@keyframes sheet-spring-in {
+  0% {
+    opacity: 0;
+    transform: translateY(110%);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-2.5%);
+  }
+  80% {
+    transform: translateY(1%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sheet-spring-out {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(110%);
+  }
+}
+
 @keyframes slide-up {
   from {
     opacity: 0;
@@ -109,6 +138,17 @@ body {
 
 .animate-fade-in {
   animation: fade-in 0.35s ease-out both;
+}
+
+.sheet-spring-in {
+  animation: sheet-spring-in 0.52s cubic-bezier(0.22, 1.2, 0.36, 1) both;
+  will-change: transform, opacity;
+}
+
+.sheet-spring-out {
+  animation: sheet-spring-out 0.28s cubic-bezier(0.4, 0, 0.7, 0.2) both;
+  will-change: transform, opacity;
+  pointer-events: none;
 }
 
 .user-location-wrap {

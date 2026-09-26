@@ -1,10 +1,12 @@
 import { MapPin, Navigation, X } from 'lucide-react'
+import { useCallback } from 'react'
 import {
   formatCoords,
   navLinks,
   openAppleMaps,
   type SearchLocation,
 } from '../lib/geocode'
+import { useSheetClose } from './AnimatedBottomSheet'
 
 export function LocationInfoSheet({
   location,
@@ -16,19 +18,28 @@ export function LocationInfoSheet({
   /** Clears the search pin and resets search UI */
   onClear: () => void
 }) {
+  const stableClose = useCallback(() => onClose(), [onClose])
+  const { requestClose, sheetClassName } = useSheetClose(stableClose)
   const links = navLinks(location.lat, location.lng)
   const coords = formatCoords(location.lat, location.lng)
 
   return (
     <div
-      className="animate-slide-up absolute inset-x-0 bottom-0 z-40 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-4"
+      className={`${sheetClassName} absolute inset-x-0 bottom-0 z-40 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-4`}
       role="dialog"
       aria-modal="true"
       aria-label={location.name}
     >
       <div className="mx-auto max-w-lg overflow-hidden rounded-[1.75rem] border border-black/5 bg-white/92 shadow-[0_16px_48px_rgba(15,23,42,0.18)] backdrop-blur-xl">
         <div className="flex justify-center pt-2.5 pb-1">
-          <span className="h-1 w-9 rounded-full bg-black/15" />
+          <button
+            type="button"
+            onClick={requestClose}
+            className="flex w-full justify-center py-1"
+            aria-label="Sulge"
+          >
+            <span className="h-1 w-9 rounded-full bg-black/15" />
+          </button>
         </div>
 
         <div className="flex items-start justify-between gap-3 px-5 pt-1 pb-3">
@@ -49,7 +60,7 @@ export function LocationInfoSheet({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F2F2F7] text-[#8E8E93] transition active:scale-95"
             aria-label="Sulge"
           >
@@ -97,7 +108,9 @@ export function LocationInfoSheet({
         <div className="border-t border-black/5 px-5 py-4">
           <button
             type="button"
-            onClick={onClear}
+            onClick={() => {
+              onClear()
+            }}
             className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#FF3B30]/10 px-4 py-3.5 text-[15px] font-semibold text-[#D70015] transition active:scale-[0.99]"
           >
             <X className="h-4 w-4" />
