@@ -14,6 +14,35 @@ const ROAD = '#FFFFFF'
 const ROAD_CASE = '#D5D9E0'
 const WATER = '#A8C8F0'
 
+/** Real roads only — exclude ferry/rail/path diagonals that cut across the map. */
+const ROAD_CLASS_FILTER = [
+  'all',
+  [
+    'match',
+    ['get', 'class'],
+    [
+      'motorway',
+      'trunk',
+      'primary',
+      'secondary',
+      'tertiary',
+      'minor',
+      'service',
+      'street',
+      'street_limited',
+    ],
+    true,
+    false,
+  ],
+  ['!=', ['get', 'class'], 'ferry'],
+  ['!=', ['get', 'class'], 'rail'],
+  ['!=', ['get', 'class'], 'transit'],
+  ['!=', ['get', 'class'], 'path'],
+  ['!=', ['get', 'class'], 'track'],
+  ['!=', ['get', 'class'], 'pier'],
+] as StyleSpecification['layers'][number] extends { filter?: infer F } ? F : never
+
+
 /**
  * Returns MapLibre style: either remote STYLE_URL or inline style
  * built from VECTOR_TILE_SOURCE_URL (swap that constant for Maa-amet).
@@ -60,23 +89,7 @@ export function createBasemapStyle(): string | StyleSpecification {
         type: 'line',
         source: 'openmaptiles',
         'source-layer': 'transportation',
-        filter: [
-          'match',
-          ['get', 'class'],
-          [
-            'motorway',
-            'trunk',
-            'primary',
-            'secondary',
-            'tertiary',
-            'minor',
-            'service',
-            'street',
-            'street_limited',
-          ],
-          true,
-          false,
-        ],
+        filter: ROAD_CLASS_FILTER,
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': ROAD_CASE,
@@ -98,23 +111,7 @@ export function createBasemapStyle(): string | StyleSpecification {
         type: 'line',
         source: 'openmaptiles',
         'source-layer': 'transportation',
-        filter: [
-          'match',
-          ['get', 'class'],
-          [
-            'motorway',
-            'trunk',
-            'primary',
-            'secondary',
-            'tertiary',
-            'minor',
-            'service',
-            'street',
-            'street_limited',
-          ],
-          true,
-          false,
-        ],
+        filter: ROAD_CLASS_FILTER,
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': ROAD,

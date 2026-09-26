@@ -216,10 +216,18 @@ export function MapView({
           : result.spots.filter((s) => layers.includes(s.layer))
 
       const empty = { type: 'FeatureCollection' as const, features: [] }
-      const geo =
+      let geo =
         result.skippedForZoom || result.skippedForExtent
           ? { points: empty, lines: empty, polygons: empty }
           : spotsToMapGeoJSON(visibleSpots)
+
+      // Strict LOD: pins + curb lines only at detail (≥15); districts-only below 13
+      if (result.lod !== 'detail') {
+        geo = { ...geo, points: empty, lines: empty }
+      }
+      if (result.lod === 'district') {
+        geo = { points: empty, lines: empty, polygons: empty }
+      }
 
       ;(m.getSource(PARKING_VIEWPORT_SOURCE) as GeoJSONSource | undefined)?.setData(geo.points)
       ;(m.getSource(PARKING_LINES_SOURCE) as GeoJSONSource | undefined)?.setData(geo.lines)

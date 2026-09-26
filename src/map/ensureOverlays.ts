@@ -58,6 +58,23 @@ const noOverlapSymbol = {
   'symbol-z-order': 'source' as const,
 }
 
+const SYMBOL_LAYER_IDS = [
+  DISTRICT_LABEL_LAYER,
+  PARKING_LOTS_LABEL_LAYER,
+  ...PARKING_PROVIDERS.map((k) => `${PARKING_LAYER_META[k].id}-label`),
+]
+
+/** Force collision-safe layout on every parking symbol layer. */
+function syncCollisionProps(map: MapLibreMapType) {
+  for (const id of SYMBOL_LAYER_IDS) {
+    if (!map.getLayer(id)) continue
+    map.setLayoutProperty(id, 'icon-allow-overlap', false)
+    map.setLayoutProperty(id, 'text-allow-overlap', false)
+    map.setLayoutProperty(id, 'icon-ignore-placement', false)
+    map.setLayoutProperty(id, 'text-ignore-placement', false)
+  }
+}
+
 /** Keep LOD zoom gates in sync even when layers already exist (HMR / remount). */
 function syncLodZoomLimits(map: MapLibreMapType) {
   const setMin = (id: string, z: number) => {
@@ -107,9 +124,10 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       layout: { visibility: 'visible' },
       paint: {
         'fill-color': ['get', 'color'],
-        'fill-opacity': 0.12,
+        'fill-opacity': 0.16,
       },
     })
+    // Soft outline only — no solid debug-looking diagonals across the city
     map.addLayer({
       id: DISTRICT_OUTLINE_LAYER,
       type: 'line',
@@ -122,9 +140,8 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': 1.2,
-        'line-opacity': 0.4,
-        'line-dasharray': [2, 1.5],
+        'line-width': 1,
+        'line-opacity': 0.28,
       },
     })
     map.addLayer({
@@ -422,6 +439,7 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
   }
 
   syncLodZoomLimits(map)
+  syncCollisionProps(map)
 }
 
 const GEOM_LAYER_IDS = [

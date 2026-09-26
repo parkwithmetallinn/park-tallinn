@@ -247,21 +247,14 @@ function metersToDeg(lat: number, meters: number) {
   return { dLat, dLng }
 }
 
-/** Short curb stub when no surveyed line exists (dense synthetic data). */
+/** @deprecated Never invent curb stubs — they cut through buildings. */
 export function stubStreetLine(
-  lat: number,
-  lng: number,
-  lengthM = 55,
-  bearingDeg = 75,
+  _lat: number,
+  _lng: number,
+  _lengthM = 55,
+  _bearingDeg = 75,
 ): [number, number][] {
-  const rad = (bearingDeg * Math.PI) / 180
-  const { dLat, dLng } = metersToDeg(lat, lengthM / 2)
-  const dy = Math.cos(rad) * dLat
-  const dx = Math.sin(rad) * dLng
-  return [
-    [lat - dy, lng - dx],
-    [lat + dy, lng + dx],
-  ]
+  return []
 }
 
 /** Soft rounded rectangle footprint (chamfered corners) for off-street lots. */
@@ -336,12 +329,12 @@ function densifyLine(line: [number, number][], maxSegM = 35): [number, number][]
 
 /**
  * Only accept surveyed, road-following curb polylines.
- * Rejects stubs, sparse jumps, and long near-straight diagonals that cut blocks.
+ * Rejects stubs, sparse jumps, and city-scale near-straight diagonals.
  */
 function resolveLine(s: ParkingSpot): [number, number][] | null {
   if (!s.line || s.line.length < 4) return null
 
-  const maxJumpM = 95
+  const maxJumpM = 70
   let pathM = 0
   for (let i = 0; i < s.line.length - 1; i++) {
     const meters = segmentMeters(s.line[i], s.line[i + 1])
@@ -349,14 +342,14 @@ function resolveLine(s: ParkingSpot): [number, number][] | null {
     pathM += meters
   }
 
-  // Cap overall corridor length — city-scale diagonals are artifacts
-  if (pathM > 900) return null
+  // Cap overall corridor — only short curb segments at street zoom
+  if (pathM > 500) return null
 
   const chordM = segmentMeters(s.line[0], s.line[s.line.length - 1])
-  // Near-perfect straight line over a long span → building-cutting diagonal
-  if (chordM > 350 && pathM / Math.max(chordM, 1) < 1.08) return null
+  // City-scale near-straight span → building-cutting diagonal artifact
+  if (chordM > 280 && pathM / Math.max(chordM, 1) < 1.1) return null
 
-  return densifyLine(s.line, 30)
+  return densifyLine(s.line, 25)
 }
 
 function resolvePolygon(s: ParkingSpot): [number, number][] | null {
