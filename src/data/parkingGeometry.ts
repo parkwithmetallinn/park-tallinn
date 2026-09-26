@@ -1,53 +1,19 @@
 /**
  * Curb / carriageway LineStrings for Kesklinn streets.
- * Densely sampled along street corridors ([lat, lng]) so lines
- * follow the road — not crude building-cutting diagonals.
+ * Short, densely sampled road-following segments only — never
+ * city-scale diagonals that cut across building blocks.
  */
 
-/** Liivalaia — E–W corridor */
+/** Liivalaia — short E–W curb near Solaris (not full corridor) */
 export const LINE_LIIVALAIA: [number, number][] = [
-  [59.43348, 24.7454],
-  [59.43345, 24.7462],
-  [59.43342, 24.7470],
-  [59.43338, 24.7478],
-  [59.43335, 24.7486],
-  [59.43330, 24.7494],
-  [59.43326, 24.7502],
-  [59.43321, 24.7510],
-  [59.43316, 24.7518],
-  [59.43310, 24.7526],
-  [59.43305, 24.7534],
-  [59.43299, 24.7542],
-  [59.43294, 24.7550],
-  [59.43288, 24.7558],
-  [59.43282, 24.7566],
-  [59.43276, 24.7574],
-  [59.43270, 24.7582],
-  [59.43264, 24.7590],
-  [59.43258, 24.7598],
-  [59.43252, 24.7606],
-  [59.43246, 24.7614],
-  [59.43240, 24.7621],
-  [59.43235, 24.7628],
-]
-
-/** Pärnu mnt — NW → SE through Kesklinn (road corridor samples) */
-export const LINE_PARNU_MNT: [number, number][] = [
-  [59.43470, 24.7448],
-  [59.43445, 24.7456],
-  [59.43420, 24.7464],
-  [59.43395, 24.7472],
-  [59.43370, 24.7480],
-  [59.43345, 24.7488],
-  [59.43320, 24.7496],
-  [59.43295, 24.7504],
-  [59.43270, 24.7512],
-  [59.43245, 24.7520],
-  [59.43220, 24.7528],
-  [59.43195, 24.7536],
-  [59.43170, 24.7544],
-  [59.43148, 24.7551],
-  [59.43125, 24.7558],
+  [59.43295, 24.7528],
+  [59.43290, 24.7534],
+  [59.43285, 24.7540],
+  [59.43280, 24.7546],
+  [59.43275, 24.7552],
+  [59.43270, 24.7558],
+  [59.43265, 24.7564],
+  [59.43260, 24.7570],
 ]
 
 /** Viru tn — short curb near Viru väljak */
@@ -89,10 +55,8 @@ export const LINE_VENE: [number, number][] = [
   [59.43735, 24.7496],
 ]
 
-/** Rävala puiestee */
+/** Rävala puiestee — short timed curb */
 export const LINE_RAVALA: [number, number][] = [
-  [59.43455, 24.7536],
-  [59.43438, 24.7541],
   [59.43420, 24.7546],
   [59.43402, 24.7551],
   [59.43385, 24.7556],

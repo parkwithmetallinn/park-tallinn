@@ -7,6 +7,20 @@ import type { DistrictZone } from '../types'
  */
 export const DISTRICT_ZONES: DistrictZone[] = [
   {
+    id: 'd-vanalinn',
+    name: 'Vanalinn',
+    color: '#B45309',
+    kind: 'paid',
+    summary: 'Vanalinna tasuline tsoon · kõrgeim tariif',
+    coords: [
+      [59.4415, 24.739],
+      [59.442, 24.752],
+      [59.4355, 24.754],
+      [59.4345, 24.742],
+      [59.438, 24.738],
+    ],
+  },
+  {
     id: 'd-kesklinn',
     name: 'Kesklinn',
     color: '#0F766E',

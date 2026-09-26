@@ -190,7 +190,7 @@ export function MapView({
     const emitZoom = (m: MapLibreMapType) => {
       const z = m.getZoom()
       const mode =
-        z >= ZOOM.streetMin ? 'street' : z >= ZOOM.districtMax ? 'cluster' : 'district'
+        z >= ZOOM.detailMin ? 'street' : z >= ZOOM.lotMin ? 'cluster' : 'district'
       onZoomChange?.(z, mode)
     }
 
@@ -373,7 +373,7 @@ export function MapView({
     if (!map || !ready || !flyTarget) return
     map.easeTo({
       center: [flyTarget[1], flyTarget[0]],
-      zoom: flyZoom ?? Math.max(map.getZoom(), ZOOM.streetMin + 0.8),
+      zoom: flyZoom ?? Math.max(map.getZoom(), ZOOM.detailMin + 0.4),
       pitch: pitch3dRef.current ? NAV_PITCH : 0,
       duration: 1200,
     })

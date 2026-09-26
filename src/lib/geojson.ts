@@ -194,6 +194,29 @@ export function inferProvider(spot: ParkingSpotSeed): ParkingLayerKey {
   return normalizeSpot(spot).layer
 }
 
+/**
+ * Lower = placed first = wins collisions against lower-priority labels.
+ * Major lot brands beat INVA / EV / timed pins.
+ */
+function labelRank(s: ParkingSpot): number {
+  if (
+    s.layer === 'europark' ||
+    s.layer === 'snabb' ||
+    s.layer === 'citypark' ||
+    s.layer === 'uhisteenused' ||
+    s.layer === 'parkit'
+  ) {
+    return 1
+  }
+  if (s.layer === 'park_ride') return 2
+  if (s.featureType === 'municipal-zone' || s.layer === 'municipal') return 3
+  if (s.layer === 'timed' || s.layer === 'free_street') return 6
+  if (s.layer === 'ev') return 8
+  if (s.layer === 'inva') return 9
+  if (s.layer === 'loading') return 10
+  return 5
+}
+
 function sharedProps(s: ParkingSpot) {
   return {
     id: s.id,
@@ -213,6 +236,7 @@ function sharedProps(s: ParkingSpot) {
     desc: s.desc,
     landmark: s.landmark ? 1 : 0,
     color: layerColor(s.layer),
+    labelRank: labelRank(s),
   }
 }
 
@@ -268,7 +292,7 @@ export function stubLotPolygon(
 
 export function isOnStreetFeature(s: ParkingSpot): boolean {
   // Only surveyed / road-snapped polylines — never invent stubs through buildings
-  return Boolean(s.line && s.line.length >= 3)
+  return Boolean(s.line && s.line.length >= 4)
 }
 
 export function isLotPolygonFeature(s: ParkingSpot): boolean {
@@ -284,40 +308,55 @@ export function isLotPolygonFeature(s: ParkingSpot): boolean {
   )
 }
 
+function segmentMeters(a: [number, number], b: [number, number]): number {
+  const [aLat, aLng] = a
+  const [bLat, bLng] = b
+  return Math.hypot(
+    (aLat - bLat) * 111_320,
+    (aLng - bLng) * 111_320 * Math.cos((aLat * Math.PI) / 180),
+  )
+}
+
 /** Densify long straight segments so lines never look like building-cutting diagonals. */
-function densifyLine(line: [number, number][], maxSegM = 45): [number, number][] {
+function densifyLine(line: [number, number][], maxSegM = 35): [number, number][] {
   if (line.length < 2) return line
   const out: [number, number][] = [line[0]]
   for (let i = 0; i < line.length - 1; i++) {
-    const [aLat, aLng] = line[i]
-    const [bLat, bLng] = line[i + 1]
-    const meters = Math.hypot(
-      (aLat - bLat) * 111_320,
-      (aLng - bLng) * 111_320 * Math.cos((aLat * Math.PI) / 180),
-    )
+    const a = line[i]
+    const b = line[i + 1]
+    const meters = segmentMeters(a, b)
     const steps = Math.max(1, Math.ceil(meters / maxSegM))
     for (let s = 1; s <= steps; s++) {
       const t = s / steps
-      out.push([aLat + (bLat - aLat) * t, aLng + (bLng - aLng) * t])
+      out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t])
     }
   }
   return out
 }
 
+/**
+ * Only accept surveyed, road-following curb polylines.
+ * Rejects stubs, sparse jumps, and long near-straight diagonals that cut blocks.
+ */
 function resolveLine(s: ParkingSpot): [number, number][] | null {
-  if (!s.line || s.line.length < 3) return null
-  // Reject sparse polylines with huge jumps (not road-following)
-  const maxJumpM = 180
+  if (!s.line || s.line.length < 4) return null
+
+  const maxJumpM = 95
+  let pathM = 0
   for (let i = 0; i < s.line.length - 1; i++) {
-    const [aLat, aLng] = s.line[i]
-    const [bLat, bLng] = s.line[i + 1]
-    const meters = Math.hypot(
-      (aLat - bLat) * 111_320,
-      (aLng - bLng) * 111_320 * Math.cos((aLat * Math.PI) / 180),
-    )
+    const meters = segmentMeters(s.line[i], s.line[i + 1])
     if (meters > maxJumpM) return null
+    pathM += meters
   }
-  return densifyLine(s.line, 40)
+
+  // Cap overall corridor length — city-scale diagonals are artifacts
+  if (pathM > 900) return null
+
+  const chordM = segmentMeters(s.line[0], s.line[s.line.length - 1])
+  // Near-perfect straight line over a long span → building-cutting diagonal
+  if (chordM > 350 && pathM / Math.max(chordM, 1) < 1.08) return null
+
+  return densifyLine(s.line, 30)
 }
 
 function resolvePolygon(s: ParkingSpot): [number, number][] | null {

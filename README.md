@@ -11,10 +11,22 @@ npm run dev
 
 Ava [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
+## Zoom LOD (tasemed)
+
+| Zoom | Vaade | Mis kuvatakse |
+|------|--------|----------------|
+| **&lt; 13** | Linnaosa | Ainult linnaosade märgid (Vanalinn, Kesklinn, Mustamäe, …) |
+| **13–15** | Tsoon | Peamised parklad (EuroPark, Snabb, Citypark) läbipaistva täitega |
+| **≥ 15** | Detail | Teeäärsed jooned, kellaga tsoonid, EV, INVA |
+
+Sildid ei kattu: `text-allow-overlap` / `icon-allow-overlap` on `false`; madalama prioriteediga sildid (INVA, EV) peavad loti-nimedele teed andma.
+
+Diagonaalseid “läbi majade” jooni ei joonistata — ainult lühikesed, teele joondatud lõigud detailvaates.
+
 ## Funktsioonid
 
 - **Viewport bbox** — ainult ekraanil nähtavad kohad
-- **Road-snapped jooned** — OSRM-iga teedele joondatud LineString’id (Liivalaia, Pärnu mnt, Viru, …)
+- **Road-snapped jooned** — lühikesed teeäärsed LineString’id (Viru, Harju, Vene, Liivalaia, …)
 - **Nominatim otsing** — `/api/nominatim` proxy (Vite / Vercel)
 - **Bottom sheet** — Waze, Google Maps, Apple Maps navigeerimine
 - **Floating glass UI** — ümarad paneelid + backdrop-blur
