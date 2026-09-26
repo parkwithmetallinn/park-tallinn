@@ -241,6 +241,16 @@ export function MapView({
       bindHover()
       map.resize()
       map.setPitch(pitch3dRef.current ? NAV_PITCH : 0)
+      try {
+        map.setLight({
+          anchor: 'viewport',
+          color: '#ffffff',
+          intensity: 0.28,
+          position: [1.2, 210, 35],
+        })
+      } catch {
+        /* older style without light support */
+      }
       setReady(true)
       void refreshViewport(map)
       emitZoom(map)

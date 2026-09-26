@@ -6,11 +6,13 @@ import {
   VECTOR_TILE_SOURCE_URL,
 } from '../config/basemap'
 
-const BG = '#F1F5F9'
-const BUILDING = '#E2E8F0'
+const BG = '#F2F4F7'
+/** Soft Apple Maps–like building mass */
+const BUILDING = '#E8E8E8'
+const BUILDING_EDGE = '#D8D8D8'
 const ROAD = '#FFFFFF'
-const ROAD_CASE = '#CBD5E1'
-const WATER = '#93C5FD'
+const ROAD_CASE = '#D5D9E0'
+const WATER = '#A8C8F0'
 
 /**
  * Returns MapLibre style: either remote STYLE_URL or inline style
@@ -23,6 +25,13 @@ export function createBasemapStyle(): string | StyleSpecification {
     version: 8,
     name: 'Park Tallinn basemap (temporary OSM)',
     glyphs: GLYPHS_URL,
+    // Soft ambient lighting — reduces harsh extrusion shadows
+    light: {
+      anchor: 'viewport',
+      color: '#ffffff',
+      intensity: 0.28,
+      position: [1.2, 210, 35],
+    },
     sources: {
       openmaptiles: {
         type: 'vector',
@@ -37,14 +46,14 @@ export function createBasemapStyle(): string | StyleSpecification {
         type: 'fill',
         source: 'openmaptiles',
         'source-layer': 'water',
-        paint: { 'fill-color': WATER },
+        paint: { 'fill-color': WATER, 'fill-opacity': 0.85 },
       },
       {
         id: 'landcover-soft',
         type: 'fill',
         source: 'openmaptiles',
         'source-layer': 'landcover',
-        paint: { 'fill-color': '#E8EEF3', 'fill-opacity': 0.4 },
+        paint: { 'fill-color': '#E6EDF2', 'fill-opacity': 0.35 },
       },
       {
         id: 'road-case',
@@ -98,37 +107,43 @@ export function createBasemapStyle(): string | StyleSpecification {
           ],
         },
       },
+      // Flat footprint only below street/detail zoom
       {
         id: 'building-flat',
         type: 'fill',
         source: 'openmaptiles',
         'source-layer': 'building',
-        maxzoom: 14,
+        maxzoom: 15,
         paint: {
           'fill-color': BUILDING,
-          'fill-opacity': 0.95,
-          'fill-outline-color': ROAD_CASE,
+          'fill-opacity': 0.7,
+          'fill-outline-color': BUILDING_EDGE,
         },
       },
+      // Premium 3D extrusions from z >= 15
       {
         id: 'building-3d',
         type: 'fill-extrusion',
         source: 'openmaptiles',
         'source-layer': 'building',
-        minzoom: 13,
+        minzoom: 15,
         paint: {
           'fill-extrusion-color': BUILDING,
           'fill-extrusion-height': [
             'interpolate',
             ['linear'],
             ['zoom'],
-            13,
+            15,
             0,
-            14,
+            15.4,
+            ['*', ['coalesce', ['to-number', ['get', 'render_height']], 12], 0.55],
+            16.5,
             ['coalesce', ['to-number', ['get', 'render_height']], 14],
           ],
           'fill-extrusion-base': 0,
-          'fill-extrusion-opacity': 0.9,
+          // Soft enough that parking layers stay readable underneath/around
+          'fill-extrusion-opacity': 0.55,
+          'fill-extrusion-vertical-gradient': false,
         },
       },
     ],

@@ -21,8 +21,8 @@ const ROUTE_SOURCE = 'nav-route'
 const selectedFillOpacity = [
   'case',
   ['boolean', ['feature-state', 'selected'], false],
-  0.58,
-  0.26,
+  0.48,
+  0.35,
 ]
 
 const selectedLineWidth = [
@@ -30,18 +30,18 @@ const selectedLineWidth = [
   ['linear'],
   ['zoom'],
   14,
-  ['case', ['boolean', ['feature-state', 'selected'], false], 6.5, 3.2],
+  ['case', ['boolean', ['feature-state', 'selected'], false], 5.5, 2.8],
   17,
-  ['case', ['boolean', ['feature-state', 'selected'], false], 10, 5.5],
+  ['case', ['boolean', ['feature-state', 'selected'], false], 9, 4.5],
   18,
-  ['case', ['boolean', ['feature-state', 'selected'], false], 12, 7],
+  ['case', ['boolean', ['feature-state', 'selected'], false], 11, 6],
 ]
 
 const selectedLineOpacity = [
   'case',
   ['boolean', ['feature-state', 'selected'], false],
   1,
-  0.78,
+  0.72,
 ]
 
 /** Clean parking overlays — soft fills/lines with selection highlight. */
@@ -68,7 +68,11 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       type: 'line',
       source: PARKING_LOTS_SOURCE,
       minzoom: ZOOM.streetMin,
-      layout: { visibility: 'visible' },
+      layout: {
+        visibility: 'visible',
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
       paint: {
         'line-color': ['get', 'color'],
         'line-width': [
@@ -76,11 +80,17 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
           ['linear'],
           ['zoom'],
           14,
-          ['case', ['boolean', ['feature-state', 'selected'], false], 2.8, 1.2],
+          ['case', ['boolean', ['feature-state', 'selected'], false], 2.2, 1],
           17,
-          ['case', ['boolean', ['feature-state', 'selected'], false], 4, 2],
+          ['case', ['boolean', ['feature-state', 'selected'], false], 3.2, 1.6],
         ] as never,
-        'line-opacity': selectedLineOpacity as never,
+        'line-opacity': [
+          'case',
+          ['boolean', ['feature-state', 'selected'], false],
+          0.85,
+          0.45,
+        ] as never,
+        'line-blur': 0.6,
       },
     })
     map.addLayer({

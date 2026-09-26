@@ -240,7 +240,7 @@ export function stubStreetLine(
   ]
 }
 
-/** Small rectangle footprint when no surveyed polygon exists. */
+/** Soft rounded rectangle footprint (chamfered corners) for off-street lots. */
 export function stubLotPolygon(
   lat: number,
   lng: number,
@@ -250,18 +250,25 @@ export function stubLotPolygon(
   const { dLat, dLng } = metersToDeg(lat, 1)
   const hw = halfWm * dLng
   const hh = halfHm * dLat
+  const rx = Math.min(hw, dLng * 8)
+  const ry = Math.min(hh, dLat * 8)
+  // Clockwise ring with chamfered corners ≈ soft rounded lot
   return [
-    [lat - hh, lng - hw],
-    [lat - hh, lng + hw],
-    [lat + hh, lng + hw],
-    [lat + hh, lng - hw],
-    [lat - hh, lng - hw],
+    [lat - hh + ry, lng - hw],
+    [lat - hh, lng - hw + rx],
+    [lat - hh, lng + hw - rx],
+    [lat - hh + ry, lng + hw],
+    [lat + hh - ry, lng + hw],
+    [lat + hh, lng + hw - rx],
+    [lat + hh, lng - hw + rx],
+    [lat + hh - ry, lng - hw],
+    [lat - hh + ry, lng - hw],
   ]
 }
 
 export function isOnStreetFeature(s: ParkingSpot): boolean {
   // Only surveyed / road-snapped polylines — never invent stubs through buildings
-  return Boolean(s.line && s.line.length >= 2)
+  return Boolean(s.line && s.line.length >= 3)
 }
 
 export function isLotPolygonFeature(s: ParkingSpot): boolean {
@@ -277,9 +284,40 @@ export function isLotPolygonFeature(s: ParkingSpot): boolean {
   )
 }
 
+/** Densify long straight segments so lines never look like building-cutting diagonals. */
+function densifyLine(line: [number, number][], maxSegM = 45): [number, number][] {
+  if (line.length < 2) return line
+  const out: [number, number][] = [line[0]]
+  for (let i = 0; i < line.length - 1; i++) {
+    const [aLat, aLng] = line[i]
+    const [bLat, bLng] = line[i + 1]
+    const meters = Math.hypot(
+      (aLat - bLat) * 111_320,
+      (aLng - bLng) * 111_320 * Math.cos((aLat * Math.PI) / 180),
+    )
+    const steps = Math.max(1, Math.ceil(meters / maxSegM))
+    for (let s = 1; s <= steps; s++) {
+      const t = s / steps
+      out.push([aLat + (bLat - aLat) * t, aLng + (bLng - aLng) * t])
+    }
+  }
+  return out
+}
+
 function resolveLine(s: ParkingSpot): [number, number][] | null {
-  if (s.line && s.line.length >= 2) return s.line
-  return null
+  if (!s.line || s.line.length < 3) return null
+  // Reject sparse polylines with huge jumps (not road-following)
+  const maxJumpM = 180
+  for (let i = 0; i < s.line.length - 1; i++) {
+    const [aLat, aLng] = s.line[i]
+    const [bLat, bLng] = s.line[i + 1]
+    const meters = Math.hypot(
+      (aLat - bLat) * 111_320,
+      (aLng - bLng) * 111_320 * Math.cos((aLat * Math.PI) / 180),
+    )
+    if (meters > maxJumpM) return null
+  }
+  return densifyLine(s.line, 40)
 }
 
 function resolvePolygon(s: ParkingSpot): [number, number][] | null {
