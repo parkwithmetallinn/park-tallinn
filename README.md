@@ -64,7 +64,8 @@ Bottom sheet / kellapaneel saadavad POST production webhook’ile:
 - UI kuvab backend’i `message`, tunnihinna ja staatuse toast’is / bottom sheet’is / kellapaneelis; nimekiri avaneb modaalis
 - CORS-probleemi korral fallback: `/api/parkimine` proxy
 
-Iga päring saadab Header Auth:
+Iga päring (start / stop / status) saadab Header Auth. Brauser kutsub
+same-origin `/api/parkimine` proxy’t; Vite / Vercel lisavad päised upstream’ile:
 
 ```http
 X-N8N-API-KEY: SecurityMHMJ26%

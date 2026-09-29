@@ -13,18 +13,33 @@
  *   Content-Type: application/json
  */
 
+/** Direct cloud URL — used only as a last-resort fallback. */
 export const PARKING_WEBHOOK_URL =
   import.meta.env.VITE_PARKING_WEBHOOK_URL ??
   'https://mairon8n.app.n8n.cloud/webhook/parkimine'
 
-/** Sent on every POST (direct URL and /api/parkimine CORS proxy). */
-export const PARKING_WEBHOOK_HEADERS = {
+/**
+ * Header Auth required by the production n8n webhook.
+ * Sent on every start / stop / status POST (client + Vite/Vercel proxy).
+ */
+export const PARKING_WEBHOOK_HEADERS: Record<string, string> = {
   'X-N8N-API-KEY': 'SecurityMHMJ26%',
   'Content-Type': 'application/json',
-} as const
+}
 
-/** Same-origin proxy (Vite / Vercel) when browser CORS blocks the cloud URL. */
+/**
+ * Same-origin proxy — preferred path.
+ * Vite (`vite.config.ts`) and Vercel (`api/parkimine.js`) inject the same
+ * X-N8N-API-KEY header upstream on every request.
+ */
 const PARKING_WEBHOOK_PROXY = '/api/parkimine'
+
+function webhookHeaders(): Headers {
+  const headers = new Headers()
+  headers.set('X-N8N-API-KEY', PARKING_WEBHOOK_HEADERS['X-N8N-API-KEY'])
+  headers.set('Content-Type', 'application/json')
+  return headers
+}
 
 export type ParkingSessionAction = 'start' | 'stop' | 'status'
 
@@ -195,7 +210,7 @@ async function postSession(
 ): Promise<ParkingSessionResponse> {
   const res = await fetch(url, {
     method: 'POST',
-    headers: { ...PARKING_WEBHOOK_HEADERS },
+    headers: webhookHeaders(),
     body: JSON.stringify(buildPayload(body)),
     signal,
   })
@@ -277,7 +292,8 @@ function validateRequest(input: {
 
 /**
  * Send a parking session action via the production n8n webhook.
- * Tries the public URL first; falls back to same-origin proxy on network/CORS failure.
+ * Prefers same-origin `/api/parkimine` (server injects X-N8N-API-KEY);
+ * falls back to the direct cloud URL with the same headers.
  */
 export async function sendParkingSession(
   input: {
@@ -299,10 +315,10 @@ export async function sendParkingSession(
   }
 
   try {
-    return await postSession(PARKING_WEBHOOK_URL, body, signal)
+    return await postSession(PARKING_WEBHOOK_PROXY, body, signal)
   } catch {
     try {
-      return await postSession(PARKING_WEBHOOK_PROXY, body, signal)
+      return await postSession(PARKING_WEBHOOK_URL, body, signal)
     } catch {
       return {
         success: false,
