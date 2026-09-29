@@ -1,4 +1,5 @@
 import type { LngLatBoundsLike } from './bbox'
+import { distanceMeters } from './geo'
 import type { ParkingSpot } from '../types'
 
 function pointInBounds(lat: number, lng: number, b: LngLatBoundsLike): boolean {
@@ -82,6 +83,35 @@ export class ParkingSpatialIndex {
 
   toArray(): ParkingSpot[] {
     return this.spots.slice()
+  }
+
+  /**
+   * Nearest roadside line or lot polygon within `radiusM` of a destination.
+   * Used by the search Destination Interceptor.
+   */
+  queryNearbyParking(
+    lat: number,
+    lng: number,
+    radiusM = 400,
+  ): { spot: ParkingSpot; distanceM: number } | null {
+    let best: ParkingSpot | null = null
+    let bestD = Infinity
+    for (const s of this.spots) {
+      const isRoadside =
+        s.featureType === 'on-street-line' || Boolean(s.line) || s.kind === 'street'
+      const isLot =
+        s.featureType === 'off-street-lot' ||
+        s.featureType === 'municipal-zone' ||
+        Boolean(s.polygon) ||
+        s.kind === 'lot'
+      if (!isRoadside && !isLot) continue
+      const d = distanceMeters(lat, lng, s.lat, s.lng)
+      if (d <= radiusM && d < bestD) {
+        best = s
+        bestD = d
+      }
+    }
+    return best ? { spot: best, distanceM: bestD } : null
   }
 }
 

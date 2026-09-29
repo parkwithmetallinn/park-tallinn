@@ -13,6 +13,7 @@ import { spotsToMapGeoJSON } from '../lib/geojson'
 import { queryParkingInViewport } from '../lib/parkingRepository'
 import {
   featureBounds,
+  filterPreciseCollection,
   loadParkingPolygons,
   PRECISE_FILL_LAYER,
   PRECISE_LABEL_LAYER,
@@ -26,6 +27,7 @@ import {
   type PreciseParkingFeature,
 } from '../lib/preciseParkingPolygons'
 import {
+  filterStreetCollection,
   loadStreetParking,
   STREET_PARKING_HIT_LAYER,
   STREET_PARKING_LINE_LAYER,
@@ -105,6 +107,24 @@ function filterToLayers(filter: FilterId): ParkingLayerKey[] | 'all' {
   if (filter === 'all') return 'all'
   if ((PARKING_PROVIDERS as string[]).includes(filter)) return [filter as ParkingLayerKey]
   return 'all'
+}
+
+/** Apply top filter to both precise polygons + street curb LineStrings. */
+function applyDualLayerFilter(
+  map: MapLibreMapType,
+  filter: FilterId,
+  preciseFc: PreciseParkingCollection | null,
+  streetFc: StreetParkingCollection | null,
+) {
+  const layers = filterToLayers(filter)
+  if (preciseFc) {
+    const src = map.getSource(PRECISE_PARKING_SOURCE) as GeoJSONSource | undefined
+    src?.setData(filterPreciseCollection(preciseFc, layers) as never)
+  }
+  if (streetFc) {
+    const src = map.getSource(STREET_PARKING_SOURCE) as GeoJSONSource | undefined
+    src?.setData(filterStreetCollection(streetFc, layers) as never)
+  }
 }
 
 function applySelectionHighlight(map: MapLibreMapType, selectedId: string | null) {
@@ -333,14 +353,12 @@ export function MapView({
       void refreshViewport(map)
       emitZoom(map)
 
-      // Precise curb-to-curb polygons: /data/parking_polygons.geojson
-      // Source → fill (operator/zone color @ 0.35) + 2px outline (ensureOverlays)
-      // Click → fitBounds + bottom sheet (operator, rate, free mins, Waze/Google/Apple)
+      // Dual-layer: parking_polygons.geojson + street_parking.geojson
+      // Click either → bottom sheet (rules + Waze/Google/Apple nav)
       void loadParkingPolygons()
         .then((fc) => {
           preciseFcRef.current = fc
-          const src = map.getSource(PRECISE_PARKING_SOURCE) as GeoJSONSource | undefined
-          src?.setData(fc as never)
+          applyDualLayerFilter(map, filterRef.current, fc, streetFcRef.current)
           const spots = preciseCollectionToSpots(fc)
           for (const s of spots) parkingIndex.insert(s)
           onPreciseSpotsLoadedRef.current?.(spots)
@@ -350,11 +368,11 @@ export function MapView({
           console.warn('parking_polygons.geojson failed to load', err)
         })
 
+      // Roadside curb lines — minzoom 12; green/red/blue by rules
       void loadStreetParking()
         .then((fc) => {
           streetFcRef.current = fc
-          const src = map.getSource(STREET_PARKING_SOURCE) as GeoJSONSource | undefined
-          src?.setData(fc as never)
+          applyDualLayerFilter(map, filterRef.current, preciseFcRef.current, fc)
           const spots = streetCollectionToSpots(fc)
           for (const s of spots) parkingIndex.insert(s)
           onStreetSpotsLoadedRef.current?.(spots)
@@ -497,6 +515,9 @@ export function MapView({
       ) as Partial<Record<ParkingLayerKey, boolean>>
       setParkingLayerVisibility(map, vis)
     }
+    // Filter lot polygons + street curb lines together
+    applyDualLayerFilter(map, filter, preciseFcRef.current, streetFcRef.current)
+    applySelectionHighlight(map, selectedIdRef.current)
     ;(map as MapLibreMapType & { __refreshViewport?: () => void }).__refreshViewport?.()
   }, [filter, ready])
 

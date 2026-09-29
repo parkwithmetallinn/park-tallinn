@@ -305,16 +305,34 @@ export default function App() {
       window.clearTimeout(searchSheetTimer.current)
       searchSheetTimer.current = null
     }
-    setSelected(null)
     setSearchSheetOpen(false)
     setSearchLocation(loc)
+    setQuery(loc.name)
+    setGeoResults([])
+    setGeoError(null)
+
+    // Destination Interceptor — nearest roadside / lot parking within 400 m
+    const nearby = parkingIndex.queryNearbyParking(loc.lat, loc.lng, 400)
+    if (nearby) {
+      const { spot } = nearby
+      setSelected(null)
+      setFlyMode('fly')
+      setFlyTarget([spot.lat, spot.lng])
+      setFlyZoom(16.8)
+      setFlyKey((k) => k + 1)
+      searchSheetTimer.current = window.setTimeout(() => {
+        setSearchSheetOpen(false)
+        setSelected(spot)
+        searchSheetTimer.current = null
+      }, 720)
+      return
+    }
+
+    setSelected(null)
     setFlyMode('fly')
     setFlyTarget([loc.lat, loc.lng])
     setFlyZoom(16.5)
     setFlyKey((k) => k + 1)
-    setQuery(loc.name)
-    setGeoResults([])
-    setGeoError(null)
     // Fly first, then open the info sheet
     searchSheetTimer.current = window.setTimeout(() => {
       setSearchSheetOpen(true)

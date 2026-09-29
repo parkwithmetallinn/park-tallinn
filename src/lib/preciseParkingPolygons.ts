@@ -411,6 +411,18 @@ export function preciseCollectionToSpots(fc: PreciseParkingCollection): ParkingS
   return fc.features.map(preciseFeatureToSpot)
 }
 
+/** Filter lot polygons by app layer keys (top filters). */
+export function filterPreciseCollection(
+  fc: PreciseParkingCollection,
+  layers: ParkingLayerKey[] | 'all',
+): PreciseParkingCollection {
+  if (layers === 'all') return fc
+  return {
+    type: 'FeatureCollection',
+    features: fc.features.filter((f) => layers.includes(f.properties.layer)),
+  }
+}
+
 export async function loadParkingPolygons(
   url = PARKING_POLYGONS_URL,
 ): Promise<PreciseParkingCollection> {

@@ -114,9 +114,9 @@ function syncLodZoomLimits(map: MapLibreMapType) {
   setMin(PRECISE_LABEL_LAYER, ZOOM.lotMin)
   setMin(PRECISE_MULTISTOREY_BADGE_LAYER, ZOOM.lotMin)
 
-  setMin(STREET_PARKING_CASING_LAYER, ZOOM.detailMin)
-  setMin(STREET_PARKING_LINE_LAYER, ZOOM.detailMin)
-  setMin(STREET_PARKING_HIT_LAYER, ZOOM.detailMin)
+  setMin(STREET_PARKING_CASING_LAYER, ZOOM.streetMin)
+  setMin(STREET_PARKING_LINE_LAYER, ZOOM.streetMin)
+  setMin(STREET_PARKING_HIT_LAYER, ZOOM.streetMin)
 
   for (const id of [
     PARKING_LINES_CASING_LAYER,
@@ -415,7 +415,7 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
     })
   }
 
-  // ——— Street-side parking lines from street_parking.geojson (minzoom 15) ———
+  // ——— Street-side parking lines from street_parking.geojson (minzoom 12) ———
   if (!map.getSource(STREET_PARKING_SOURCE)) {
     map.addSource(STREET_PARKING_SOURCE, {
       type: 'geojson',
@@ -427,7 +427,7 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       id: STREET_PARKING_CASING_LAYER,
       type: 'line',
       source: STREET_PARKING_SOURCE,
-      minzoom: ZOOM.detailMin,
+      minzoom: ZOOM.streetMin,
       layout: {
         visibility: 'visible',
         'line-cap': 'round',
@@ -439,6 +439,8 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
           'interpolate',
           ['linear'],
           ['zoom'],
+          12,
+          3,
           15,
           5,
           18,
@@ -448,10 +450,10 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
           'interpolate',
           ['linear'],
           ['zoom'],
-          15,
-          0,
-          15.35,
-          0.35,
+          12,
+          0.25,
+          13,
+          0.45,
           16,
           0.75,
         ],
@@ -462,19 +464,26 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       id: STREET_PARKING_LINE_LAYER,
       type: 'line',
       source: STREET_PARKING_SOURCE,
-      minzoom: ZOOM.detailMin,
+      minzoom: ZOOM.streetMin,
       layout: {
         visibility: 'visible',
         'line-cap': 'round',
         'line-join': 'round',
       },
       paint: {
+        // Green = free, Red = paid, Blue = kellaga (from feature color)
         'line-color': ['get', 'color'],
-        // 3px @ z15 → 7px @ z18
         'line-width': [
           'interpolate',
           ['linear'],
           ['zoom'],
+          12,
+          [
+            'case',
+            ['boolean', ['feature-state', 'selected'], false],
+            3.5,
+            2.25,
+          ],
           15,
           [
             'case',
@@ -490,15 +499,14 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
             7,
           ],
         ] as never,
-        // Completely hidden below 15 (minzoom); fade in 15→16
         'line-opacity': [
           'interpolate',
           ['linear'],
           ['zoom'],
-          15,
-          0,
-          15.4,
-          0.55,
+          12,
+          0.7,
+          14,
+          0.88,
           16,
           [
             'case',
@@ -514,7 +522,7 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       id: STREET_PARKING_HIT_LAYER,
       type: 'line',
       source: STREET_PARKING_SOURCE,
-      minzoom: ZOOM.detailMin,
+      minzoom: ZOOM.streetMin,
       layout: {
         visibility: 'visible',
         'line-cap': 'round',
