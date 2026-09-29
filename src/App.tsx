@@ -31,9 +31,12 @@ import { formatHMS, minutesFromBadge, TYPE_LABELS } from './lib/parking'
 import {
   activeSessionFromDetails,
   checkParkingStatus,
+  formatHourlyRate,
+  formatSessionFeedbackDetail,
   formatSessionInstant,
   isActiveSessionStatus,
   sessionEndIso,
+  sessionHourlyRate,
   sessionStartIso,
   startParkingSession,
   stopParkingSession,
@@ -379,34 +382,39 @@ export default function App() {
     setSessionLoading(false)
     setSessionAction(null)
     if (result.success) {
-      const startedAt = sessionStartIso(result.sessionDetails)
-      const status = String(result.sessionDetails?.status ?? 'ACTIVE')
+      const details = result.sessionDetails
+      const startedAt = sessionStartIso(details)
+      const status = String(details?.status ?? 'ACTIVE')
+      const hourlyRate =
+        sessionHourlyRate(details) ??
+        (selected.price_per_hour > 0 ? selected.price_per_hour : undefined)
+      const resolvedZone = String(details?.zone ?? zone)
+      const resolvedPlate = String(details?.carNumber ?? plate).toUpperCase()
       persistActive({
-        carNumber: plate.toUpperCase(),
-        zone,
+        carNumber: resolvedPlate,
+        zone: resolvedZone,
         spotName: selected.name,
         startedAt,
         status,
+        hourlyRate,
       })
 
       const mins = minutesFromBadge(selected.badge) || selected.free_minutes || 60
+      const rateLabel = formatHourlyRate(hourlyRate)
       setTimerSeconds(mins * 60)
-      setTimerLabel(`Sessioon: ${selected.name} · ${plate}`)
+      setTimerLabel(
+        `Sessioon: ${selected.name} · ${resolvedPlate}${rateLabel ? ` · ${rateLabel}` : ''}`,
+      )
       setTimerRunning(true)
       setTimerOpen(true)
       closeSheet()
 
-      const detailParts = [result.message]
-      if (result.sessionDetails?.sessionId) {
-        detailParts.push(`ID ${result.sessionDetails.sessionId}`)
-      }
-      const startedLabel = formatSessionInstant(startedAt)
-      if (startedLabel) detailParts.push(startedLabel)
-      if (status) detailParts.push(status)
       showSessionFeedback(
         'success',
         'Parkimine alanud',
-        detailParts.filter(Boolean).join(' · '),
+        formatSessionFeedbackDetail(result, [
+          details?.sessionId ? `ID ${details.sessionId}` : null,
+        ]),
       )
     } else {
       showSessionFeedback('error', 'Sessiooni ei alustatud', result.message)
@@ -441,15 +449,11 @@ export default function App() {
       setTimerSeconds(0)
       setTimerLabel('Sessioon lõpetatud')
 
-      const detailParts = [result.message]
       const ended = formatSessionInstant(sessionEndIso(result.sessionDetails))
-      if (ended) detailParts.push(`lõpp ${ended}`)
-      const status = result.sessionDetails?.status
-      if (status) detailParts.push(String(status))
       showSessionFeedback(
         'success',
         'Parkimine lõpetatud',
-        detailParts.filter(Boolean).join(' · '),
+        formatSessionFeedbackDetail(result, [ended ? `lõpp ${ended}` : null]),
       )
     } else {
       showSessionFeedback('error', 'Sessiooni ei lõpetatud', result.message)
@@ -458,19 +462,19 @@ export default function App() {
 
   const refreshParkingStatus = async () => {
     const plate = (carNumber.trim() || activeSession?.carNumber || '').trim()
-    const zone = activeSession?.zone || selected?.zone_code || undefined
+    const zone = activeSession?.zone || selected?.zone_code || ''
     if (!plate) {
       showSessionFeedback('error', 'Sisesta auto number')
+      return
+    }
+    if (!zone) {
+      showSessionFeedback('error', 'Tsoon puudub', 'Vali kaartilt parkimiskoht')
       return
     }
 
     setSessionLoading(true)
     setSessionAction('status')
-    showSessionFeedback(
-      'loading',
-      'Kontrollin parkimise staatust…',
-      zone ? `${plate} · ${zone}` : plate,
-    )
+    showSessionFeedback('loading', 'Kontrollin parkimise staatust…', `${plate} · ${zone}`)
 
     const result = await checkParkingStatus({ carNumber: plate, zone })
 
@@ -488,10 +492,16 @@ export default function App() {
         carNumber: plate,
         zone,
         spotName: activeSession?.spotName ?? selected?.name,
+        hourlyRate: activeSession?.hourlyRate,
       })
       if (synced) {
         persistActive(synced)
-        setTimerLabel(`Sessioon: ${synced.spotName ?? synced.zone} · ${synced.carNumber}`)
+        const rateLabel = formatHourlyRate(synced.hourlyRate)
+        setTimerLabel(
+          `Sessioon: ${synced.spotName ?? synced.zone} · ${synced.carNumber}${
+            rateLabel ? ` · ${rateLabel}` : ''
+          }`,
+        )
         setTimerOpen(true)
         if (synced.carNumber && synced.carNumber !== carNumber.trim().toUpperCase()) {
           setCarNumber(synced.carNumber)
@@ -499,15 +509,10 @@ export default function App() {
         }
       }
 
-      const detailParts = [result.message]
-      if (synced) detailParts.push(`${synced.carNumber} · ${synced.zone}`)
-      const started = formatSessionInstant(sessionStartIso(details))
-      if (started) detailParts.push(`alates ${started}`)
-      if (details.status) detailParts.push(String(details.status))
       showSessionFeedback(
         'success',
         'Aktiivne parkimine',
-        detailParts.filter(Boolean).join(' · '),
+        formatSessionFeedbackDetail(result),
       )
     } else {
       persistActive(null)
@@ -517,9 +522,7 @@ export default function App() {
       showSessionFeedback(
         'info',
         'Aktiivset parkimist pole',
-        [result.message, ended ? `lõpp ${ended}` : null, details?.status]
-          .filter(Boolean)
-          .join(' · '),
+        formatSessionFeedbackDetail(result, [ended ? `lõpp ${ended}` : null]),
       )
     }
   }
@@ -774,6 +777,10 @@ export default function App() {
           {activeSession ? (
             <div className="mb-2 rounded-xl bg-moss/10 px-2.5 py-2 text-[11px] font-semibold text-moss">
               {activeSession.carNumber} · {activeSession.zone}
+              {activeSession.status ? ` · ${activeSession.status}` : ''}
+              {formatHourlyRate(activeSession.hourlyRate)
+                ? ` · ${formatHourlyRate(activeSession.hourlyRate)}`
+                : ''}
               {formatSessionInstant(activeSession.startedAt)
                 ? ` · alates ${formatSessionInstant(activeSession.startedAt)}`
                 : ''}

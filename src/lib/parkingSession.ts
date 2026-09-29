@@ -1,47 +1,49 @@
 /**
- * Parking session API — n8n webhook backend.
- * POST { action, carNumber?, zone? } → { success, message, sessionDetails }
+ * Parking session API — production n8n webhook.
  *
- * Actions:
- * - start  — requires carNumber + zone
- * - stop   — requires carNumber + zone
- * - status — checks active parking (carNumber recommended; zone optional)
+ * POST https://mairon8n.app.n8n.cloud/webhook/parkimine
+ * Body:  { action: "start"|"stop"|"status", carNumber, zone }
+ * Resp:  { success, message, sessionDetails: { carNumber, zone, hourlyRate, startTime, status, … } }
+ *
+ * Every request sends Header Auth:
+ *   X-N8N-API-KEY: SecurityMHMJ26%
+ *   Content-Type: application/json
  */
 
 export const PARKING_WEBHOOK_URL =
   import.meta.env.VITE_PARKING_WEBHOOK_URL ??
   'https://mairon8n.app.n8n.cloud/webhook/parkimine'
 
-/**
- * n8n Header Auth — name must match the credential type exactly.
- * Sent on every POST to the parking webhook (direct URL and /api/parkimine proxy).
- */
+/** Sent on every POST (direct URL and /api/parkimine CORS proxy). */
 export const PARKING_WEBHOOK_HEADERS = {
   'X-N8N-API-KEY': 'SecurityMHMJ26%',
   'Content-Type': 'application/json',
 } as const
 
-/** Same-origin proxy path (Vite / Vercel) — used when direct CORS fails. */
+/** Same-origin proxy (Vite / Vercel) when browser CORS blocks the cloud URL. */
 const PARKING_WEBHOOK_PROXY = '/api/parkimine'
 
 export type ParkingSessionAction = 'start' | 'stop' | 'status'
 
 export type ParkingSessionRequest = {
   action: ParkingSessionAction
-  carNumber?: string
-  zone?: string
+  carNumber: string
+  zone: string
 }
 
 export type ParkingSessionDetails = {
   sessionId?: string
   carNumber?: string
   zone?: string
-  /** ISO start — backend may send startedAt or startTime */
-  startedAt?: string
+  /** Hourly rate in EUR from the backend */
+  hourlyRate?: number
+  /** ISO start — backend may send startTime or startedAt */
   startTime?: string
-  /** ISO end — backend may send endedAt or endTime */
-  endedAt?: string
+  startedAt?: string
+  /** ISO end — backend may send endTime or endedAt */
   endTime?: string
+  endedAt?: string
+  /** e.g. ACTIVE | STOPPED | ENDED */
   status?: string
   [key: string]: unknown
 }
@@ -59,6 +61,7 @@ export type ActiveParkingSession = {
   spotName?: string
   startedAt?: string
   status: string
+  hourlyRate?: number
 }
 
 function defaultMessage(action: ParkingSessionAction, success: boolean): string {
@@ -71,33 +74,95 @@ function defaultMessage(action: ParkingSessionAction, success: boolean): string 
   return success ? 'Parkimissessioon alustatud' : 'Sessiooni alustamine ebaõnnestus'
 }
 
+function asNumber(v: unknown): number | undefined {
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  if (typeof v === 'string' && v.trim()) {
+    const n = Number(v.replace(',', '.').replace(/[^\d.-]/g, ''))
+    if (Number.isFinite(n)) return n
+  }
+  return undefined
+}
+
+function asString(v: unknown): string | undefined {
+  if (v == null) return undefined
+  const s = String(v).trim()
+  return s || undefined
+}
+
+/** Normalize backend sessionDetails (alias keys → canonical). */
+export function normalizeSessionDetails(raw: unknown): ParkingSessionDetails | null {
+  if (!raw || typeof raw !== 'object') return null
+  const d = raw as Record<string, unknown>
+
+  const hourlyRate =
+    asNumber(d.hourlyRate) ??
+    asNumber(d.hourly_rate) ??
+    asNumber(d.rate) ??
+    asNumber(d.pricePerHour) ??
+    asNumber(d.price_per_hour)
+
+  const startTime =
+    asString(d.startTime) ?? asString(d.startedAt) ?? asString(d.start_time)
+  const endTime =
+    asString(d.endTime) ?? asString(d.endedAt) ?? asString(d.end_time)
+
+  return {
+    ...d,
+    sessionId: asString(d.sessionId) ?? asString(d.session_id) ?? asString(d.id),
+    carNumber: asString(d.carNumber) ?? asString(d.car_number) ?? asString(d.plate),
+    zone: asString(d.zone) ?? asString(d.zoneCode) ?? asString(d.zone_code),
+    hourlyRate,
+    startTime,
+    startedAt: startTime,
+    endTime,
+    endedAt: endTime,
+    status: asString(d.status),
+  }
+}
+
+function unwrapPayload(data: unknown): Record<string, unknown> | null {
+  if (!data) return null
+  // Some n8n workflows return a one-element array
+  if (Array.isArray(data)) {
+    const first = data[0]
+    return first && typeof first === 'object' ? (first as Record<string, unknown>) : null
+  }
+  if (typeof data === 'object') return data as Record<string, unknown>
+  return null
+}
+
 function normalizeResponse(
   data: unknown,
   action: ParkingSessionAction,
 ): ParkingSessionResponse {
-  if (!data || typeof data !== 'object') {
+  const d = unwrapPayload(data)
+  if (!d) {
     return { success: false, message: 'Tundmatu vastus serverilt' }
   }
-  const d = data as Record<string, unknown>
+
   const success = Boolean(d.success)
   const message =
     typeof d.message === 'string' && d.message.trim()
       ? d.message
       : defaultMessage(action, success)
-  const sessionDetails =
-    d.sessionDetails && typeof d.sessionDetails === 'object'
-      ? (d.sessionDetails as ParkingSessionDetails)
-      : null
-  return { success, message, sessionDetails }
+
+  return {
+    success,
+    message,
+    sessionDetails: normalizeSessionDetails(d.sessionDetails ?? d.session_details),
+  }
 }
 
-function buildPayload(body: ParkingSessionRequest): Record<string, string> {
-  const payload: Record<string, string> = { action: body.action }
-  const plate = body.carNumber?.trim()
-  const zone = body.zone?.trim()
-  if (plate) payload.carNumber = plate.toUpperCase()
-  if (zone) payload.zone = zone
-  return payload
+function buildPayload(body: ParkingSessionRequest): {
+  action: ParkingSessionAction
+  carNumber: string
+  zone: string
+} {
+  return {
+    action: body.action,
+    carNumber: body.carNumber.trim().toUpperCase(),
+    zone: body.zone.trim(),
+  }
 }
 
 async function postSession(
@@ -107,9 +172,7 @@ async function postSession(
 ): Promise<ParkingSessionResponse> {
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      ...PARKING_WEBHOOK_HEADERS,
-    },
+    headers: { ...PARKING_WEBHOOK_HEADERS },
     body: JSON.stringify(buildPayload(body)),
     signal,
   })
@@ -120,12 +183,22 @@ async function postSession(
     try {
       parsed = JSON.parse(text)
     } catch {
-      parsed = { success: res.ok, message: text.slice(0, 200) }
+      parsed = { success: res.ok, message: text.slice(0, 240) }
+    }
+  }
+
+  if (/authorization data is wrong/i.test(text)) {
+    return {
+      success: false,
+      message: 'Autentimine ebaõnnestus — kontrolli X-N8N-API-KEY päist',
     }
   }
 
   if (!res.ok) {
-    const normalized = normalizeResponse(parsed, body.action)
+    const normalized = normalizeResponse(
+      parsed ?? { success: false, message: text.slice(0, 240) },
+      body.action,
+    )
     const msg =
       normalized.message === 'Error in workflow'
         ? 'n8n töövoog ebaõnnestus (serveri viga) — kontrolli webhook’i'
@@ -137,43 +210,50 @@ async function postSession(
     }
   }
 
-  if (parsed == null || (typeof parsed === 'object' && parsed !== null && !('success' in (parsed as object)) && !('message' in (parsed as object)))) {
+  if (
+    parsed == null ||
+    (typeof parsed === 'object' &&
+      parsed !== null &&
+      !('success' in (parsed as object)) &&
+      !('message' in (parsed as object)) &&
+      !('sessionDetails' in (parsed as object)))
+  ) {
+    // Bare success HTTP with empty / non-JSON body
+    if (res.ok && (!text || !text.trim())) {
+      return { success: true, message: defaultMessage(body.action, true) }
+    }
     return {
       success: false,
-      message: 'Tühi vastus serverilt',
+      message: text?.trim() ? text.slice(0, 240) : 'Tühi vastus serverilt',
     }
   }
 
-  return normalizeResponse(
-    parsed ?? {
-      success: res.ok,
-      message: res.ok ? 'OK' : `Viga ${res.status}`,
-    },
-    body.action,
-  )
+  return normalizeResponse(parsed, body.action)
 }
 
-function validateRequest(input: ParkingSessionRequest): string | null {
+function validateRequest(input: {
+  action: ParkingSessionAction
+  carNumber?: string
+  zone?: string
+}): string | null {
   const carNumber = input.carNumber?.trim() ?? ''
   const zone = input.zone?.trim() ?? ''
-
-  if (input.action === 'status') {
-    // Status may be called with plate only; empty body is allowed by backend
-    // but the UI always sends at least carNumber when available.
-    return null
-  }
-
+  // Production n8n expects carNumber + zone for start, stop, and status
   if (!carNumber) return 'Sisesta auto number'
   if (!zone) return 'Tsoon puudub'
   return null
 }
 
 /**
- * Send a parking session action via the n8n webhook.
+ * Send a parking session action via the production n8n webhook.
  * Tries the public URL first; falls back to same-origin proxy on network/CORS failure.
  */
 export async function sendParkingSession(
-  input: ParkingSessionRequest,
+  input: {
+    action: ParkingSessionAction
+    carNumber?: string
+    zone?: string
+  },
   signal?: AbortSignal,
 ): Promise<ParkingSessionResponse> {
   const validationError = validateRequest(input)
@@ -183,8 +263,8 @@ export async function sendParkingSession(
 
   const body: ParkingSessionRequest = {
     action: input.action,
-    carNumber: input.carNumber?.trim() || undefined,
-    zone: input.zone?.trim() || undefined,
+    carNumber: input.carNumber!.trim(),
+    zone: input.zone!.trim(),
   }
 
   try {
@@ -216,7 +296,7 @@ export function stopParkingSession(
 }
 
 export function checkParkingStatus(
-  input: { carNumber?: string; zone?: string } = {},
+  input: { carNumber: string; zone: string },
   signal?: AbortSignal,
 ): Promise<ParkingSessionResponse> {
   return sendParkingSession({ ...input, action: 'status' }, signal)
@@ -224,14 +304,24 @@ export function checkParkingStatus(
 
 export function sessionStartIso(details?: ParkingSessionDetails | null): string | undefined {
   if (!details) return undefined
-  const v = details.startedAt ?? details.startTime
-  return v != null ? String(v) : undefined
+  return details.startTime ?? details.startedAt
 }
 
 export function sessionEndIso(details?: ParkingSessionDetails | null): string | undefined {
   if (!details) return undefined
-  const v = details.endedAt ?? details.endTime
-  return v != null ? String(v) : undefined
+  return details.endTime ?? details.endedAt
+}
+
+export function sessionHourlyRate(
+  details?: ParkingSessionDetails | null,
+): number | undefined {
+  if (!details) return undefined
+  return asNumber(details.hourlyRate)
+}
+
+export function formatHourlyRate(rate?: number): string | undefined {
+  if (rate == null || !Number.isFinite(rate)) return undefined
+  return `${rate.toFixed(2)} €/h`
 }
 
 export function formatSessionInstant(iso?: string): string | undefined {
@@ -253,17 +343,26 @@ export function isActiveSessionStatus(
 ): boolean {
   if (!details) return false
   const status = String(details.status ?? '').toUpperCase()
-  if (status === 'STOPPED' || status === 'ENDED' || status === 'INACTIVE') {
+  if (
+    status === 'STOPPED' ||
+    status === 'ENDED' ||
+    status === 'INACTIVE' ||
+    status === 'COMPLETED' ||
+    status === 'FINISHED'
+  ) {
     return false
   }
-  if (status === 'ACTIVE' || status === 'RUNNING' || status === 'STARTED') {
+  if (
+    status === 'ACTIVE' ||
+    status === 'RUNNING' ||
+    status === 'STARTED' ||
+    status === 'IN_PROGRESS'
+  ) {
     return true
   }
   // Fallback: has plate + zone and no end time → treat as active
   return Boolean(
-    (details.carNumber || details.zone) &&
-      !details.endTime &&
-      !details.endedAt,
+    (details.carNumber || details.zone) && !details.endTime && !details.endedAt,
   )
 }
 
@@ -280,5 +379,37 @@ export function activeSessionFromDetails(
     spotName: fallback?.spotName,
     startedAt: sessionStartIso(details) ?? fallback?.startedAt,
     status: String(details.status ?? 'ACTIVE'),
+    hourlyRate: sessionHourlyRate(details) ?? fallback?.hourlyRate,
   }
+}
+
+/** Compact detail line for toasts / notices from a backend response. */
+export function formatSessionFeedbackDetail(
+  result: ParkingSessionResponse,
+  extras: Array<string | undefined | null> = [],
+): string {
+  const details = result.sessionDetails
+  const parts = [
+    result.message,
+    ...extras,
+    details?.carNumber && details?.zone
+      ? `${details.carNumber} · ${details.zone}`
+      : null,
+    formatHourlyRate(sessionHourlyRate(details)),
+    details?.status ? String(details.status) : null,
+    formatSessionInstant(sessionStartIso(details))
+      ? `alates ${formatSessionInstant(sessionStartIso(details))}`
+      : null,
+  ]
+  // Dedupe while preserving order
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const p of parts) {
+    if (!p) continue
+    const key = p.trim()
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    out.push(key)
+  }
+  return out.join(' · ')
 }

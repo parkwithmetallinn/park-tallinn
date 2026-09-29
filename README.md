@@ -36,9 +36,9 @@ Diagonaalseid “läbi majade” jooni ei joonistata — ainult lühikesed, teel
 - **Bottom sheet** — Waze, Google Maps, Apple Maps navigeerimine
 - **Floating glass UI** — ümarad paneelid + backdrop-blur
 
-## Parkimissessioon (n8n)
+## Parkimissessioon (n8n — production)
 
-Bottom sheet / kellapaneel saadavad POST:
+Bottom sheet / kellapaneel saadavad POST production webhook’ile:
 
 `https://mairon8n.app.n8n.cloud/webhook/parkimine`
 
@@ -54,13 +54,12 @@ Bottom sheet / kellapaneel saadavad POST:
 { "action": "status", "carNumber": "123ABC", "zone": "KESKLINN" }
 ```
 
-- **start** — alusta sessiooni (carNumber + zone)
-- **stop** — lõpeta sessioon
-- **status** — kontrolli aktiivset parkimist (**Kontrolli staatust** / **Staatus**)
+- **start** / **stop** / **status** — kõik nõuavad `carNumber` + `zone`
+- Vastus: `{ success, message, sessionDetails }` kus `sessionDetails` sisaldab nt `carNumber`, `zone`, `hourlyRate`, `startTime`, `status`
+- UI kuvab backend’i `message`, tunnihinna ja staatuse toast’is / bottom sheet’is / kellapaneelis
+- CORS-probleemi korral fallback: `/api/parkimine` proxy
 
-Vastus: `{ success, message, sessionDetails }` — kuvatakse toast’ina. CORS-probleemi korral kasutatakse `/api/parkimine` proxy’t.
-
-Iga päring saadab Header Auth (täpne päise nimi):
+Iga päring saadab Header Auth:
 
 ```http
 X-N8N-API-KEY: SecurityMHMJ26%

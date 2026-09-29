@@ -1,7 +1,7 @@
 import { MapPin, Navigation, RefreshCw, Square, X } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import type { ActiveParkingSession } from '../lib/parkingSession'
-import { formatSessionInstant } from '../lib/parkingSession'
+import { formatHourlyRate, formatSessionInstant } from '../lib/parkingSession'
 import type { ParkingSpot } from '../types'
 import { navLinks, openAppleMaps } from '../lib/geocode'
 import { PARKING_LAYER_META } from '../map/parkingLayers'
@@ -244,7 +244,16 @@ export function ParkingBottomSheet({
             <p className="text-[12px] font-medium text-[#FF3B30]">Sisesta kehtiv auto number</p>
           ) : (
             <p className="text-[12px] text-[#8E8E93]">
-              Tsoon <span className="font-semibold text-[#1C1C1E]">{spot.zone_code}</span>
+              Tsoon{' '}
+              <span className="font-semibold text-[#1C1C1E]">
+                {activeSession?.zone ?? spot.zone_code}
+              </span>
+              {hasActive && activeSession?.status
+                ? ` · ${activeSession.status}`
+                : ''}
+              {hasActive && formatHourlyRate(activeSession?.hourlyRate)
+                ? ` · ${formatHourlyRate(activeSession?.hourlyRate)}`
+                : ''}
               {hasActive && startedLabel ? ` · alates ${startedLabel}` : ''}
             </p>
           )}
