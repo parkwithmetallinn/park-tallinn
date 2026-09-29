@@ -395,6 +395,24 @@ export function formatSessionInstant(iso?: string): string | undefined {
   })
 }
 
+/** Backend said there is no active session (stop/status). */
+export function isSessionNotFoundMessage(message?: string | null): boolean {
+  if (!message) return false
+  const m = message.toLowerCase()
+  return (
+    m.includes('not found') ||
+    m.includes('no active') ||
+    m.includes('no session') ||
+    m.includes('does not exist') ||
+    m.includes('ei leitud') ||
+    m.includes('pole aktiiv') ||
+    m.includes('aktiivset sessiooni pole') ||
+    m.includes('sessiooni ei leitud') ||
+    m.includes('already stopped') ||
+    m.includes('not active')
+  )
+}
+
 /** True when backend sessionDetails look like an active parking session. */
 export function isActiveSessionStatus(
   details?: ParkingSessionDetails | null,

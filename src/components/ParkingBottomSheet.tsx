@@ -41,7 +41,6 @@ export function ParkingBottomSheet({
   onStartSession,
   onStopSession,
   onCheckStatus,
-  onTimer,
 }: {
   spot: ParkingSpot
   distanceLabel?: string | null
@@ -55,7 +54,6 @@ export function ParkingBottomSheet({
   onStartSession: () => void
   onStopSession: () => void
   onCheckStatus: () => void
-  onTimer?: () => void
 }) {
   const stableClose = useCallback(() => onClose(), [onClose])
   const { requestClose, sheetClassName } = useSheetClose(stableClose)
@@ -312,16 +310,6 @@ export function ParkingBottomSheet({
             >
               {sessionNotice.text}
             </p>
-          ) : null}
-
-          {spot.layer === 'timed' || spot.free_minutes > 0 ? (
-            <button
-              type="button"
-              onClick={onTimer}
-              className="w-full py-2 text-[13px] font-semibold text-[#007AFF]"
-            >
-              Sea ainult kohalik taimer
-            </button>
           ) : null}
         </div>
       </div>

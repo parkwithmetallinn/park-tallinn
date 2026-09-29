@@ -36,6 +36,7 @@ import {
   formatSessionFeedbackDetail,
   formatSessionInstant,
   isActiveSessionStatus,
+  isSessionNotFoundMessage,
   listActiveParkingSessions,
   sessionEndIso,
   sessionHourlyRate,
@@ -340,27 +341,6 @@ export default function App() {
     }, 720)
   }
 
-  const addMinutes = (mins: number) => setTimerSeconds((s) => s + mins * 60)
-  const startOrPause = () => {
-    if (timerSeconds <= 0) return
-    setTimerRunning((r) => !r)
-  }
-  const resetTimer = () => {
-    setTimerRunning(false)
-    setTimerSeconds(0)
-    setTimerLabel('Määra aeg või vali kellaga koht')
-  }
-
-  const autoTimerFromSpot = () => {
-    if (!selected) return
-    const mins = minutesFromBadge(selected.badge) || selected.free_minutes || 60
-    setTimerSeconds(mins * 60)
-    setTimerLabel(`Määratud: ${selected.name}`)
-    setTimerRunning(true)
-    setTimerOpen(true)
-    closeSheet()
-  }
-
   const handleCarNumberChange = (value: string) => {
     setCarNumber(value)
     saveCarNumber(value)
@@ -369,6 +349,14 @@ export default function App() {
   const persistActive = (session: ActiveParkingSession | null) => {
     setActiveSession(session)
     saveActiveSession(session)
+  }
+
+  /** Clear local active session + timer so UI returns to Start. */
+  const clearLocalSession = (label = 'Määra aeg või vali kellaga koht') => {
+    persistActive(null)
+    setTimerRunning(false)
+    setTimerSeconds(0)
+    setTimerLabel(label)
   }
 
   const showSessionFeedback = (
@@ -415,6 +403,7 @@ export default function App() {
         (selected.price_per_hour > 0 ? selected.price_per_hour : undefined)
       const resolvedZone = String(details?.zone ?? zone)
       const resolvedPlate = String(details?.carNumber ?? plate).toUpperCase()
+      // Keep sheet open — UI switches to active details + "Lõpeta sessioon"
       persistActive({
         carNumber: resolvedPlate,
         zone: resolvedZone,
@@ -423,6 +412,10 @@ export default function App() {
         status,
         hourlyRate,
       })
+      if (resolvedPlate !== carNumber.trim().toUpperCase()) {
+        setCarNumber(resolvedPlate)
+        saveCarNumber(resolvedPlate)
+      }
 
       const mins = minutesFromBadge(selected.badge) || selected.free_minutes || 60
       const rateLabel = formatHourlyRate(hourlyRate)
@@ -432,7 +425,6 @@ export default function App() {
       )
       setTimerRunning(true)
       setTimerOpen(true)
-      closeSheet()
 
       showSessionFeedback(
         'success',
@@ -449,7 +441,8 @@ export default function App() {
   const endParkingSession = async () => {
     const session = activeSession
     if (!session) {
-      showSessionFeedback('error', 'Aktiivset sessiooni pole')
+      clearLocalSession()
+      showSessionFeedback('info', 'Aktiivset sessiooni pole')
       return
     }
 
@@ -468,21 +461,26 @@ export default function App() {
 
     setSessionLoading(false)
     setSessionAction(null)
-    if (result.success) {
-      persistActive(null)
-      setTimerRunning(false)
-      setTimerSeconds(0)
-      setTimerLabel('Sessioon lõpetatud')
 
+    const missing = isSessionNotFoundMessage(result.message)
+    const detailsStopped =
+      result.sessionDetails != null && !isActiveSessionStatus(result.sessionDetails)
+
+    // Success, "not found", or stopped details → always reset to Start button
+    if (result.success || missing || detailsStopped) {
+      clearLocalSession('Sessioon lõpetatud')
       const ended = formatSessionInstant(sessionEndIso(result.sessionDetails))
       showSessionFeedback(
-        'success',
-        'Parkimine lõpetatud',
+        result.success || detailsStopped ? 'success' : 'info',
+        result.success || detailsStopped ? 'Parkimine lõpetatud' : 'Aktiivset sessiooni pole',
         formatSessionFeedbackDetail(result, [ended ? `lõpp ${ended}` : null]),
       )
-    } else {
-      showSessionFeedback('error', 'Sessiooni ei lõpetatud', result.message)
+      return
     }
+
+    // Unexpected stop failure — still unstick UI so Start is available again
+    clearLocalSession()
+    showSessionFeedback('error', 'Sessiooni ei lõpetatud', result.message)
   }
 
   const loadActiveSessionsOverview = async () => {
@@ -507,7 +505,7 @@ export default function App() {
     setActiveSessionsMessage(result.message)
     setSessionsOverviewOpen(true)
 
-    // If our local plate appears in the list, sync it as the active session
+    // Sync local plate against the list — clear if our session is gone
     const plate = (carNumber.trim() || activeSession?.carNumber || '').toUpperCase()
     if (plate) {
       const mine = list.find(
@@ -519,6 +517,8 @@ export default function App() {
           spotName: activeSession?.spotName ?? selected?.name,
         })
         if (synced) persistActive(synced)
+      } else if (activeSession?.carNumber?.toUpperCase() === plate) {
+        clearLocalSession('Aktiivset sessiooni ei leitud')
       }
     }
 
@@ -556,20 +556,28 @@ export default function App() {
     setSessionAction(null)
 
     if (!result.success) {
+      // Missing session is info, not a broken UI — reset to Start
+      if (isSessionNotFoundMessage(result.message)) {
+        clearLocalSession('Aktiivset sessiooni ei leitud')
+        showSessionFeedback('info', 'Aktiivset parkimist pole', result.message)
+        return
+      }
       showSessionFeedback('error', 'Staatuse päring ebaõnnestus', result.message)
       return
     }
 
     // Backend may still return the overview list even with a plate
-    if (result.activeSessions && result.activeSessions.length > 0 && !result.sessionDetails) {
+    if (result.activeSessions && !result.sessionDetails) {
       setActiveSessionsList(result.activeSessions)
       setActiveSessionsCount(result.count ?? result.activeSessions.length)
       setActiveSessionsMessage(result.message)
       setSessionsOverviewOpen(true)
       const mine = result.activeSessions.find(
-        (s) => String(s.carNumber ?? '').toUpperCase() === plate.toUpperCase(),
+        (s) =>
+          String(s.carNumber ?? '').toUpperCase() === plate.toUpperCase() &&
+          isActiveSessionStatus(s),
       )
-      if (mine && isActiveSessionStatus(mine)) {
+      if (mine) {
         const synced = activeSessionFromDetails(mine, {
           carNumber: plate,
           zone: zone || undefined,
@@ -579,6 +587,8 @@ export default function App() {
           persistActive(synced)
           setTimerOpen(true)
         }
+      } else {
+        clearLocalSession('Aktiivset sessiooni ei leitud')
       }
       showSessionFeedback(
         'success',
@@ -617,9 +627,7 @@ export default function App() {
         formatSessionFeedbackDetail(result),
       )
     } else {
-      persistActive(null)
-      setTimerRunning(false)
-      setTimerLabel('Aktiivset sessiooni ei leitud')
+      clearLocalSession('Aktiivset sessiooni ei leitud')
       const ended = formatSessionInstant(sessionEndIso(details))
       showSessionFeedback(
         'info',
@@ -924,18 +932,6 @@ export default function App() {
                 : 'border-ink/10 bg-white/80 text-ink'
             }`}
           />
-          <div className="mb-2 flex gap-1">
-            {[15, 30, 60, 120].map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => addMinutes(m)}
-                className={`flex-1 rounded-lg py-1 text-[10px] font-semibold ${chip}`}
-              >
-                +{m < 60 ? `${m}m` : `${m / 60}t`}
-              </button>
-            ))}
-          </div>
           <div className="flex gap-2">
             {activeSession ? (
               <button
@@ -946,24 +942,14 @@ export default function App() {
               >
                 {sessionAction === 'stop' ? 'Lõpetan…' : 'Lõpeta sessioon'}
               </button>
-            ) : selected ? (
-              <button
-                type="button"
-                disabled={sessionLoading || carNumber.trim().length < 2}
-                onClick={() => void beginParkingSession()}
-                className="flex-1 rounded-xl bg-moss py-2 text-xs font-bold text-white disabled:opacity-55"
-              >
-                {sessionAction === 'start' ? 'Alustan…' : 'Alusta'}
-              </button>
             ) : (
               <button
                 type="button"
-                onClick={startOrPause}
-                className={`flex-1 rounded-xl py-2 text-xs font-bold text-white ${
-                  timerRunning ? 'bg-clay' : 'bg-moss'
-                }`}
+                disabled={sessionLoading || !selected || carNumber.trim().length < 2}
+                onClick={() => void beginParkingSession()}
+                className="flex-1 rounded-xl bg-moss py-2 text-xs font-bold text-white disabled:opacity-55"
               >
-                {timerRunning ? 'Paus' : 'Käivita'}
+                {sessionAction === 'start' ? 'Alustan…' : 'Alusta sessiooni'}
               </button>
             )}
             <button
@@ -987,13 +973,6 @@ export default function App() {
               title="Kõik aktiivsed sessioonid"
             >
               Kõik
-            </button>
-            <button
-              type="button"
-              onClick={resetTimer}
-              className={`rounded-xl px-3 py-2 text-xs font-bold ${chip}`}
-            >
-              Nulli
             </button>
           </div>
           {sessionNotice ? (
@@ -1031,7 +1010,6 @@ export default function App() {
           onStartSession={() => void beginParkingSession()}
           onStopSession={() => void endParkingSession()}
           onCheckStatus={() => void refreshParkingStatus()}
-          onTimer={autoTimerFromSpot}
         />
       ) : null}
 
