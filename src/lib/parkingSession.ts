@@ -2,8 +2,11 @@
  * Parking session API — production n8n webhook.
  *
  * POST https://mairon8n.app.n8n.cloud/webhook/parkimine
- * Body:  { action: "start"|"stop"|"status", carNumber, zone }
- * Resp:  { success, message, sessionDetails: { carNumber, zone, hourlyRate, startTime, status, … } }
+ * Body:  { action: "start"|"stop"|"status", carNumber?, zone? }
+ *
+ * Responses:
+ * - start/stop/single status → { success, message, sessionDetails }
+ * - status without carNumber (list) → { success, message, activeSessions[], count }
  *
  * Every request sends Header Auth:
  *   X-N8N-API-KEY: SecurityMHMJ26%
@@ -27,8 +30,8 @@ export type ParkingSessionAction = 'start' | 'stop' | 'status'
 
 export type ParkingSessionRequest = {
   action: ParkingSessionAction
-  carNumber: string
-  zone: string
+  carNumber?: string
+  zone?: string
 }
 
 export type ParkingSessionDetails = {
@@ -52,6 +55,10 @@ export type ParkingSessionResponse = {
   success: boolean
   message: string
   sessionDetails?: ParkingSessionDetails | null
+  /** Present when status is queried without a specific carNumber (list mode). */
+  activeSessions?: ParkingSessionDetails[]
+  /** Number of active sessions (list mode). */
+  count?: number
 }
 
 /** Local snapshot of an ACTIVE backend session (for stop / status UI). */
@@ -120,6 +127,16 @@ export function normalizeSessionDetails(raw: unknown): ParkingSessionDetails | n
   }
 }
 
+function normalizeActiveSessions(raw: unknown): ParkingSessionDetails[] {
+  if (!Array.isArray(raw)) return []
+  const out: ParkingSessionDetails[] = []
+  for (const item of raw) {
+    const n = normalizeSessionDetails(item)
+    if (n) out.push(n)
+  }
+  return out
+}
+
 function unwrapPayload(data: unknown): Record<string, unknown> | null {
   if (!data) return null
   // Some n8n workflows return a one-element array
@@ -146,23 +163,29 @@ function normalizeResponse(
       ? d.message
       : defaultMessage(action, success)
 
+  const activeSessions = normalizeActiveSessions(
+    d.activeSessions ?? d.active_sessions ?? d.sessions,
+  )
+  const count =
+    asNumber(d.count) ??
+    (activeSessions.length > 0 ? activeSessions.length : undefined)
+
   return {
     success,
     message,
     sessionDetails: normalizeSessionDetails(d.sessionDetails ?? d.session_details),
+    activeSessions: activeSessions.length > 0 ? activeSessions : undefined,
+    count,
   }
 }
 
-function buildPayload(body: ParkingSessionRequest): {
-  action: ParkingSessionAction
-  carNumber: string
-  zone: string
-} {
-  return {
-    action: body.action,
-    carNumber: body.carNumber.trim().toUpperCase(),
-    zone: body.zone.trim(),
-  }
+function buildPayload(body: ParkingSessionRequest): Record<string, string> {
+  const payload: Record<string, string> = { action: body.action }
+  const plate = body.carNumber?.trim()
+  const zone = body.zone?.trim()
+  if (plate) payload.carNumber = plate.toUpperCase()
+  if (zone) payload.zone = zone
+  return payload
 }
 
 async function postSession(
@@ -207,6 +230,8 @@ async function postSession(
       success: false,
       message: msg,
       sessionDetails: normalized.sessionDetails,
+      activeSessions: normalized.activeSessions,
+      count: normalized.count,
     }
   }
 
@@ -216,9 +241,10 @@ async function postSession(
       parsed !== null &&
       !('success' in (parsed as object)) &&
       !('message' in (parsed as object)) &&
-      !('sessionDetails' in (parsed as object)))
+      !('sessionDetails' in (parsed as object)) &&
+      !('activeSessions' in (parsed as object)) &&
+      !('count' in (parsed as object)))
   ) {
-    // Bare success HTTP with empty / non-JSON body
     if (res.ok && (!text || !text.trim())) {
       return { success: true, message: defaultMessage(body.action, true) }
     }
@@ -238,7 +264,12 @@ function validateRequest(input: {
 }): string | null {
   const carNumber = input.carNumber?.trim() ?? ''
   const zone = input.zone?.trim() ?? ''
-  // Production n8n expects carNumber + zone for start, stop, and status
+
+  // status without carNumber = list all active sessions
+  if (input.action === 'status') {
+    return null
+  }
+
   if (!carNumber) return 'Sisesta auto number'
   if (!zone) return 'Tsoon puudub'
   return null
@@ -263,8 +294,8 @@ export async function sendParkingSession(
 
   const body: ParkingSessionRequest = {
     action: input.action,
-    carNumber: input.carNumber!.trim(),
-    zone: input.zone!.trim(),
+    carNumber: input.carNumber?.trim() || undefined,
+    zone: input.zone?.trim() || undefined,
   }
 
   try {
@@ -295,11 +326,22 @@ export function stopParkingSession(
   return sendParkingSession({ ...input, action: 'stop' }, signal)
 }
 
+/** Single-plate status (carNumber + optional zone). */
 export function checkParkingStatus(
-  input: { carNumber: string; zone: string },
+  input: { carNumber?: string; zone?: string } = {},
   signal?: AbortSignal,
 ): Promise<ParkingSessionResponse> {
   return sendParkingSession({ ...input, action: 'status' }, signal)
+}
+
+/**
+ * List all active parking sessions (status without carNumber).
+ * Backend returns `{ activeSessions, count }`.
+ */
+export function listActiveParkingSessions(
+  signal?: AbortSignal,
+): Promise<ParkingSessionResponse> {
+  return sendParkingSession({ action: 'status' }, signal)
 }
 
 export function sessionStartIso(details?: ParkingSessionDetails | null): string | undefined {
@@ -389,9 +431,13 @@ export function formatSessionFeedbackDetail(
   extras: Array<string | undefined | null> = [],
 ): string {
   const details = result.sessionDetails
+  const listCount = result.count ?? result.activeSessions?.length
   const parts = [
     result.message,
     ...extras,
+    listCount != null && result.activeSessions
+      ? `${listCount} aktiivset sessiooni`
+      : null,
     details?.carNumber && details?.zone
       ? `${details.carNumber} · ${details.zone}`
       : null,
@@ -401,7 +447,6 @@ export function formatSessionFeedbackDetail(
       ? `alates ${formatSessionInstant(sessionStartIso(details))}`
       : null,
   ]
-  // Dedupe while preserving order
   const seen = new Set<string>()
   const out: string[] = []
   for (const p of parts) {

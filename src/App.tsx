@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { ActiveSessionsModal } from './components/ActiveSessionsModal'
 import { MapErrorBoundary } from './components/MapErrorBoundary'
 import { MapView } from './components/MapView'
 import { ModalShell } from './components/ModalShell'
@@ -35,12 +36,14 @@ import {
   formatSessionFeedbackDetail,
   formatSessionInstant,
   isActiveSessionStatus,
+  listActiveParkingSessions,
   sessionEndIso,
   sessionHourlyRate,
   sessionStartIso,
   startParkingSession,
   stopParkingSession,
   type ActiveParkingSession,
+  type ParkingSessionDetails,
 } from './lib/parkingSession'
 import { parkingIndex } from './lib/spatialIndex'
 import {
@@ -101,6 +104,10 @@ export default function App() {
     kind: 'success' | 'error' | 'info' | 'loading'
     text: string
   } | null>(null)
+  const [sessionsOverviewOpen, setSessionsOverviewOpen] = useState(false)
+  const [activeSessionsList, setActiveSessionsList] = useState<ParkingSessionDetails[]>([])
+  const [activeSessionsCount, setActiveSessionsCount] = useState<number | undefined>()
+  const [activeSessionsMessage, setActiveSessionsMessage] = useState<string | undefined>()
   const [toast, setToast] = useState<ToastState>(null)
   const [pitch3d, setPitch3d] = useState(true)
   const [preciseSpots, setPreciseSpots] = useState<ParkingSpot[]>([])
@@ -460,29 +467,106 @@ export default function App() {
     }
   }
 
+  const loadActiveSessionsOverview = async () => {
+    setSessionLoading(true)
+    setSessionAction('status')
+    showSessionFeedback('loading', 'Laadin aktiivseid sessioone…')
+
+    const result = await listActiveParkingSessions()
+
+    setSessionLoading(false)
+    setSessionAction(null)
+
+    if (!result.success) {
+      showSessionFeedback('error', 'Sessioonide nimekiri ebaõnnestus', result.message)
+      return
+    }
+
+    const list = result.activeSessions ?? []
+    const count = result.count ?? list.length
+    setActiveSessionsList(list)
+    setActiveSessionsCount(count)
+    setActiveSessionsMessage(result.message)
+    setSessionsOverviewOpen(true)
+
+    // If our local plate appears in the list, sync it as the active session
+    const plate = (carNumber.trim() || activeSession?.carNumber || '').toUpperCase()
+    if (plate) {
+      const mine = list.find(
+        (s) => String(s.carNumber ?? '').toUpperCase() === plate && isActiveSessionStatus(s),
+      )
+      if (mine) {
+        const synced = activeSessionFromDetails(mine, {
+          carNumber: plate,
+          spotName: activeSession?.spotName ?? selected?.name,
+        })
+        if (synced) persistActive(synced)
+      }
+    }
+
+    showSessionFeedback(
+      'success',
+      'Aktiivsed sessioonid',
+      formatSessionFeedbackDetail(result),
+    )
+  }
+
   const refreshParkingStatus = async () => {
     const plate = (carNumber.trim() || activeSession?.carNumber || '').trim()
     const zone = activeSession?.zone || selected?.zone_code || ''
+
+    // No plate → list-all status (activeSessions + count)
     if (!plate) {
-      showSessionFeedback('error', 'Sisesta auto number')
-      return
-    }
-    if (!zone) {
-      showSessionFeedback('error', 'Tsoon puudub', 'Vali kaartilt parkimiskoht')
+      await loadActiveSessionsOverview()
       return
     }
 
     setSessionLoading(true)
     setSessionAction('status')
-    showSessionFeedback('loading', 'Kontrollin parkimise staatust…', `${plate} · ${zone}`)
+    showSessionFeedback(
+      'loading',
+      'Kontrollin parkimise staatust…',
+      zone ? `${plate} · ${zone}` : plate,
+    )
 
-    const result = await checkParkingStatus({ carNumber: plate, zone })
+    const result = await checkParkingStatus({
+      carNumber: plate,
+      zone: zone || undefined,
+    })
 
     setSessionLoading(false)
     setSessionAction(null)
 
     if (!result.success) {
       showSessionFeedback('error', 'Staatuse päring ebaõnnestus', result.message)
+      return
+    }
+
+    // Backend may still return the overview list even with a plate
+    if (result.activeSessions && result.activeSessions.length > 0 && !result.sessionDetails) {
+      setActiveSessionsList(result.activeSessions)
+      setActiveSessionsCount(result.count ?? result.activeSessions.length)
+      setActiveSessionsMessage(result.message)
+      setSessionsOverviewOpen(true)
+      const mine = result.activeSessions.find(
+        (s) => String(s.carNumber ?? '').toUpperCase() === plate.toUpperCase(),
+      )
+      if (mine && isActiveSessionStatus(mine)) {
+        const synced = activeSessionFromDetails(mine, {
+          carNumber: plate,
+          zone: zone || undefined,
+          spotName: activeSession?.spotName ?? selected?.name,
+        })
+        if (synced) {
+          persistActive(synced)
+          setTimerOpen(true)
+        }
+      }
+      showSessionFeedback(
+        'success',
+        'Aktiivsed sessioonid',
+        formatSessionFeedbackDetail(result),
+      )
       return
     }
 
@@ -525,6 +609,27 @@ export default function App() {
         formatSessionFeedbackDetail(result, [ended ? `lõpp ${ended}` : null]),
       )
     }
+  }
+
+  const adoptListedSession = (details: ParkingSessionDetails) => {
+    const synced = activeSessionFromDetails(details, {
+      spotName: activeSession?.spotName ?? selected?.name,
+    })
+    if (!synced) return
+    persistActive(synced)
+    setCarNumber(synced.carNumber)
+    saveCarNumber(synced.carNumber)
+    const rateLabel = formatHourlyRate(synced.hourlyRate)
+    setTimerLabel(
+      `Sessioon: ${synced.zone} · ${synced.carNumber}${rateLabel ? ` · ${rateLabel}` : ''}`,
+    )
+    setTimerOpen(true)
+    setSessionsOverviewOpen(false)
+    showSessionFeedback(
+      'success',
+      'Sessioon valitud',
+      `${synced.carNumber} · ${synced.zone}${rateLabel ? ` · ${rateLabel}` : ''}`,
+    )
   }
 
   const submitReport = (e: FormEvent<HTMLFormElement>) => {
@@ -845,12 +950,25 @@ export default function App() {
             )}
             <button
               type="button"
-              disabled={sessionLoading || !(carNumber.trim() || activeSession?.carNumber)}
+              disabled={sessionLoading}
               onClick={() => void refreshParkingStatus()}
               className={`rounded-xl px-3 py-2 text-xs font-bold ${chip} disabled:opacity-55`}
-              title="Kontrolli staatust"
+              title={
+                carNumber.trim() || activeSession?.carNumber
+                  ? 'Kontrolli oma staatust'
+                  : 'Kuva kõik aktiivsed sessioonid'
+              }
             >
               {sessionAction === 'status' ? '…' : 'Staatus'}
+            </button>
+            <button
+              type="button"
+              disabled={sessionLoading}
+              onClick={() => void loadActiveSessionsOverview()}
+              className={`rounded-xl px-3 py-2 text-xs font-bold ${chip} disabled:opacity-55`}
+              title="Kõik aktiivsed sessioonid"
+            >
+              Kõik
             </button>
             <button
               type="button"
@@ -908,6 +1026,18 @@ export default function App() {
       ) : null}
 
       <Toast toast={toast} onClose={dismissToast} />
+
+      {sessionsOverviewOpen ? (
+        <ActiveSessionsModal
+          sessions={activeSessionsList}
+          count={activeSessionsCount}
+          message={activeSessionsMessage}
+          loading={sessionLoading && sessionAction === 'status'}
+          onClose={() => setSessionsOverviewOpen(false)}
+          onRefresh={() => void loadActiveSessionsOverview()}
+          onSelect={adoptListedSession}
+        />
+      ) : null}
 
       {infoOpen ? (
         <ModalShell onClose={() => setInfoOpen(false)} title="Tallinna parkimisreeglid">

@@ -54,9 +54,14 @@ Bottom sheet / kellapaneel saadavad POST production webhook’ile:
 { "action": "status", "carNumber": "123ABC", "zone": "KESKLINN" }
 ```
 
-- **start** / **stop** / **status** — kõik nõuavad `carNumber` + `zone`
-- Vastus: `{ success, message, sessionDetails }` kus `sessionDetails` sisaldab nt `carNumber`, `zone`, `hourlyRate`, `startTime`, `status`
-- UI kuvab backend’i `message`, tunnihinna ja staatuse toast’is / bottom sheet’is / kellapaneelis
+```json
+{ "action": "status" }
+```
+
+- **start** / **stop** — nõuavad `carNumber` + `zone`
+- **status** ühe numbriga — `{ success, message, sessionDetails }`
+- **status** ilma `carNumber`-ita (või **Kõik** nupp) — `{ success, message, activeSessions[], count }` ülevaade kõigist aktiivsetest sessioonidest
+- UI kuvab backend’i `message`, tunnihinna ja staatuse toast’is / bottom sheet’is / kellapaneelis; nimekiri avaneb modaalis
 - CORS-probleemi korral fallback: `/api/parkimine` proxy
 
 Iga päring saadab Header Auth:
