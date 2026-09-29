@@ -163,20 +163,57 @@ function unwrapPayload(data: unknown): Record<string, unknown> | null {
   return null
 }
 
+/**
+ * Pull sessionDetails from nested object, top-level fields, or activeSessions match.
+ */
+function extractSessionDetails(
+  d: Record<string, unknown>,
+  preferPlate?: string,
+): ParkingSessionDetails | null {
+  const nested = normalizeSessionDetails(d.sessionDetails ?? d.session_details ?? d.data)
+  if (nested && (nested.carNumber || nested.zone || nested.status)) {
+    return nested
+  }
+
+  // Flat payload: { success, message, carNumber, zone, status, hourlyRate, startTime }
+  const flat = normalizeSessionDetails(d)
+  if (
+    flat &&
+    (flat.carNumber || flat.zone) &&
+    (flat.status || flat.startTime || flat.hourlyRate != null)
+  ) {
+    return flat
+  }
+
+  const list = normalizeActiveSessions(
+    d.activeSessions ?? d.active_sessions ?? d.sessions,
+  )
+  if (list.length === 0) return null
+  if (preferPlate) {
+    const plate = preferPlate.trim().toUpperCase()
+    const mine = list.find(
+      (s) => String(s.carNumber ?? '').toUpperCase() === plate && isActiveSessionStatus(s),
+    )
+    if (mine) return mine
+  }
+  const firstActive = list.find((s) => isActiveSessionStatus(s))
+  return firstActive ?? list[0] ?? null
+}
+
 function normalizeResponse(
   data: unknown,
   action: ParkingSessionAction,
+  preferPlate?: string,
 ): ParkingSessionResponse {
   const d = unwrapPayload(data)
   if (!d) {
     return { success: false, message: 'Tundmatu vastus serverilt' }
   }
 
-  const success = Boolean(d.success)
   const message =
     typeof d.message === 'string' && d.message.trim()
       ? d.message
-      : defaultMessage(action, success)
+      : defaultMessage(action, Boolean(d.success))
 
   const activeSessions = normalizeActiveSessions(
     d.activeSessions ?? d.active_sessions ?? d.sessions,
@@ -185,20 +222,36 @@ function normalizeResponse(
     asNumber(d.count) ??
     (activeSessions.length > 0 ? activeSessions.length : undefined)
 
+  const sessionDetails = extractSessionDetails(d, preferPlate)
+
+  // Promote ACTIVE sessionDetails to success even if the flag was omitted/false
+  const hasActive = isActiveSessionStatus(sessionDetails)
+  const success = hasActive || Boolean(d.success)
+
   return {
     success,
     message,
-    sessionDetails: normalizeSessionDetails(d.sessionDetails ?? d.session_details),
+    sessionDetails,
     activeSessions: activeSessions.length > 0 ? activeSessions : undefined,
     count,
   }
 }
 
+/**
+ * Build webhook JSON body.
+ * Status for a specific car is exactly: { action: "status", carNumber } — no zone.
+ */
 function buildPayload(body: ParkingSessionRequest): Record<string, string> {
   const payload: Record<string, string> = { action: body.action }
   const plate = body.carNumber?.trim()
-  const zone = body.zone?.trim()
   if (plate) payload.carNumber = plate.toUpperCase()
+
+  // status with plate → carNumber only (n8n contract)
+  if (body.action === 'status' && plate) {
+    return payload
+  }
+
+  const zone = body.zone?.trim()
   if (zone) payload.zone = zone
   return payload
 }
@@ -232,11 +285,18 @@ async function postSession(
     }
   }
 
+  const preferPlate = body.carNumber?.trim()
+
   if (!res.ok) {
     const normalized = normalizeResponse(
       parsed ?? { success: false, message: text.slice(0, 240) },
       body.action,
+      preferPlate,
     )
+    // Active session in body despite non-2xx — still surface it
+    if (isActiveSessionStatus(normalized.sessionDetails)) {
+      return { ...normalized, success: true }
+    }
     const msg =
       normalized.message === 'Error in workflow'
         ? 'n8n töövoog ebaõnnestus (serveri viga) — kontrolli webhook’i'
@@ -258,7 +318,9 @@ async function postSession(
       !('message' in (parsed as object)) &&
       !('sessionDetails' in (parsed as object)) &&
       !('activeSessions' in (parsed as object)) &&
-      !('count' in (parsed as object)))
+      !('count' in (parsed as object)) &&
+      !('carNumber' in (parsed as object)) &&
+      !('status' in (parsed as object)))
   ) {
     if (res.ok && (!text || !text.trim())) {
       return { success: true, message: defaultMessage(body.action, true) }
@@ -269,7 +331,7 @@ async function postSession(
     }
   }
 
-  return normalizeResponse(parsed, body.action)
+  return normalizeResponse(parsed, body.action, preferPlate)
 }
 
 function validateRequest(input: {
@@ -342,12 +404,18 @@ export function stopParkingSession(
   return sendParkingSession({ ...input, action: 'stop' }, signal)
 }
 
-/** Single-plate status (carNumber + optional zone). */
+/**
+ * Status for a specific car.
+ * POST body is exactly `{ action: "status", carNumber }` (no zone).
+ */
 export function checkParkingStatus(
-  input: { carNumber?: string; zone?: string } = {},
+  input: { carNumber: string },
   signal?: AbortSignal,
 ): Promise<ParkingSessionResponse> {
-  return sendParkingSession({ ...input, action: 'status' }, signal)
+  return sendParkingSession(
+    { action: 'status', carNumber: input.carNumber },
+    signal,
+  )
 }
 
 /**
@@ -406,7 +474,11 @@ export function isSessionNotFoundMessage(message?: string | null): boolean {
     m.includes('does not exist') ||
     m.includes('ei leitud') ||
     m.includes('pole aktiiv') ||
+    m.includes('puudub aktiivne') ||
+    m.includes('puudub aktiivset') ||
+    m.includes('aktiivseid parkimisi pole') ||
     m.includes('aktiivset sessiooni pole') ||
+    m.includes('aktiivset parkimist pole') ||
     m.includes('sessiooni ei leitud') ||
     m.includes('already stopped') ||
     m.includes('not active')

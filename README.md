@@ -51,7 +51,7 @@ Bottom sheet / kellapaneel saadavad POST production webhook’ile:
 ```
 
 ```json
-{ "action": "status", "carNumber": "123ABC", "zone": "KESKLINN" }
+{ "action": "status", "carNumber": "123ABC" }
 ```
 
 ```json
@@ -59,8 +59,9 @@ Bottom sheet / kellapaneel saadavad POST production webhook’ile:
 ```
 
 - **start** / **stop** — nõuavad `carNumber` + `zone`
-- **status** ühe numbriga — `{ success, message, sessionDetails }`
+- **status** ühe numbriga — body on täpselt `{ action, carNumber }` (ilma zone’ta); vastus `{ success, message, sessionDetails }`
 - **status** ilma `carNumber`-ita (või **Kõik** nupp) — `{ success, message, activeSessions[], count }` ülevaade kõigist aktiivsetest sessioonidest
+- Kui auto kohta aktiivset sessiooni pole (`Autol … puudub aktiivne parkimine`), UI näitab info-teadet — mitte vigast errorit
 - UI kuvab backend’i `message`, tunnihinna ja staatuse toast’is / bottom sheet’is / kellapaneelis; nimekiri avaneb modaalis
 - CORS-probleemi korral fallback: `/api/parkimine` proxy
 

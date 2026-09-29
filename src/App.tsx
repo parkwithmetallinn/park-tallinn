@@ -531,7 +531,6 @@ export default function App() {
 
   const refreshParkingStatus = async () => {
     const plate = (carNumber.trim() || activeSession?.carNumber || '').trim()
-    const zone = activeSession?.zone || selected?.zone_code || ''
 
     // No plate → list-all status (activeSessions + count)
     if (!plate) {
@@ -541,68 +540,28 @@ export default function App() {
 
     setSessionLoading(true)
     setSessionAction('status')
-    showSessionFeedback(
-      'loading',
-      'Kontrollin parkimise staatust…',
-      zone ? `${plate} · ${zone}` : plate,
-    )
+    showSessionFeedback('loading', 'Kontrollin parkimise staatust…', plate)
 
-    const result = await checkParkingStatus({
-      carNumber: plate,
-      zone: zone || undefined,
-    })
+    // Exact n8n contract: { action: "status", carNumber } + X-N8N-API-KEY
+    const result = await checkParkingStatus({ carNumber: plate })
 
     setSessionLoading(false)
     setSessionAction(null)
 
-    if (!result.success) {
-      // Missing session is info, not a broken UI — reset to Start
-      if (isSessionNotFoundMessage(result.message)) {
-        clearLocalSession('Aktiivset sessiooni ei leitud')
-        showSessionFeedback('info', 'Aktiivset parkimist pole', result.message)
-        return
-      }
-      showSessionFeedback('error', 'Staatuse päring ebaõnnestus', result.message)
-      return
-    }
-
-    // Backend may still return the overview list even with a plate
-    if (result.activeSessions && !result.sessionDetails) {
-      setActiveSessionsList(result.activeSessions)
-      setActiveSessionsCount(result.count ?? result.activeSessions.length)
-      setActiveSessionsMessage(result.message)
-      setSessionsOverviewOpen(true)
-      const mine = result.activeSessions.find(
-        (s) =>
-          String(s.carNumber ?? '').toUpperCase() === plate.toUpperCase() &&
-          isActiveSessionStatus(s),
-      )
-      if (mine) {
-        const synced = activeSessionFromDetails(mine, {
-          carNumber: plate,
-          zone: zone || undefined,
-          spotName: activeSession?.spotName ?? selected?.name,
-        })
-        if (synced) {
-          persistActive(synced)
-          setTimerOpen(true)
-        }
-      } else {
-        clearLocalSession('Aktiivset sessiooni ei leitud')
-      }
-      showSessionFeedback(
-        'success',
-        'Aktiivsed sessioonid',
-        formatSessionFeedbackDetail(result),
-      )
-      return
-    }
-
     const details = result.sessionDetails
-    if (isActiveSessionStatus(details) && details) {
-      const synced = activeSessionFromDetails(details, {
+    const fromList = result.activeSessions?.find(
+      (s) =>
+        String(s.carNumber ?? '').toUpperCase() === plate.toUpperCase() &&
+        isActiveSessionStatus(s),
+    )
+    const activeDetails =
+      (details && isActiveSessionStatus(details) ? details : null) ?? fromList ?? null
+
+    // Active session found → show details, switch to Stop
+    if (activeDetails) {
+      const synced = activeSessionFromDetails(activeDetails, {
         carNumber: plate,
-        zone,
+        zone: activeSession?.zone || selected?.zone_code,
         spotName: activeSession?.spotName ?? selected?.name,
         hourlyRate: activeSession?.hourlyRate,
       })
@@ -615,26 +574,52 @@ export default function App() {
           }`,
         )
         setTimerOpen(true)
-        if (synced.carNumber && synced.carNumber !== carNumber.trim().toUpperCase()) {
+        if (synced.carNumber !== carNumber.trim().toUpperCase()) {
           setCarNumber(synced.carNumber)
           saveCarNumber(synced.carNumber)
         }
       }
-
       showSessionFeedback(
         'success',
         'Aktiivne parkimine',
-        formatSessionFeedbackDetail(result),
+        formatSessionFeedbackDetail({ ...result, sessionDetails: activeDetails }),
       )
-    } else {
+      return
+    }
+
+    // Clean "no active parking" (e.g. Autol 123DFG puudub aktiivne parkimine)
+    if (!result.success || isSessionNotFoundMessage(result.message)) {
       clearLocalSession('Aktiivset sessiooni ei leitud')
-      const ended = formatSessionInstant(sessionEndIso(details))
       showSessionFeedback(
         'info',
         'Aktiivset parkimist pole',
-        formatSessionFeedbackDetail(result, [ended ? `lõpp ${ended}` : null]),
+        result.message || 'Sellel autol pole aktiivset parkimist',
       )
+      return
     }
+
+    // List-only success without this plate
+    if (result.activeSessions) {
+      setActiveSessionsList(result.activeSessions)
+      setActiveSessionsCount(result.count ?? result.activeSessions.length)
+      setActiveSessionsMessage(result.message)
+      setSessionsOverviewOpen(true)
+      clearLocalSession('Aktiivset sessiooni ei leitud')
+      showSessionFeedback(
+        'info',
+        'Aktiivset parkimist pole',
+        formatSessionFeedbackDetail(result),
+      )
+      return
+    }
+
+    clearLocalSession('Aktiivset sessiooni ei leitud')
+    const ended = formatSessionInstant(sessionEndIso(details))
+    showSessionFeedback(
+      'info',
+      'Aktiivset parkimist pole',
+      formatSessionFeedbackDetail(result, [ended ? `lõpp ${ended}` : null]),
+    )
   }
 
   const adoptListedSession = (details: ParkingSessionDetails) => {
