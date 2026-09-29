@@ -23,6 +23,11 @@ Sildid ei kattu: `text-allow-overlap` / `icon-allow-overlap` on `false`; madalam
 
 Diagonaalseid “läbi majade” jooni ei joonistata — ainult lühikesed, teele joondatud lõigud detailvaates.
 
+## Andmed
+
+- `public/data/parking_polygons.geojson` — Overpass Tallinn `amenity=parking` polügoonid (~5.4k). Täide operaatori/tsooni värviga (opacity 0.35), 2px ääris; klõps avab bottom sheet’i (operaator, hind, tasuta minutid + Waze / Google / Apple).
+- `public/data/street_parking.geojson` — teeäärsed LineString’id (zoom ≥ 15).
+
 ## Funktsioonid
 
 - **Viewport bbox** — ainult ekraanil nähtavad kohad

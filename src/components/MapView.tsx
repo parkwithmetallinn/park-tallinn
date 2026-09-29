@@ -333,6 +333,9 @@ export function MapView({
       void refreshViewport(map)
       emitZoom(map)
 
+      // Precise curb-to-curb polygons: /data/parking_polygons.geojson
+      // Source → fill (operator/zone color @ 0.35) + 2px outline (ensureOverlays)
+      // Click → fitBounds + bottom sheet (operator, rate, free mins, Waze/Google/Apple)
       void loadParkingPolygons()
         .then((fc) => {
           preciseFcRef.current = fc
