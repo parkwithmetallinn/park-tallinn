@@ -8,11 +8,21 @@ import type {
 } from '../types'
 import { normalizeSpot } from './geojson'
 import {
+  getParkingExclusionReason,
   isPaidFeeTag,
   isVerifiedFreeParking,
   PARKING_COLOR_FREE,
   PARKING_COLOR_UNKNOWN,
+  type ParkingPrepPurgeStats,
+  emptyPurgeStats,
 } from './parkingClassification'
+
+/** Last prepareParkingPolygons purge counts (for health checks). */
+let lastPolygonPurgeStats: ParkingPrepPurgeStats = emptyPurgeStats()
+
+export function getLastPolygonPurgeStats(): ParkingPrepPurgeStats {
+  return lastPolygonPurgeStats
+}
 
 export const PARKING_POLYGONS_URL = '/data/parking_polygons.geojson'
 
@@ -262,14 +272,25 @@ export function featureBounds(geom: PolyGeom): [[number, number], [number, numbe
 /**
  * Enrich Overpass / curated GeoJSON with paint + sheet fields for MapLibre.
  * Supports OSM tags: @id, parking, fee, operator, charge, maxstay, zone, name, addr:*.
+ * Purges private yards / resident-only and non-public underground garages.
  */
 export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollection {
   const features: PreciseParkingFeature[] = []
+  const purge = emptyPurgeStats()
   for (const f of raw.features ?? []) {
     if (!f.geometry || (f.geometry.type !== 'Polygon' && f.geometry.type !== 'MultiPolygon')) {
       continue
     }
     const p = f.properties ?? {}
+    purge.input++
+
+    // Drop private yards / resident-only / phantom underground building parking
+    const exclusion = getParkingExclusionReason(p)
+    if (exclusion) {
+      purge.purged[exclusion]++
+      purge.purgedTotal++
+      continue
+    }
 
     // Prefer OSM @id; ignore numeric OSM `layer` (building level) as app layer key
     const id = str(p['@id'] ?? p.id ?? f.id) || `poly-${features.length}`
@@ -417,7 +438,9 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
       },
       geometry: f.geometry,
     })
+    purge.kept++
   }
+  lastPolygonPurgeStats = purge
   return { type: 'FeatureCollection', features }
 }
 

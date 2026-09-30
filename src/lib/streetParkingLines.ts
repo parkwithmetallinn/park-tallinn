@@ -1,12 +1,22 @@
 import { normalizeSpot } from './geojson'
 import {
+  emptyPurgeStats,
+  getParkingExclusionReason,
   isPaidFeeTag,
   isVerifiedFreeParking,
   PARKING_COLOR_FREE,
   PARKING_COLOR_PAID,
   PARKING_COLOR_TIMED,
   PARKING_COLOR_UNKNOWN,
+  type ParkingPrepPurgeStats,
 } from './parkingClassification'
+
+/** Last prepareStreetParking purge counts (for health checks). */
+let lastStreetPurgeStats: ParkingPrepPurgeStats = emptyPurgeStats()
+
+export function getLastStreetPurgeStats(): ParkingPrepPurgeStats {
+  return lastStreetPurgeStats
+}
 import type { ParkingLayerKey, ParkingOperator, ParkingSpot } from '../types'
 
 export const STREET_PARKING_URL = '/data/street_parking.geojson'
@@ -303,13 +313,23 @@ function lineToLatLng(coords: number[][]): [number, number][] {
 /**
  * Enrich Overpass / curated street parking GeoJSON as curb LineStrings.
  * Polygons (street_side / lane) are converted to longest-chain curb lines.
+ * Purges private / residential and non-public underground features.
  */
 export function prepareStreetParking(raw: RawCollection): StreetParkingCollection {
   const features: StreetParkingFeature[] = []
+  const purge = emptyPurgeStats()
   for (const f of raw.features ?? []) {
     if (!f.geometry) continue
     const p = f.properties ?? {}
     if (!isParkingFeature(p)) continue
+    purge.input++
+
+    const exclusion = getParkingExclusionReason(p)
+    if (exclusion) {
+      purge.purged[exclusion]++
+      purge.purgedTotal++
+      continue
+    }
 
     const coords = extractLineCoords(f.geometry)
     if (!coords || coords.length < 2) continue
@@ -364,6 +384,8 @@ export function prepareStreetParking(raw: RawCollection): StreetParkingCollectio
       geometry: { type: 'LineString', coordinates: coords },
     })
   }
+  purge.kept = features.length
+  lastStreetPurgeStats = purge
   return { type: 'FeatureCollection', features }
 }
 

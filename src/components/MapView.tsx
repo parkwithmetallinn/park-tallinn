@@ -14,6 +14,7 @@ import { queryParkingInViewport } from '../lib/parkingRepository'
 import {
   featureBounds,
   filterPreciseCollection,
+  getLastPolygonPurgeStats,
   loadParkingPolygons,
   PRECISE_FILL_LAYER,
   PRECISE_LABEL_LAYER,
@@ -28,6 +29,7 @@ import {
 } from '../lib/preciseParkingPolygons'
 import {
   filterStreetCollection,
+  getLastStreetPurgeStats,
   loadStreetParking,
   STREET_PARKING_HIT_LAYER,
   STREET_PARKING_LINE_LAYER,
@@ -366,7 +368,8 @@ export function MapView({
       emitZoom(map)
 
       // Dual-layer: parking_polygons.geojson + street_parking.geojson
-      // Click either → bottom sheet (rules + Waze/Google/Apple nav)
+      // Prep purges private yards / resident-only and non-public underground
+      // garages so the canvas only shows accessible parking options.
       void loadParkingPolygons()
         .then((fc) => {
           preciseFcRef.current = fc
@@ -375,6 +378,9 @@ export function MapView({
           for (const s of spots) parkingIndex.insert(s)
           onPreciseSpotsLoadedRef.current?.(spots)
           applySelectionHighlight(map, selectedIdRef.current)
+          if (import.meta.env.DEV) {
+            console.info('[parking] polygon purge', getLastPolygonPurgeStats())
+          }
         })
         .catch((err) => {
           console.warn('parking_polygons.geojson failed to load', err)
@@ -389,6 +395,9 @@ export function MapView({
           for (const s of spots) parkingIndex.insert(s)
           onStreetSpotsLoadedRef.current?.(spots)
           applySelectionHighlight(map, selectedIdRef.current)
+          if (import.meta.env.DEV) {
+            console.info('[parking] street purge', getLastStreetPurgeStats())
+          }
         })
         .catch((err) => {
           console.warn('street_parking.geojson failed to load', err)
