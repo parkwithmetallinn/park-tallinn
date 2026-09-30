@@ -41,19 +41,21 @@ export function ParkingBottomSheet({
   onStartSession,
   onStopSession,
   onCheckStatus,
+  onExtendMinutes,
 }: {
   spot: ParkingSpot
   distanceLabel?: string | null
   carNumber: string
   onCarNumberChange: (value: string) => void
   sessionLoading?: boolean
-  sessionAction?: 'start' | 'stop' | 'status' | null
+  sessionAction?: 'start' | 'stop' | 'status' | 'extend' | null
   activeSession?: ActiveParkingSession | null
   sessionNotice?: { kind: 'success' | 'error' | 'info' | 'loading'; text: string } | null
   onClose: () => void
   onStartSession: () => void
   onStopSession: () => void
   onCheckStatus: () => void
+  onExtendMinutes?: (minutes: number) => void
 }) {
   const stableClose = useCallback(() => onClose(), [onClose])
   const { requestClose, sheetClassName } = useSheetClose(stableClose)
@@ -260,7 +262,11 @@ export function ParkingBottomSheet({
             <button
               type="button"
               disabled={sessionLoading}
-              onClick={onStopSession}
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                onStopSession()
+              }}
               className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#FF3B30] px-4 py-3.5 text-[15px] font-semibold text-white transition active:scale-[0.99] disabled:opacity-55"
             >
               <Square className="h-4 w-4 fill-current" />
@@ -270,7 +276,9 @@ export function ParkingBottomSheet({
             <button
               type="button"
               disabled={sessionLoading || !carOk}
-              onClick={() => {
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
                 setTouched(true)
                 if (!carOk) return
                 onStartSession()
@@ -281,10 +289,39 @@ export function ParkingBottomSheet({
             </button>
           )}
 
+          {hasActive && onExtendMinutes ? (
+            <div className="grid grid-cols-4 gap-1.5">
+              {(
+                [
+                  { minutes: 15, label: '+15m' },
+                  { minutes: 30, label: '+30m' },
+                  { minutes: 60, label: '+1h' },
+                  { minutes: 120, label: '+2h' },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.minutes}
+                  type="button"
+                  disabled={sessionLoading}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onExtendMinutes(opt.minutes)
+                  }}
+                  className="rounded-xl bg-[#FF9F0A]/12 px-1 py-2.5 text-[12px] font-bold text-[#C93400] transition active:scale-[0.98] disabled:opacity-55"
+                >
+                  {sessionAction === 'extend' ? '…' : opt.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
           <button
             type="button"
             disabled={sessionLoading || !carOk}
-            onClick={() => {
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
               setTouched(true)
               if (!carOk) return
               onCheckStatus()

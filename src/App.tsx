@@ -28,10 +28,11 @@ import {
   type SearchLocation,
 } from './lib/geocode'
 import { normalizeSpot } from './lib/geojson'
-import { formatHMS, minutesFromBadge, TYPE_LABELS } from './lib/parking'
+import { formatHMS, TYPE_LABELS } from './lib/parking'
 import {
   activeSessionFromDetails,
   checkParkingStatus,
+  extendParkingSession,
   formatHourlyRate,
   formatSessionFeedbackDetail,
   formatSessionInstant,
@@ -46,6 +47,16 @@ import {
   type ActiveParkingSession,
   type ParkingSessionDetails,
 } from './lib/parkingSession'
+
+/** Elapsed (count-up) vs prepaid countdown. */
+type TimerMode = 'elapsed' | 'prepaid'
+
+const TIME_EXTEND_OPTIONS = [
+  { minutes: 15, label: '+15m' },
+  { minutes: 30, label: '+30m' },
+  { minutes: 60, label: '+1h' },
+  { minutes: 120, label: '+2h' },
+] as const
 import { parkingIndex } from './lib/spatialIndex'
 import {
   loadActiveSession,
@@ -95,11 +106,14 @@ export default function App() {
   const [reportOpen, setReportOpen] = useState(false)
   const [timerSeconds, setTimerSeconds] = useState(0)
   const [timerRunning, setTimerRunning] = useState(false)
+  const [timerMode, setTimerMode] = useState<TimerMode>('elapsed')
   const [timerLabel, setTimerLabel] = useState('Määra aeg või vali kellaga koht')
   const [timerOpen, setTimerOpen] = useState(false)
   const [carNumber, setCarNumber] = useState('')
   const [sessionLoading, setSessionLoading] = useState(false)
-  const [sessionAction, setSessionAction] = useState<'start' | 'stop' | 'status' | null>(null)
+  const [sessionAction, setSessionAction] = useState<
+    'start' | 'stop' | 'status' | 'extend' | null
+  >(null)
   const [activeSession, setActiveSession] = useState<ActiveParkingSession | null>(null)
   const [sessionNotice, setSessionNotice] = useState<{
     kind: 'success' | 'error' | 'info' | 'loading'
@@ -123,10 +137,18 @@ export default function App() {
     const saved = loadActiveSession()
     if (saved) {
       setActiveSession(saved)
+      setTimerMode('elapsed')
+      setTimerRunning(true)
       setTimerLabel(
         `Sessioon: ${saved.spotName ?? saved.zone} · ${saved.carNumber}`,
       )
       setTimerOpen(true)
+      if (saved.startedAt) {
+        const startMs = Date.parse(saved.startedAt)
+        if (Number.isFinite(startMs)) {
+          setTimerSeconds(Math.max(0, Math.floor((Date.now() - startMs) / 1000)))
+        }
+      }
     }
     return () => {
       if (searchSheetTimer.current) window.clearTimeout(searchSheetTimer.current)
@@ -146,8 +168,23 @@ export default function App() {
     return () => navigator.geolocation.clearWatch(id)
   }, [])
 
+  // Mode 1 — live duration: tick UP from session startTime
   useEffect(() => {
-    if (!timerRunning || timerSeconds <= 0) return
+    if (timerMode !== 'elapsed' || !activeSession?.startedAt) return
+    const startMs = Date.parse(activeSession.startedAt)
+    if (!Number.isFinite(startMs)) return
+    const tick = () => {
+      setTimerSeconds(Math.max(0, Math.floor((Date.now() - startMs) / 1000)))
+    }
+    tick()
+    const id = window.setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [timerMode, activeSession?.startedAt])
+
+  // Mode 2 — prepaid / time limit: count DOWN
+  useEffect(() => {
+    if (timerMode !== 'prepaid' || !timerRunning) return
+    if (timerSeconds <= 0) return
     const id = window.setInterval(() => {
       setTimerSeconds((s) => {
         if (s <= 1) {
@@ -159,7 +196,7 @@ export default function App() {
       })
     }, 1000)
     return () => clearInterval(id)
-  }, [timerRunning, timerSeconds])
+  }, [timerMode, timerRunning, timerSeconds])
 
   // Nominatim geocoding (debounced)
   useEffect(() => {
@@ -356,7 +393,20 @@ export default function App() {
     persistActive(null)
     setTimerRunning(false)
     setTimerSeconds(0)
+    setTimerMode('elapsed')
     setTimerLabel(label)
+  }
+
+  const startElapsedTimer = (startedAt?: string, label?: string) => {
+    const iso = startedAt || new Date().toISOString()
+    const startMs = Date.parse(iso)
+    setTimerMode('elapsed')
+    setTimerSeconds(
+      Number.isFinite(startMs) ? Math.max(0, Math.floor((Date.now() - startMs) / 1000)) : 0,
+    )
+    setTimerRunning(true)
+    setTimerOpen(true)
+    if (label) setTimerLabel(label)
   }
 
   const showSessionFeedback = (
@@ -417,14 +467,12 @@ export default function App() {
         saveCarNumber(resolvedPlate)
       }
 
-      const mins = minutesFromBadge(selected.badge) || selected.free_minutes || 60
       const rateLabel = formatHourlyRate(hourlyRate)
-      setTimerSeconds(mins * 60)
-      setTimerLabel(
+      // Mode 1 — live duration counter (ticks up from startTime)
+      startElapsedTimer(
+        startedAt || new Date().toISOString(),
         `Sessioon: ${selected.name} · ${resolvedPlate}${rateLabel ? ` · ${rateLabel}` : ''}`,
       )
-      setTimerRunning(true)
-      setTimerOpen(true)
 
       showSessionFeedback(
         'success',
@@ -505,7 +553,7 @@ export default function App() {
     setActiveSessionsMessage(result.message)
     setSessionsOverviewOpen(true)
 
-    // Sync local plate against the list — clear if our session is gone
+    // Sync details if our plate appears — never clear local session from list view
     const plate = (carNumber.trim() || activeSession?.carNumber || '').toUpperCase()
     if (plate) {
       const mine = list.find(
@@ -517,8 +565,6 @@ export default function App() {
           spotName: activeSession?.spotName ?? selected?.name,
         })
         if (synced) persistActive(synced)
-      } else if (activeSession?.carNumber?.toUpperCase() === plate) {
-        clearLocalSession('Aktiivset sessiooni ei leitud')
       }
     }
 
@@ -529,10 +575,14 @@ export default function App() {
     )
   }
 
+  /**
+   * Status ONLY — POST { action: "status", carNumber }.
+   * Never calls start/stop/extend and never clears a live local session.
+   */
   const refreshParkingStatus = async () => {
     const plate = (carNumber.trim() || activeSession?.carNumber || '').trim()
 
-    // No plate → list-all status (activeSessions + count)
+    // No plate → list-all status (still action: "status" only)
     if (!plate) {
       await loadActiveSessionsOverview()
       return
@@ -542,7 +592,6 @@ export default function App() {
     setSessionAction('status')
     showSessionFeedback('loading', 'Kontrollin parkimise staatust…', plate)
 
-    // Exact n8n contract: { action: "status", carNumber } + X-N8N-API-KEY
     const result = await checkParkingStatus({ carNumber: plate })
 
     setSessionLoading(false)
@@ -557,7 +606,6 @@ export default function App() {
     const activeDetails =
       (details && isActiveSessionStatus(details) ? details : null) ?? fromList ?? null
 
-    // Active session found → show details, switch to Stop
     if (activeDetails) {
       const synced = activeSessionFromDetails(activeDetails, {
         carNumber: plate,
@@ -574,6 +622,10 @@ export default function App() {
           }`,
         )
         setTimerOpen(true)
+        // Keep current timer mode; if elapsed and we got startTime, resume count-up
+        if (timerMode === 'elapsed' && synced.startedAt) {
+          startElapsedTimer(synced.startedAt)
+        }
         if (synced.carNumber !== carNumber.trim().toUpperCase()) {
           setCarNumber(synced.carNumber)
           saveCarNumber(synced.carNumber)
@@ -587,39 +639,63 @@ export default function App() {
       return
     }
 
-    // Clean "no active parking" (e.g. Autol 123DFG puudub aktiivne parkimine)
-    if (!result.success || isSessionNotFoundMessage(result.message)) {
-      clearLocalSession('Aktiivset sessiooni ei leitud')
-      showSessionFeedback(
-        'info',
-        'Aktiivset parkimist pole',
-        result.message || 'Sellel autol pole aktiivset parkimist',
-      )
-      return
-    }
-
-    // List-only success without this plate
-    if (result.activeSessions) {
-      setActiveSessionsList(result.activeSessions)
-      setActiveSessionsCount(result.count ?? result.activeSessions.length)
-      setActiveSessionsMessage(result.message)
-      setSessionsOverviewOpen(true)
-      clearLocalSession('Aktiivset sessiooni ei leitud')
-      showSessionFeedback(
-        'info',
-        'Aktiivset parkimist pole',
-        formatSessionFeedbackDetail(result),
-      )
-      return
-    }
-
-    clearLocalSession('Aktiivset sessiooni ei leitud')
-    const ended = formatSessionInstant(sessionEndIso(details))
+    // Backend has no record — report cleanly but DO NOT interrupt local session
     showSessionFeedback(
       'info',
-      'Aktiivset parkimist pole',
-      formatSessionFeedbackDetail(result, [ended ? `lõpp ${ended}` : null]),
+      activeSession ? 'Serveris sessiooni ei leitud' : 'Aktiivset parkimist pole',
+      result.message || 'Sellel autol pole aktiivset parkimist',
     )
+  }
+
+  /**
+   * Mode 2 — add prepaid time. Local countdown + optional n8n extend.
+   * Isolated action: { action: "extend", carNumber, zone, minutes }
+   */
+  const addPrepaidMinutes = async (minutes: number) => {
+    if (minutes <= 0) return
+
+    // Switch to prepaid countdown and add time locally first
+    setTimerMode('prepaid')
+    setTimerSeconds((prev) =>
+      timerMode === 'prepaid' ? prev + minutes * 60 : minutes * 60,
+    )
+    setTimerRunning(true)
+    setTimerOpen(true)
+    setTimerLabel(
+      activeSession
+        ? `Ettemaks +${minutes} min · ${activeSession.carNumber}`
+        : `Ettemaks +${minutes} min`,
+    )
+
+    if (!activeSession) {
+      showSessionFeedback('info', `Lisatud ${minutes} min`, 'Kohalik taimer (sessioon puudub)')
+      return
+    }
+
+    setSessionLoading(true)
+    setSessionAction('extend')
+    const result = await extendParkingSession({
+      carNumber: activeSession.carNumber,
+      zone: activeSession.zone,
+      minutes,
+    })
+    setSessionLoading(false)
+    setSessionAction(null)
+
+    if (result.success || (result.message && !/ebaõnnestus|failed|error/i.test(result.message))) {
+      showSessionFeedback(
+        'success',
+        `+${minutes} min lisatud`,
+        result.message || `${activeSession.carNumber} · ${activeSession.zone}`,
+      )
+    } else {
+      // Local timer already updated — surface backend note without rolling back
+      showSessionFeedback(
+        'info',
+        `+${minutes} min kohalikult`,
+        result.message || 'Serveri pikendus ei vastanud',
+      )
+    }
   }
 
   const adoptListedSession = (details: ParkingSessionDetails) => {
@@ -900,6 +976,9 @@ export default function App() {
               {formatSessionInstant(activeSession.startedAt)
                 ? ` · alates ${formatSessionInstant(activeSession.startedAt)}`
                 : ''}
+              <span className="mt-1 block text-[10px] font-medium opacity-80">
+                {timerMode === 'elapsed' ? 'Möödunud aeg' : 'Ettemakstud / jäänud'}
+              </span>
             </div>
           ) : null}
           <label className={`mb-1 block text-[10px] font-semibold ${muted}`}>Auto number</label>
@@ -917,6 +996,20 @@ export default function App() {
                 : 'border-ink/10 bg-white/80 text-ink'
             }`}
           />
+          <div className="mb-2 flex gap-1">
+            {TIME_EXTEND_OPTIONS.map((opt) => (
+              <button
+                key={opt.minutes}
+                type="button"
+                disabled={sessionLoading}
+                onClick={() => void addPrepaidMinutes(opt.minutes)}
+                className={`flex-1 rounded-lg py-1.5 text-[10px] font-bold ${chip} disabled:opacity-55`}
+                title={`Lisa ${opt.minutes} minutit`}
+              >
+                {sessionAction === 'extend' ? '…' : opt.label}
+              </button>
+            ))}
+          </div>
           <div className="flex gap-2">
             {activeSession ? (
               <button
@@ -942,11 +1035,7 @@ export default function App() {
               disabled={sessionLoading}
               onClick={() => void refreshParkingStatus()}
               className={`rounded-xl px-3 py-2 text-xs font-bold ${chip} disabled:opacity-55`}
-              title={
-                carNumber.trim() || activeSession?.carNumber
-                  ? 'Kontrolli oma staatust'
-                  : 'Kuva kõik aktiivsed sessioonid'
-              }
+              title="Ainult staatuse päring (ei peata ega alusta)"
             >
               {sessionAction === 'status' ? '…' : 'Staatus'}
             </button>
@@ -995,6 +1084,7 @@ export default function App() {
           onStartSession={() => void beginParkingSession()}
           onStopSession={() => void endParkingSession()}
           onCheckStatus={() => void refreshParkingStatus()}
+          onExtendMinutes={(mins) => void addPrepaidMinutes(mins)}
         />
       ) : null}
 

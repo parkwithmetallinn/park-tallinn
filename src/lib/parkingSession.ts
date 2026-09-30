@@ -41,12 +41,14 @@ function webhookHeaders(): Headers {
   return headers
 }
 
-export type ParkingSessionAction = 'start' | 'stop' | 'status'
+export type ParkingSessionAction = 'start' | 'stop' | 'status' | 'extend'
 
 export type ParkingSessionRequest = {
   action: ParkingSessionAction
   carNumber?: string
   zone?: string
+  /** Minutes to add for action: "extend" */
+  minutes?: number
 }
 
 export type ParkingSessionDetails = {
@@ -92,6 +94,9 @@ function defaultMessage(action: ParkingSessionAction, success: boolean): string 
   }
   if (action === 'status') {
     return success ? 'Staatus kontrollitud' : 'Staatuse päring ebaõnnestus'
+  }
+  if (action === 'extend') {
+    return success ? 'Aega pikendatud' : 'Aja pikendamine ebaõnnestus'
   }
   return success ? 'Parkimissessioon alustatud' : 'Sessiooni alustamine ebaõnnestus'
 }
@@ -238,21 +243,27 @@ function normalizeResponse(
 }
 
 /**
- * Build webhook JSON body.
- * Status for a specific car is exactly: { action: "status", carNumber } — no zone.
+ * Build webhook JSON body — action is never rewritten.
+ * - status + plate → { action: "status", carNumber } only
+ * - extend → { action: "extend", carNumber, zone, minutes }
+ * - start/stop → { action, carNumber, zone }
  */
-function buildPayload(body: ParkingSessionRequest): Record<string, string> {
-  const payload: Record<string, string> = { action: body.action }
+function buildPayload(body: ParkingSessionRequest): Record<string, string | number> {
+  const action = body.action
+  const payload: Record<string, string | number> = { action }
   const plate = body.carNumber?.trim()
   if (plate) payload.carNumber = plate.toUpperCase()
 
-  // status with plate → carNumber only (n8n contract)
-  if (body.action === 'status' && plate) {
+  // status with plate → carNumber only (n8n contract) — never include zone
+  if (action === 'status') {
     return payload
   }
 
   const zone = body.zone?.trim()
   if (zone) payload.zone = zone
+  if (action === 'extend' && typeof body.minutes === 'number' && body.minutes > 0) {
+    payload.minutes = body.minutes
+  }
   return payload
 }
 
@@ -325,6 +336,13 @@ async function postSession(
     if (res.ok && (!text || !text.trim())) {
       return { success: true, message: defaultMessage(body.action, true) }
     }
+    // extend often returns empty body on 200 — treat as soft success
+    if (res.ok && body.action === 'extend') {
+      return {
+        success: true,
+        message: text?.trim() ? text.slice(0, 240) : defaultMessage('extend', true),
+      }
+    }
     return {
       success: false,
       message: text?.trim() ? text.slice(0, 240) : 'Tühi vastus serverilt',
@@ -334,11 +352,7 @@ async function postSession(
   return normalizeResponse(parsed, body.action, preferPlate)
 }
 
-function validateRequest(input: {
-  action: ParkingSessionAction
-  carNumber?: string
-  zone?: string
-}): string | null {
+function validateRequest(input: ParkingSessionRequest): string | null {
   const carNumber = input.carNumber?.trim() ?? ''
   const zone = input.zone?.trim() ?? ''
 
@@ -348,6 +362,13 @@ function validateRequest(input: {
   }
 
   if (!carNumber) return 'Sisesta auto number'
+  if (input.action === 'extend') {
+    if (!zone) return 'Tsoon puudub'
+    if (!(typeof input.minutes === 'number' && input.minutes > 0)) {
+      return 'Lisa aeg minutites'
+    }
+    return null
+  }
   if (!zone) return 'Tsoon puudub'
   return null
 }
@@ -356,13 +377,11 @@ function validateRequest(input: {
  * Send a parking session action via the production n8n webhook.
  * Prefers same-origin `/api/parkimine` (server injects X-N8N-API-KEY);
  * falls back to the direct cloud URL with the same headers.
+ *
+ * Callers must pass the exact `action` — this helper never remaps start/stop/status/extend.
  */
 export async function sendParkingSession(
-  input: {
-    action: ParkingSessionAction
-    carNumber?: string
-    zone?: string
-  },
+  input: ParkingSessionRequest,
   signal?: AbortSignal,
 ): Promise<ParkingSessionResponse> {
   const validationError = validateRequest(input)
@@ -374,6 +393,7 @@ export async function sendParkingSession(
     action: input.action,
     carNumber: input.carNumber?.trim() || undefined,
     zone: input.zone?.trim() || undefined,
+    minutes: input.minutes,
   }
 
   try {
@@ -394,28 +414,26 @@ export function startParkingSession(
   input: { carNumber: string; zone: string },
   signal?: AbortSignal,
 ): Promise<ParkingSessionResponse> {
-  return sendParkingSession({ ...input, action: 'start' }, signal)
+  return sendParkingSession({ action: 'start', carNumber: input.carNumber, zone: input.zone }, signal)
 }
 
 export function stopParkingSession(
   input: { carNumber: string; zone: string },
   signal?: AbortSignal,
 ): Promise<ParkingSessionResponse> {
-  return sendParkingSession({ ...input, action: 'stop' }, signal)
+  return sendParkingSession({ action: 'stop', carNumber: input.carNumber, zone: input.zone }, signal)
 }
 
 /**
  * Status for a specific car.
  * POST body is exactly `{ action: "status", carNumber }` (no zone).
+ * Never starts or stops a session.
  */
 export function checkParkingStatus(
   input: { carNumber: string },
   signal?: AbortSignal,
 ): Promise<ParkingSessionResponse> {
-  return sendParkingSession(
-    { action: 'status', carNumber: input.carNumber },
-    signal,
-  )
+  return sendParkingSession({ action: 'status', carNumber: input.carNumber }, signal)
 }
 
 /**
@@ -426,6 +444,25 @@ export function listActiveParkingSessions(
   signal?: AbortSignal,
 ): Promise<ParkingSessionResponse> {
   return sendParkingSession({ action: 'status' }, signal)
+}
+
+/**
+ * Extend / pre-pay more time on an active session.
+ * POST { action: "extend", carNumber, zone, minutes }
+ */
+export function extendParkingSession(
+  input: { carNumber: string; zone: string; minutes: number },
+  signal?: AbortSignal,
+): Promise<ParkingSessionResponse> {
+  return sendParkingSession(
+    {
+      action: 'extend',
+      carNumber: input.carNumber,
+      zone: input.zone,
+      minutes: input.minutes,
+    },
+    signal,
+  )
 }
 
 export function sessionStartIso(details?: ParkingSessionDetails | null): string | undefined {
