@@ -7,6 +7,12 @@ import type {
   ParkingStructureType,
 } from '../types'
 import { normalizeSpot } from './geojson'
+import {
+  isPaidFeeTag,
+  isVerifiedFreeParking,
+  PARKING_COLOR_FREE,
+  PARKING_COLOR_UNKNOWN,
+} from './parkingClassification'
 
 export const PARKING_POLYGONS_URL = '/data/parking_polygons.geojson'
 
@@ -31,6 +37,8 @@ export type PreciseParkingProps = {
   address: string
   desc?: string
   color: string
+  /** True only for verified free public parking (matches Tasuta filter + green). */
+  verified_free: boolean
   labelRank: number
   floors_label: string
   structure_label: string
@@ -91,8 +99,15 @@ function structureLabel(t: ParkingStructureType): string {
   return 'Surface'
 }
 
-/** Map OSM operator / zone tags → app layer key for fill color. */
-function layerFromOsm(operatorRaw: string, fee: string, zone: string, maxstay: string): ParkingLayerKey {
+/** Map OSM operator / zone / free tags → app layer key. */
+function layerFromOsm(
+  operatorRaw: string,
+  fee: string,
+  zone: string,
+  maxstay: string,
+  access: string,
+  charge: string,
+): ParkingLayerKey {
   const op = operatorRaw.toLowerCase()
   if (op.includes('europark') || op.includes('euro park') || /^ep\d/i.test(zone)) return 'europark'
   if (op.includes('snabb') || /^x\d/i.test(zone) || /^sb\d/i.test(zone)) return 'snabb'
@@ -103,12 +118,13 @@ function layerFromOsm(operatorRaw: string, fee: string, zone: string, maxstay: s
   if (op.includes('parkit')) return 'parkit'
   if (op.includes('barking')) return 'parkit'
 
-  const feeLower = fee.toLowerCase()
-  const isFree = feeLower === 'no' || feeLower === 'free'
-  if (isFree && maxstay) return 'timed'
-  if (isFree) return 'free_street'
+  const verifiedFree = isVerifiedFreeParking({ fee, access, zone, charge })
+  // fee=no + maxstay → clocked free window (Kellaga), not unlimited Tasuta green
+  if (verifiedFree && maxstay) return 'timed'
+  if (verifiedFree) return 'free_street'
   if (op.includes('tallinn') || op.includes('linn')) return 'municipal'
-  if (feeLower === 'yes' || feeLower.includes('€') || feeLower.includes('eur')) return 'municipal'
+  if (isPaidFeeTag(fee, charge)) return 'municipal'
+  // Unclassified / generic ZONE — municipal layer, painted gray (not free-green)
   return 'municipal'
 }
 
@@ -273,29 +289,45 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
     const fee = str(p.fee)
     const charge = str(p.charge)
     const maxstay = str(p.maxstay)
+    const access = str(p.access)
     const zone = str(p.zone ?? p.ref)
     const nameTag = str(p.name)
 
+    const verified_free = isVerifiedFreeParking({
+      fee,
+      access,
+      zone,
+      charge,
+      rules: p.rules,
+      zone_code: p.zone_code,
+    })
+
     // Curated schema fallback: explicit `layer` only if it is a known app key
+    // (ignore numeric OSM building `layer` like "0"/"1"/"-1")
     const curatedLayer = str(p.layer)
-    const layer: ParkingLayerKey =
-      curatedLayer in PARKING_LAYER_META
-        ? (curatedLayer as ParkingLayerKey)
-        : layerFromOsm(operatorRaw, fee, zone, maxstay)
+    const curatedIsAppLayer =
+      curatedLayer in PARKING_LAYER_META && !/^-?\d+$/.test(curatedLayer)
+    let layer: ParkingLayerKey = curatedIsAppLayer
+      ? (curatedLayer as ParkingLayerKey)
+      : layerFromOsm(operatorRaw, fee, zone, maxstay, access, charge)
+
+    // Never keep a curated free_street without verified free tags
+    if (layer === 'free_street' && !verified_free) {
+      layer = 'municipal'
+    }
+    // Promote verified free onto free_street unless clocked (maxstay)
+    if (verified_free && layer === 'municipal') {
+      layer = maxstay ? 'timed' : 'free_street'
+    }
 
     const priceFromCurated = p.price_per_hour
     const freeFromCurated = p.free_minutes
-    const feeLower = fee.toLowerCase()
-    const feeIsFree = feeLower === 'no' || feeLower === 'free'
-    const feeIsPaid =
-      feeLower === 'yes' ||
-      feeLower.includes('€') ||
-      feeLower.includes('eur') ||
-      Boolean(charge)
+    const feeIsFree = verified_free && !maxstay
+    const feeIsPaid = isPaidFeeTag(fee, charge)
     let price_per_hour =
       typeof priceFromCurated === 'number' ? priceFromCurated : parsePricePerHour(charge, fee)
     // fee=yes without a parseable charge → layer default so sheet doesn't say "Tasuta"
-    if (price_per_hour <= 0 && feeIsPaid && !feeIsFree) {
+    if (price_per_hour <= 0 && feeIsPaid) {
       const defaults: Partial<Record<ParkingLayerKey, number>> = {
         europark: 3.5,
         snabb: 3.2,
@@ -307,11 +339,15 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
       }
       price_per_hour = defaults[layer] ?? 2.5
     }
+    // Unclassified unknown lots — do not imply free via 0 €/h
+    if (price_per_hour <= 0 && !verified_free && layer === 'municipal' && !feeIsPaid) {
+      price_per_hour = 0
+    }
     const maxstayMins = parseMaxstayMinutes(maxstay)
     const free_minutes =
       typeof freeFromCurated === 'number'
         ? freeFromCurated
-        : feeIsFree
+        : verified_free
           ? maxstayMins
           : 0
 
@@ -340,7 +376,16 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
       (operator !== 'Unknown' && operator !== 'Tallinna Linn' ? `${operator} parkla` : '') ||
       structureLabel(structureType)
     const badge = zone_code.length <= 8 ? zone_code : zone_code.slice(0, 8)
-    const color = lotFillColor(layer)
+
+    // Green ONLY when layer is free_street (verified free, no private/provider).
+    // Unknown ZONE / untagged municipal → muted gray — never free-green.
+    const color =
+      layer === 'free_street'
+        ? PARKING_COLOR_FREE
+        : layer === 'municipal' && !feeIsPaid
+          ? PARKING_COLOR_UNKNOWN
+          : lotFillColor(layer)
+
     const descParts = [
       str(p.description),
       charge ? `Hind: ${charge}` : '',
@@ -365,6 +410,7 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
         address,
         desc: descParts.length ? descParts.join(' · ') : undefined,
         color,
+        verified_free: verified_free && layer === 'free_street',
         labelRank: structureType === 'multi_storey' ? 0 : structureType === 'underground' ? 1 : 2,
         floors_label: structureType === 'multi_storey' ? `P+${floors}` : '',
         structure_label: structureLabel(structureType),
@@ -391,14 +437,23 @@ export function preciseFeatureToSpot(f: PreciseParkingFeature): ParkingSpot {
     timeLimit:
       p.free_minutes > 0
         ? `${p.free_minutes} min · ${p.zone_code}`
-        : p.price_per_hour > 0
-          ? `Tasuline · ${p.zone_code}`
-          : `Tasuta · ${p.zone_code}`,
+        : p.verified_free || p.layer === 'free_street'
+          ? `Tasuta · ${p.zone_code}`
+          : p.price_per_hour > 0
+            ? `Tasuline · ${p.zone_code}`
+            : `Määramata · ${p.zone_code}`,
     lat,
     lng,
     address: p.address || p.name,
     desc: p.desc ?? p.structure_label,
-    type: p.price_per_hour > 0 ? 'paid' : p.free_minutes > 0 ? 'timed' : 'free',
+    type:
+      p.verified_free || p.layer === 'free_street'
+        ? 'free'
+        : p.free_minutes > 0 || p.layer === 'timed'
+          ? 'timed'
+          : p.price_per_hour > 0
+            ? 'paid'
+            : 'paid',
     kind: 'lot',
     landmark: true,
     polygon: polygonToLatLng(f.geometry),
@@ -414,9 +469,17 @@ export function preciseCollectionToSpots(fc: PreciseParkingCollection): ParkingS
 /** Filter lot polygons by app layer keys (top filters). */
 export function filterPreciseCollection(
   fc: PreciseParkingCollection,
-  layers: ParkingLayerKey[] | 'all',
+  layers: ParkingLayerKey[] | 'all' | 'verified_free',
 ): PreciseParkingCollection {
   if (layers === 'all') return fc
+  if (layers === 'verified_free') {
+    return {
+      type: 'FeatureCollection',
+      features: fc.features.filter(
+        (f) => f.properties.verified_free || f.properties.layer === 'free_street',
+      ),
+    }
+  }
   return {
     type: 'FeatureCollection',
     features: fc.features.filter((f) => layers.includes(f.properties.layer)),

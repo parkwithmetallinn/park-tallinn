@@ -1,12 +1,17 @@
+import {
+  PARKING_COLOR_FREE,
+  PARKING_COLOR_UNKNOWN,
+} from '../lib/parkingClassification'
 import type { ParkingLayerKey, ParkingSpot } from '../types'
 import { PARKING_LAYER_META } from './parkingLayers'
 
 /**
- * Soft Apple Maps–style curb colors — muted, readable on light basemap.
+ * Curb / pin colors — green (#22C55E) only for verified free_street.
+ * Zero price alone is NOT enough (unknown lots stay muted gray).
  */
 export function streetLineColor(spot: ParkingSpot): string {
-  if (spot.layer === 'free_street' || (spot.price_per_hour === 0 && spot.free_minutes === 0)) {
-    return '#34C759'
+  if (spot.layer === 'free_street' || spot.zone_code === 'FREE') {
+    return PARKING_COLOR_FREE
   }
   if (spot.layer === 'timed' || spot.featureType === 'on-street-line') {
     if (spot.free_minutes > 0 && spot.free_minutes <= 30) return '#FFD60A'
@@ -15,6 +20,9 @@ export function streetLineColor(spot: ParkingSpot): string {
     if (spot.zone_code === 'SÜDALINN') return '#FF9F0A'
     if (spot.zone_code === 'KESKLINN') return '#64D2FF'
     if (spot.zone_code === 'PIRITA') return '#5AC8FA'
+    if (spot.zone_code === 'ZONE' || spot.zone_code === 'UNK' || spot.zone_code === 'AVALIK') {
+      return PARKING_COLOR_UNKNOWN
+    }
     return '#FFD60A'
   }
   if (spot.layer === 'municipal') {
@@ -22,13 +30,16 @@ export function streetLineColor(spot: ParkingSpot): string {
     if (spot.zone_code === 'SÜDALINN') return '#FF9F0A'
     if (spot.zone_code === 'KESKLINN') return '#64D2FF'
     if (spot.zone_code === 'PIRITA') return '#5AC8FA'
-    return '#30D158'
+    // Unclassified / generic ZONE — muted gray, never free-green
+    return PARKING_COLOR_UNKNOWN
   }
-  return PARKING_LAYER_META[spot.layer]?.color ?? '#8E8E93'
+  return PARKING_LAYER_META[spot.layer]?.color ?? PARKING_COLOR_UNKNOWN
 }
 
 export function lotFillColor(layer: ParkingLayerKey): string {
-  return PARKING_LAYER_META[layer]?.color ?? '#8E8E93'
+  if (layer === 'free_street') return PARKING_COLOR_FREE
+  if (layer === 'municipal') return PARKING_COLOR_UNKNOWN
+  return PARKING_LAYER_META[layer]?.color ?? PARKING_COLOR_UNKNOWN
 }
 
 /** MapLibre source ids for geometry-aware parking overlays */

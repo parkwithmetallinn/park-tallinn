@@ -1,4 +1,12 @@
 import { normalizeSpot } from './geojson'
+import {
+  isPaidFeeTag,
+  isVerifiedFreeParking,
+  PARKING_COLOR_FREE,
+  PARKING_COLOR_PAID,
+  PARKING_COLOR_TIMED,
+  PARKING_COLOR_UNKNOWN,
+} from './parkingClassification'
 import type { ParkingLayerKey, ParkingOperator, ParkingSpot } from '../types'
 
 export const STREET_PARKING_URL = '/data/street_parking.geojson'
@@ -8,14 +16,15 @@ export const STREET_PARKING_LINE_LAYER = 'street-parking-line'
 export const STREET_PARKING_CASING_LAYER = 'street-parking-casing'
 export const STREET_PARKING_HIT_LAYER = 'street-parking-hit'
 
-/** Product colors for roadside curb lines. */
+/** Product colors for roadside curb lines — green only for verified free. */
 export const STREET_COLOR = {
-  free: '#34C759',
-  paid: '#FF3B30',
-  timed: '#0A84FF',
+  free: PARKING_COLOR_FREE,
+  paid: PARKING_COLOR_PAID,
+  timed: PARKING_COLOR_TIMED,
+  unknown: PARKING_COLOR_UNKNOWN,
 } as const
 
-export type StreetRules = 'free' | 'paid' | 'clock'
+export type StreetRules = 'free' | 'paid' | 'clock' | 'unknown'
 
 export type StreetParkingProps = {
   id: string
@@ -32,6 +41,8 @@ export type StreetParkingProps = {
   address: string
   desc?: string
   color: string
+  /** True only for verified free curb (matches Tasuta filter + green). */
+  verified_free: boolean
 }
 
 type LineGeom = {
@@ -175,28 +186,52 @@ function classifyRules(p: Record<string, unknown>): {
   free_minutes: number
   price_per_hour: number
   color: string
+  verified_free: boolean
 } {
-  const fee = str(p.fee).toLowerCase()
+  const fee = str(p.fee)
   const maxstay = str(p.maxstay)
   const maxMins = parseMaxstayMinutes(maxstay)
-  const feeIsFree = fee === 'no' || fee === 'free'
-  const feeIsPaid = fee === 'yes' || fee.includes('€') || fee.includes('eur') || Boolean(str(p.charge))
+  const feeIsPaid = isPaidFeeTag(fee, p.charge)
+  const verified_free = isVerifiedFreeParking({
+    fee,
+    access: p.access,
+    zone: p.zone ?? p.zone_code ?? p.ref,
+    charge: p.charge,
+    rules: p.rules,
+  })
 
-  // Curated schema fallback
+  // Curated schema fallback — only trust rules=free when verified
   const curatedRules = str(p.rules).toLowerCase()
   if (curatedRules === 'free' || curatedRules === 'clock' || curatedRules === 'paid') {
-    const rules = curatedRules as StreetRules
-    return {
-      rules,
-      layer: rules === 'free' ? 'free_street' : rules === 'clock' ? 'timed' : 'municipal',
-      free_minutes: Number(p.free_minutes ?? (rules === 'clock' ? maxMins || 15 : 0)),
-      price_per_hour: Number(p.price_per_hour ?? (rules === 'paid' ? 2.5 : 0)),
-      color:
-        rules === 'free'
-          ? STREET_COLOR.free
-          : rules === 'clock'
-            ? STREET_COLOR.timed
-            : STREET_COLOR.paid,
+    if (curatedRules === 'free' && verified_free) {
+      return {
+        rules: 'free',
+        layer: 'free_street',
+        free_minutes: Number(p.free_minutes ?? 0),
+        price_per_hour: 0,
+        color: STREET_COLOR.free,
+        verified_free: true,
+      }
+    }
+    if (curatedRules === 'clock') {
+      return {
+        rules: 'clock',
+        layer: 'timed',
+        free_minutes: Number(p.free_minutes ?? (maxMins || 15)),
+        price_per_hour: Number(p.price_per_hour ?? 0),
+        color: STREET_COLOR.timed,
+        verified_free: false,
+      }
+    }
+    if (curatedRules === 'paid' || feeIsPaid) {
+      return {
+        rules: 'paid',
+        layer: 'municipal',
+        free_minutes: 0,
+        price_per_hour: Number(p.price_per_hour ?? 2.5),
+        color: STREET_COLOR.paid,
+        verified_free: false,
+      }
     }
   }
 
@@ -207,26 +242,52 @@ function classifyRules(p: Record<string, unknown>): {
       free_minutes: 0,
       price_per_hour: Number(p.price_per_hour ?? 2.5),
       color: STREET_COLOR.paid,
+      verified_free: false,
     }
   }
 
-  if (maxMins > 0 || feeIsFree && maxstay) {
+  // Verified free + maxstay → clock filter (blue), not unlimited Tasuta green
+  if (verified_free && (maxMins > 0 || maxstay)) {
     return {
       rules: 'clock',
       layer: 'timed',
       free_minutes: maxMins || Number(p.free_minutes ?? 15),
       price_per_hour: 0,
       color: STREET_COLOR.timed,
+      verified_free: false,
     }
   }
 
-  // Default street_side without fee tags → free curb
+  if (verified_free) {
+    return {
+      rules: 'free',
+      layer: 'free_street',
+      free_minutes: 0,
+      price_per_hour: 0,
+      color: STREET_COLOR.free,
+      verified_free: true,
+    }
+  }
+
+  if (maxMins > 0) {
+    return {
+      rules: 'clock',
+      layer: 'timed',
+      free_minutes: maxMins || Number(p.free_minutes ?? 15),
+      price_per_hour: 0,
+      color: STREET_COLOR.timed,
+      verified_free: false,
+    }
+  }
+
+  // Untagged / private / unclassified curb — muted gray, NOT free green
   return {
-    rules: 'free',
-    layer: 'free_street',
+    rules: 'unknown',
+    layer: 'municipal',
     free_minutes: 0,
     price_per_hour: 0,
-    color: STREET_COLOR.free,
+    color: STREET_COLOR.unknown,
+    verified_free: false,
   }
 }
 
@@ -254,13 +315,19 @@ export function prepareStreetParking(raw: RawCollection): StreetParkingCollectio
     if (!coords || coords.length < 2) continue
 
     const id = str(p['@id'] ?? p.id ?? f.id) || `street-${features.length}`
-    const { rules, layer, free_minutes, price_per_hour, color } = classifyRules(p)
+    const { rules, layer, free_minutes, price_per_hour, color, verified_free } = classifyRules(p)
     const nameTag = str(p.name)
     const street = nameTag || str(p['addr:street']) || 'Tänav'
     const zone = str(p.zone ?? p.zone_code ?? p.ref)
     const zone_code =
       zone ||
-      (rules === 'free' ? 'FREE' : rules === 'clock' ? 'KELL' : 'PAID')
+      (rules === 'free'
+        ? 'FREE'
+        : rules === 'clock'
+          ? 'KELL'
+          : rules === 'paid'
+            ? 'PAID'
+            : 'ZONE')
     const operator = str(p.operator) || 'Tallinna Linn'
     const address = [str(p['addr:street']), str(p['addr:housenumber']), str(p['addr:city'])]
       .filter(Boolean)
@@ -286,11 +353,13 @@ export function prepareStreetParking(raw: RawCollection): StreetParkingCollectio
           rules === 'free' ? 'Tasuta tänavaparkimine' : null,
           rules === 'clock' ? `Kellaga · ${free_minutes} min` : null,
           rules === 'paid' ? 'Tasuline tsoon' : null,
+          rules === 'unknown' ? 'Määramata / kontrolli silte' : null,
           str(p.description),
         ]
           .filter(Boolean)
           .join(' · '),
         color,
+        verified_free,
       },
       geometry: { type: 'LineString', coordinates: coords },
     })
@@ -301,7 +370,7 @@ export function prepareStreetParking(raw: RawCollection): StreetParkingCollectio
 export function streetFeatureToSpot(f: StreetParkingFeature): ParkingSpot {
   const { lat, lng } = lineMidpoint(f.geometry.coordinates)
   const p = f.properties
-  const isFree = p.rules === 'free'
+  const isFree = p.verified_free || p.rules === 'free' || p.layer === 'free_street'
   const isClock = p.rules === 'clock'
   return normalizeSpot({
     id: p.id,
@@ -317,7 +386,9 @@ export function streetFeatureToSpot(f: StreetParkingFeature): ParkingSpot {
       ? 'Tasuta tänav'
       : isClock
         ? `${p.free_minutes || 15} min · kellaga`
-        : `Tasuline · ${p.zone_code}`,
+        : p.rules === 'unknown'
+          ? `Määramata · ${p.zone_code}`
+          : `Tasuline · ${p.zone_code}`,
     lat,
     lng,
     address: p.address || p.street,
@@ -336,9 +407,17 @@ export function streetCollectionToSpots(fc: StreetParkingCollection): ParkingSpo
 /** Filter a street FeatureCollection by app layer keys (top filters). */
 export function filterStreetCollection(
   fc: StreetParkingCollection,
-  layers: ParkingLayerKey[] | 'all',
+  layers: ParkingLayerKey[] | 'all' | 'verified_free',
 ): StreetParkingCollection {
   if (layers === 'all') return fc
+  if (layers === 'verified_free') {
+    return {
+      type: 'FeatureCollection',
+      features: fc.features.filter(
+        (f) => f.properties.verified_free || f.properties.layer === 'free_street',
+      ),
+    }
+  }
   return {
     type: 'FeatureCollection',
     features: fc.features.filter((f) => layers.includes(f.properties.layer)),

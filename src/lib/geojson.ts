@@ -26,7 +26,11 @@ function inferLayer(spot: ParkingSpotSeed): ParkingLayerKey {
   if (spot.featureType === 'loading') return 'loading'
   if (spot.featureType === 'park-ride' || spot.type === 'pr') return 'park_ride'
   if (spot.type === 'timed') return 'timed'
-  if (spot.kind === 'street' && (spot.type === 'free' || !spot.type)) return 'free_street'
+  // Only explicit free type → free_street (untagged street is not green)
+  if (spot.kind === 'street' && spot.type === 'free') return 'free_street'
+  if (spot.kind === 'street' && spot.type === 'paid') return 'municipal'
+  if (spot.kind === 'street') return 'municipal'
+  if (spot.type === 'free') return 'free_street'
   if (spot.type === 'paid') return 'europark'
   return 'municipal'
 }

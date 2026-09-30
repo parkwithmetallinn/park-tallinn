@@ -71,7 +71,7 @@ import type { FilterId, ParkingSpot, SpotType } from './types'
 /** Apple HIG quick filters — primary parking intents */
 const FILTERS: { id: FilterId; label: string; color?: string }[] = [
   { id: 'all', label: 'Kõik' },
-  { id: 'free_street', label: 'Tasuta', color: PARKING_LAYER_META.free_street.color },
+  { id: 'free_street', label: 'Tasuta', color: '#22C55E' },
   { id: 'timed', label: 'Kellaga', color: PARKING_LAYER_META.timed.color },
   { id: 'europark', label: 'EuroPark', color: PARKING_LAYER_META.europark.color },
   { id: 'snabb', label: 'Snabb', color: PARKING_LAYER_META.snabb.color },
@@ -239,7 +239,7 @@ export default function App() {
             ? 'park_ride'
             : s.type === 'timed'
               ? 'timed'
-              : s.kind === 'street'
+              : s.type === 'free' || s.zone_code === 'FREE'
                 ? 'free_street'
                 : 'municipal',
       }),

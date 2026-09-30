@@ -103,8 +103,16 @@ function makeSearchPinEl(onClick: () => void) {
   return wrap
 }
 
-function filterToLayers(filter: FilterId): ParkingLayerKey[] | 'all' {
+/**
+ * Map top filter chip → layer filter mode.
+ * "Tasuta" uses verified_free so green features match the filter 1:1
+ * (layer=free_street OR verified_free property on polygon/street features).
+ */
+function filterToLayers(
+  filter: FilterId,
+): ParkingLayerKey[] | 'all' | 'verified_free' {
   if (filter === 'all') return 'all'
+  if (filter === 'free_street') return 'verified_free'
   if ((PARKING_PROVIDERS as string[]).includes(filter)) return [filter as ParkingLayerKey]
   return 'all'
 }
@@ -299,7 +307,11 @@ export function MapView({
       const visibleSpots =
         layers === 'all'
           ? result.spots
-          : result.spots.filter((s) => layers.includes(s.layer))
+          : layers === 'verified_free'
+            ? result.spots.filter(
+                (s) => s.layer === 'free_street' || s.zone_code === 'FREE' || s.type === 'free',
+              )
+            : result.spots.filter((s) => layers.includes(s.layer))
 
       const empty = { type: 'FeatureCollection' as const, features: [] }
       let geo =
@@ -508,6 +520,15 @@ export function MapView({
       setParkingLayerVisibility(
         map,
         Object.fromEntries(PARKING_PROVIDERS.map((p) => [p, true])),
+      )
+    } else if (layers === 'verified_free') {
+      // Tasuta: show only free_street pin layers; polygon/street GeoJSON
+      // are filtered separately via verified_free.
+      setParkingLayerVisibility(
+        map,
+        Object.fromEntries(
+          PARKING_PROVIDERS.map((p) => [p, p === 'free_street']),
+        ) as Partial<Record<ParkingLayerKey, boolean>>,
       )
     } else {
       const vis = Object.fromEntries(

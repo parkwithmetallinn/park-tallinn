@@ -8,7 +8,8 @@ export const PARKING_LAYER_META: Record<
   municipal: {
     id: 'parking-municipal',
     label: 'Avalik / munitsipaal',
-    color: '#30D158',
+    // Not free-green — paid/unknown public lots use slate (feature color may override)
+    color: '#64748B',
     circleRadius: 7,
   },
   europark: {
@@ -50,13 +51,14 @@ export const PARKING_LAYER_META: Record<
   free_street: {
     id: 'parking-free-street',
     label: 'Tasuta tänav',
-    color: '#34C759',
+    // Strict verified-free green — do not reuse for municipal/unknown
+    color: '#22C55E',
     circleRadius: 5.5,
   },
   ev: {
     id: 'parking-ev',
     label: 'Elektrilaadija',
-    color: '#30D158',
+    color: '#14B8A6',
     circleRadius: 7.5,
   },
   inva: {
