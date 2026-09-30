@@ -32,9 +32,8 @@ const PARKING_WEBHOOK_PROXY = '/api/parkimine'
 
 function webhookHeaders(): Headers {
   const headers = new Headers()
-  if (PARKING_WEBHOOK_API_KEY) {
-    headers.set('X-N8N-API-KEY', PARKING_WEBHOOK_API_KEY)
-  }
+  // Always send Header Auth — n8n Header Auth expects this exact name.
+  headers.set('X-N8N-API-KEY', PARKING_WEBHOOK_API_KEY)
   headers.set('Content-Type', 'application/json')
   return headers
 }
@@ -155,15 +154,78 @@ function normalizeActiveSessions(raw: unknown): ParkingSessionDetails[] {
   return out
 }
 
+function asRecord(data: unknown): Record<string, unknown> | null {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null
+  return data as Record<string, unknown>
+}
+
+/**
+ * n8n may return the webhook JSON directly, wrapped in `{ json }`, `{ body }`,
+ * `{ data }`, or as a one-element array of any of those.
+ */
 function unwrapPayload(data: unknown): Record<string, unknown> | null {
   if (!data) return null
-  // Some n8n workflows return a one-element array
-  if (Array.isArray(data)) {
-    const first = data[0]
-    return first && typeof first === 'object' ? (first as Record<string, unknown>) : null
+
+  let cur: unknown = data
+  // Unwrap one-element arrays (n8n "respond to webhook" item lists)
+  for (let i = 0; i < 3; i++) {
+    if (Array.isArray(cur)) {
+      cur = cur[0]
+      continue
+    }
+    break
   }
-  if (typeof data === 'object') return data as Record<string, unknown>
-  return null
+
+  let obj = asRecord(cur)
+  if (!obj) return null
+
+  // Common n8n wrappers — peel until we see session fields or success/message
+  for (let i = 0; i < 4; i++) {
+    const hasSessionShape =
+      'success' in obj ||
+      'message' in obj ||
+      'sessionDetails' in obj ||
+      'session_details' in obj ||
+      'activeSessions' in obj ||
+      'active_sessions' in obj ||
+      'carNumber' in obj ||
+      'car_number' in obj ||
+      'status' in obj
+
+    if (hasSessionShape) return obj
+
+    const next =
+      obj.json ?? obj.body ?? obj.data ?? obj.result ?? obj.output ?? obj.payload
+    if (Array.isArray(next)) {
+      const first = asRecord(next[0])
+      if (first) {
+        obj = first
+        continue
+      }
+      return obj
+    }
+    const nested = asRecord(next)
+    if (!nested) return obj
+    obj = nested
+  }
+
+  return obj
+}
+
+function coerceSessionCandidate(raw: unknown): ParkingSessionDetails | null {
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      const n = normalizeSessionDetails(asRecord(item)?.json ?? item)
+      if (n && (n.carNumber || n.zone || n.status || n.startTime)) return n
+    }
+    return null
+  }
+  const obj = asRecord(raw)
+  if (obj?.json != null) {
+    const fromJson = coerceSessionCandidate(obj.json)
+    if (fromJson) return fromJson
+  }
+  return normalizeSessionDetails(raw)
 }
 
 /**
@@ -173,8 +235,10 @@ function extractSessionDetails(
   d: Record<string, unknown>,
   preferPlate?: string,
 ): ParkingSessionDetails | null {
-  const nested = normalizeSessionDetails(d.sessionDetails ?? d.session_details ?? d.data)
-  if (nested && (nested.carNumber || nested.zone || nested.status)) {
+  const nested = coerceSessionCandidate(
+    d.sessionDetails ?? d.session_details ?? d.session ?? d.data,
+  )
+  if (nested && (nested.carNumber || nested.zone || nested.status || nested.startTime)) {
     return nested
   }
 
@@ -189,7 +253,7 @@ function extractSessionDetails(
   }
 
   const list = normalizeActiveSessions(
-    d.activeSessions ?? d.active_sessions ?? d.sessions,
+    d.activeSessions ?? d.active_sessions ?? d.sessions ?? d.data,
   )
   if (list.length === 0) return null
   if (preferPlate) {
@@ -198,6 +262,10 @@ function extractSessionDetails(
       (s) => String(s.carNumber ?? '').toUpperCase() === plate && isActiveSessionStatus(s),
     )
     if (mine) return mine
+    const anyMine = list.find(
+      (s) => String(s.carNumber ?? '').toUpperCase() === plate,
+    )
+    if (anyMine && isActiveSessionStatus(anyMine)) return anyMine
   }
   const firstActive = list.find((s) => isActiveSessionStatus(s))
   return firstActive ?? list[0] ?? null
@@ -227,9 +295,12 @@ function normalizeResponse(
 
   const sessionDetails = extractSessionDetails(d, preferPlate)
 
-  // Promote ACTIVE sessionDetails to success even if the flag was omitted/false
+  // Promote ACTIVE sessionDetails to success even if the flag was omitted/false.
   const hasActive = isActiveSessionStatus(sessionDetails)
-  const success = hasActive || Boolean(d.success)
+  const explicitSuccess =
+    d.success === true || d.success === 'true' || d.success === 1
+  const success =
+    hasActive || (explicitSuccess && !isSessionNotFoundMessage(message))
 
   return {
     success,
@@ -248,15 +319,20 @@ function normalizeResponse(
  */
 function buildPayload(body: ParkingSessionRequest): Record<string, string | number> {
   const action = body.action
+
+  // Status branch for n8n Switch — exact contract:
+  //   { "action": "status", "carNumber": "123DFG" }
+  // or list-all: { "action": "status" }
+  if (action === 'status') {
+    const plate = body.carNumber?.trim()
+    return plate
+      ? { action: 'status', carNumber: plate.toUpperCase() }
+      : { action: 'status' }
+  }
+
   const payload: Record<string, string | number> = { action }
   const plate = body.carNumber?.trim()
   if (plate) payload.carNumber = plate.toUpperCase()
-
-  // status with plate → carNumber only (n8n contract) — never include zone
-  if (action === 'status') {
-    return payload
-  }
-
   const zone = body.zone?.trim()
   if (zone) payload.zone = zone
   if (action === 'extend' && typeof body.minutes === 'number' && body.minutes > 0) {
@@ -437,14 +513,17 @@ export function stopParkingSession(
 
 /**
  * Status for a specific car.
- * POST body is exactly `{ action: "status", carNumber }` (no zone).
- * Never starts or stops a session.
+ * POST body is exactly:
+ *   { "action": "status", "carNumber": "123DFG" }
+ * Header: X-N8N-API-KEY (from VITE_N8N_API_KEY).
+ * Never starts or stops a session; never includes zone.
  */
 export function checkParkingStatus(
   input: { carNumber: string },
   signal?: AbortSignal,
 ): Promise<ParkingSessionResponse> {
-  return sendParkingSession({ action: 'status', carNumber: input.carNumber }, signal)
+  const carNumber = input.carNumber.trim().toUpperCase()
+  return sendParkingSession({ action: 'status', carNumber }, signal)
 }
 
 /**
@@ -538,13 +617,28 @@ export function isActiveSessionStatus(
   details?: ParkingSessionDetails | null,
 ): boolean {
   if (!details) return false
-  const status = String(details.status ?? '').toUpperCase()
+
+  const rawStatus = (details as Record<string, unknown>).status
+
+  // Boolean / numeric status flags from some n8n nodes
+  if (rawStatus === true || rawStatus === 1) return true
+  if (rawStatus === false || rawStatus === 0) return false
+
+  const status = String(rawStatus ?? '')
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+
   if (
     status === 'STOPPED' ||
     status === 'ENDED' ||
     status === 'INACTIVE' ||
     status === 'COMPLETED' ||
-    status === 'FINISHED'
+    status === 'FINISHED' ||
+    status === 'LOPETATUD' ||
+    status === 'PEATATUD' ||
+    status === 'EI OLE AKTIIVNE'
   ) {
     return false
   }
@@ -552,13 +646,19 @@ export function isActiveSessionStatus(
     status === 'ACTIVE' ||
     status === 'RUNNING' ||
     status === 'STARTED' ||
-    status === 'IN_PROGRESS'
+    status === 'IN_PROGRESS' ||
+    status === 'IN PROGRESS' ||
+    status === 'AKTIIVNE' ||
+    status === 'KAIB' ||
+    status === 'OK'
   ) {
     return true
   }
-  // Fallback: has plate + zone and no end time → treat as active
+  // Fallback: has plate/zone/start and no end time → treat as active
   return Boolean(
-    (details.carNumber || details.zone) && !details.endTime && !details.endedAt,
+    (details.carNumber || details.zone || details.startTime || details.startedAt) &&
+      !details.endTime &&
+      !details.endedAt,
   )
 }
 

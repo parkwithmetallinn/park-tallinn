@@ -576,9 +576,9 @@ export default function App() {
   }
 
   /**
-   * Status ONLY — async fetch { action: "status", carNumber }.
-   * Never navigates, never reloads, never calls start/stop/extend.
-   * UI updates via toast / session notice / optional sessions modal only.
+   * Status ONLY — POST { action: "status", carNumber } + X-N8N-API-KEY.
+   * Never navigates/reloads, never start/stop/extend, never resets a running timer.
+   * UI updates via toast / session notice only.
    */
   const refreshParkingStatus = async () => {
     const plate = (carNumber.trim() || activeSession?.carNumber || '').trim()
@@ -588,6 +588,11 @@ export default function App() {
       await loadActiveSessionsOverview()
       return
     }
+
+    // Snapshot timer so a status response cannot interrupt a running clock
+    const timerWasRunning = timerRunning
+    const timerModeBefore = timerMode
+    const timerSecondsBefore = timerSeconds
 
     setSessionLoading(true)
     setSessionAction('status')
@@ -602,8 +607,14 @@ export default function App() {
           String(s.carNumber ?? '').toUpperCase() === plate.toUpperCase() &&
           isActiveSessionStatus(s),
       )
+      // Prefer explicit ACTIVE details; also accept any parsed session when
+      // the webhook reported success (n8n Status branch found a record).
       const activeDetails =
-        (details && isActiveSessionStatus(details) ? details : null) ?? fromList ?? null
+        (details && isActiveSessionStatus(details) ? details : null) ??
+        fromList ??
+        (result.success && details && !isSessionNotFoundMessage(result.message)
+          ? details
+          : null)
 
       if (activeDetails) {
         const synced = activeSessionFromDetails(activeDetails, {
@@ -611,6 +622,8 @@ export default function App() {
           zone: activeSession?.zone || selected?.zone_code,
           spotName: activeSession?.spotName ?? selected?.name,
           hourlyRate: activeSession?.hourlyRate,
+          startedAt: activeSession?.startedAt,
+          status: activeSession?.status,
         })
         if (synced) {
           persistActive(synced)
@@ -621,8 +634,15 @@ export default function App() {
             }`,
           )
           setTimerOpen(true)
-          if (timerMode === 'elapsed' && synced.startedAt) {
-            startElapsedTimer(synced.startedAt)
+          // Do not restart / reset an already-running timer — only open one
+          // if nothing was ticking yet.
+          if (!timerWasRunning) {
+            if (timerModeBefore === 'elapsed' || !timerModeBefore) {
+              startElapsedTimer(synced.startedAt || activeSession?.startedAt)
+            } else {
+              setTimerRunning(true)
+              setTimerSeconds(timerSecondsBefore)
+            }
           }
           if (synced.carNumber !== carNumber.trim().toUpperCase()) {
             setCarNumber(synced.carNumber)
@@ -637,10 +657,29 @@ export default function App() {
         return
       }
 
-      // Backend has no record — toast/notice only; keep map + local session stable
+      // No parseable active record from n8n — never clear local session or stop
+      // the timer. Keep the running parking UI stable.
+      if (activeSession) {
+        showSessionFeedback(
+          'success',
+          'Parkimine on aktiivne',
+          [
+            `${activeSession.carNumber} · ${activeSession.zone}`,
+            formatHourlyRate(activeSession.hourlyRate),
+            formatSessionInstant(activeSession.startedAt)
+              ? `alates ${formatSessionInstant(activeSession.startedAt)}`
+              : null,
+            'taimer jätkub',
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        )
+        return
+      }
+
       showSessionFeedback(
         'info',
-        activeSession ? 'Serveris sessiooni ei leitud' : 'Aktiivset parkimist pole',
+        'Aktiivset parkimist pole',
         result.message || 'Sellel autol pole aktiivset parkimist',
       )
     } catch (err) {
@@ -652,6 +691,11 @@ export default function App() {
     } finally {
       setSessionLoading(false)
       setSessionAction(null)
+      // Re-assert timer continuity after loading state flips
+      if (timerWasRunning) {
+        setTimerRunning(true)
+        setTimerMode(timerModeBefore)
+      }
     }
   }
 
