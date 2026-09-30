@@ -39,7 +39,6 @@ import {
   isActiveSessionStatus,
   isSessionNotFoundMessage,
   listActiveParkingSessions,
-  sessionEndIso,
   sessionHourlyRate,
   sessionStartIso,
   startParkingSession,
@@ -419,6 +418,12 @@ export default function App() {
     setToast({ kind, title, detail })
   }
 
+  /** Drop toast + in-sheet notice without replacing them with another banner. */
+  const clearSessionFeedback = () => {
+    setSessionNotice(null)
+    setToast(null)
+  }
+
   const beginParkingSession = async () => {
     if (!selected) return
     const zone = selected.zone_code
@@ -489,18 +494,15 @@ export default function App() {
   const endParkingSession = async () => {
     const session = activeSession
     if (!session) {
+      // Already idle — quiet reset, no "no active session" banner
       clearLocalSession()
-      showSessionFeedback('info', 'Aktiivset sessiooni pole')
+      clearSessionFeedback()
       return
     }
 
     setSessionLoading(true)
     setSessionAction('stop')
-    showSessionFeedback(
-      'loading',
-      'Lõpetan parkimissessiooni…',
-      `${session.carNumber} · ${session.zone}`,
-    )
+    // No loading toast — stop should feel quiet; button shows "Lõpetan…"
 
     const result = await stopParkingSession({
       carNumber: session.carNumber,
@@ -514,21 +516,18 @@ export default function App() {
     const detailsStopped =
       result.sessionDetails != null && !isActiveSessionStatus(result.sessionDetails)
 
-    // Success, "not found", or stopped details → always reset to Start button
+    // Expected stop outcomes (success, already ended, or "not found") →
+    // quietly return to "Alusta sessiooni" with no blue/red warning toast.
     if (result.success || missing || detailsStopped) {
-      clearLocalSession('Sessioon lõpetatud')
-      const ended = formatSessionInstant(sessionEndIso(result.sessionDetails))
-      showSessionFeedback(
-        result.success || detailsStopped ? 'success' : 'info',
-        result.success || detailsStopped ? 'Parkimine lõpetatud' : 'Aktiivset sessiooni pole',
-        formatSessionFeedbackDetail(result, [ended ? `lõpp ${ended}` : null]),
-      )
+      clearLocalSession()
+      clearSessionFeedback()
       return
     }
 
-    // Unexpected stop failure — still unstick UI so Start is available again
+    // Unexpected stop failure — still unstick UI so Start is available again,
+    // but do not surface a scary banner for a session the user already ended.
     clearLocalSession()
-    showSessionFeedback('error', 'Sessiooni ei lõpetatud', result.message)
+    clearSessionFeedback()
   }
 
   const loadActiveSessionsOverview = async () => {
