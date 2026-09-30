@@ -1,5 +1,5 @@
 import { MapPin, Navigation, RefreshCw, Square, X } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { useCallback, useState, type FormEvent, type MouseEvent } from 'react'
 import type { ActiveParkingSession } from '../lib/parkingSession'
 import { formatHourlyRate, formatSessionInstant } from '../lib/parkingSession'
 import type { ParkingSpot } from '../types'
@@ -7,6 +7,11 @@ import { navLinks, openAppleMaps } from '../lib/geocode'
 import { PARKING_LAYER_META } from '../map/parkingLayers'
 import { streetLineColor } from '../map/streetLineTheme'
 import { useSheetClose } from './AnimatedBottomSheet'
+
+function blockNav(e: MouseEvent | FormEvent) {
+  e.preventDefault()
+  e.stopPropagation()
+}
 
 function priceSummary(spot: ParkingSpot): { headline: string; detail: string } {
   const free = spot.free_minutes > 0 ? `${spot.free_minutes} min tasuta` : null
@@ -224,8 +229,17 @@ export function ParkingBottomSheet({
           </div>
         </div>
 
-        {/* Session controls */}
-        <div className="space-y-2.5 border-t border-black/5 px-5 pt-3 pb-4">
+        {/* Session controls — form wrapper blocks Enter/submit page reloads */}
+        <form
+          className="space-y-2.5 border-t border-black/5 px-5 pt-3 pb-4"
+          onSubmit={(e) => {
+            blockNav(e)
+            // Enter in plate field → status check only (never navigate)
+            setTouched(true)
+            if (!carOk || sessionLoading) return
+            onCheckStatus()
+          }}
+        >
           <p className="text-[11px] font-semibold tracking-wide text-[#8E8E93] uppercase">
             Parkimissessioon
           </p>
@@ -238,6 +252,7 @@ export function ParkingBottomSheet({
             autoCorrect="off"
             spellCheck={false}
             disabled={sessionLoading}
+            enterKeyHint="done"
             className="w-full rounded-2xl border-0 bg-[#F2F2F7] px-4 py-3.5 font-mono text-[15px] font-semibold tracking-wider text-[#1C1C1E] outline-none ring-[#007AFF]/30 focus:ring-2 disabled:opacity-60"
           />
           {touched && !carOk ? (
@@ -263,8 +278,7 @@ export function ParkingBottomSheet({
               type="button"
               disabled={sessionLoading}
               onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
+                blockNav(e)
                 onStopSession()
               }}
               className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#FF3B30] px-4 py-3.5 text-[15px] font-semibold text-white transition active:scale-[0.99] disabled:opacity-55"
@@ -277,8 +291,7 @@ export function ParkingBottomSheet({
               type="button"
               disabled={sessionLoading || !carOk}
               onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
+                blockNav(e)
                 setTouched(true)
                 if (!carOk) return
                 onStartSession()
@@ -304,8 +317,7 @@ export function ParkingBottomSheet({
                   type="button"
                   disabled={sessionLoading}
                   onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
+                    blockNav(e)
                     onExtendMinutes(opt.minutes)
                   }}
                   className="rounded-xl bg-[#FF9F0A]/12 px-1 py-2.5 text-[12px] font-bold text-[#C93400] transition active:scale-[0.98] disabled:opacity-55"
@@ -320,8 +332,7 @@ export function ParkingBottomSheet({
             type="button"
             disabled={sessionLoading || !carOk}
             onClick={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
+              blockNav(e)
               setTouched(true)
               if (!carOk) return
               onCheckStatus()
@@ -348,7 +359,7 @@ export function ParkingBottomSheet({
               {sessionNotice.text}
             </p>
           ) : null}
-        </div>
+        </form>
       </div>
     </div>
   )

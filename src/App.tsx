@@ -576,8 +576,9 @@ export default function App() {
   }
 
   /**
-   * Status ONLY — POST { action: "status", carNumber }.
-   * Never calls start/stop/extend and never clears a live local session.
+   * Status ONLY — async fetch { action: "status", carNumber }.
+   * Never navigates, never reloads, never calls start/stop/extend.
+   * UI updates via toast / session notice / optional sessions modal only.
    */
   const refreshParkingStatus = async () => {
     const plate = (carNumber.trim() || activeSession?.carNumber || '').trim()
@@ -592,59 +593,66 @@ export default function App() {
     setSessionAction('status')
     showSessionFeedback('loading', 'Kontrollin parkimise staatust…', plate)
 
-    const result = await checkParkingStatus({ carNumber: plate })
+    try {
+      const result = await checkParkingStatus({ carNumber: plate })
 
-    setSessionLoading(false)
-    setSessionAction(null)
-
-    const details = result.sessionDetails
-    const fromList = result.activeSessions?.find(
-      (s) =>
-        String(s.carNumber ?? '').toUpperCase() === plate.toUpperCase() &&
-        isActiveSessionStatus(s),
-    )
-    const activeDetails =
-      (details && isActiveSessionStatus(details) ? details : null) ?? fromList ?? null
-
-    if (activeDetails) {
-      const synced = activeSessionFromDetails(activeDetails, {
-        carNumber: plate,
-        zone: activeSession?.zone || selected?.zone_code,
-        spotName: activeSession?.spotName ?? selected?.name,
-        hourlyRate: activeSession?.hourlyRate,
-      })
-      if (synced) {
-        persistActive(synced)
-        const rateLabel = formatHourlyRate(synced.hourlyRate)
-        setTimerLabel(
-          `Sessioon: ${synced.spotName ?? synced.zone} · ${synced.carNumber}${
-            rateLabel ? ` · ${rateLabel}` : ''
-          }`,
-        )
-        setTimerOpen(true)
-        // Keep current timer mode; if elapsed and we got startTime, resume count-up
-        if (timerMode === 'elapsed' && synced.startedAt) {
-          startElapsedTimer(synced.startedAt)
-        }
-        if (synced.carNumber !== carNumber.trim().toUpperCase()) {
-          setCarNumber(synced.carNumber)
-          saveCarNumber(synced.carNumber)
-        }
-      }
-      showSessionFeedback(
-        'success',
-        'Aktiivne parkimine',
-        formatSessionFeedbackDetail({ ...result, sessionDetails: activeDetails }),
+      const details = result.sessionDetails
+      const fromList = result.activeSessions?.find(
+        (s) =>
+          String(s.carNumber ?? '').toUpperCase() === plate.toUpperCase() &&
+          isActiveSessionStatus(s),
       )
-      return
-    }
+      const activeDetails =
+        (details && isActiveSessionStatus(details) ? details : null) ?? fromList ?? null
 
-    // Backend has no record — report cleanly but DO NOT interrupt local session
-    showSessionFeedback(
-      'info',
-      activeSession ? 'Serveris sessiooni ei leitud' : 'Aktiivset parkimist pole',
-      result.message || 'Sellel autol pole aktiivset parkimist',
-    )
+      if (activeDetails) {
+        const synced = activeSessionFromDetails(activeDetails, {
+          carNumber: plate,
+          zone: activeSession?.zone || selected?.zone_code,
+          spotName: activeSession?.spotName ?? selected?.name,
+          hourlyRate: activeSession?.hourlyRate,
+        })
+        if (synced) {
+          persistActive(synced)
+          const rateLabel = formatHourlyRate(synced.hourlyRate)
+          setTimerLabel(
+            `Sessioon: ${synced.spotName ?? synced.zone} · ${synced.carNumber}${
+              rateLabel ? ` · ${rateLabel}` : ''
+            }`,
+          )
+          setTimerOpen(true)
+          if (timerMode === 'elapsed' && synced.startedAt) {
+            startElapsedTimer(synced.startedAt)
+          }
+          if (synced.carNumber !== carNumber.trim().toUpperCase()) {
+            setCarNumber(synced.carNumber)
+            saveCarNumber(synced.carNumber)
+          }
+        }
+        showSessionFeedback(
+          'success',
+          'Aktiivne parkimine',
+          formatSessionFeedbackDetail({ ...result, sessionDetails: activeDetails }),
+        )
+        return
+      }
+
+      // Backend has no record — toast/notice only; keep map + local session stable
+      showSessionFeedback(
+        'info',
+        activeSession ? 'Serveris sessiooni ei leitud' : 'Aktiivset parkimist pole',
+        result.message || 'Sellel autol pole aktiivset parkimist',
+      )
+    } catch (err) {
+      showSessionFeedback(
+        'error',
+        'Staatuse päring ebaõnnestus',
+        err instanceof Error ? err.message : 'Võrgu viga',
+      )
+    } finally {
+      setSessionLoading(false)
+      setSessionAction(null)
+    }
   }
 
   /**
@@ -981,74 +989,106 @@ export default function App() {
               </span>
             </div>
           ) : null}
-          <label className={`mb-1 block text-[10px] font-semibold ${muted}`}>Auto number</label>
-          <input
-            value={carNumber}
-            onChange={(e) => handleCarNumberChange(e.target.value.toUpperCase())}
-            placeholder="nt 123ABC"
-            autoCapitalize="characters"
-            autoCorrect="off"
-            spellCheck={false}
-            disabled={sessionLoading}
-            className={`mb-2 w-full rounded-xl border px-2.5 py-2 font-mono text-xs font-semibold tracking-wider outline-none focus:ring-2 focus:ring-moss/25 ${
-              dark
-                ? 'border-white/10 bg-white/5 text-white'
-                : 'border-ink/10 bg-white/80 text-ink'
-            }`}
-          />
-          <div className="mb-2 flex gap-1">
-            {TIME_EXTEND_OPTIONS.map((opt) => (
+          <form
+            className="contents"
+            onSubmit={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              void refreshParkingStatus()
+            }}
+          >
+            <label className={`mb-1 block text-[10px] font-semibold ${muted}`}>
+              Auto number
+            </label>
+            <input
+              value={carNumber}
+              onChange={(e) => handleCarNumberChange(e.target.value.toUpperCase())}
+              placeholder="nt 123ABC"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
+              disabled={sessionLoading}
+              enterKeyHint="done"
+              className={`mb-2 w-full rounded-xl border px-2.5 py-2 font-mono text-xs font-semibold tracking-wider outline-none focus:ring-2 focus:ring-moss/25 ${
+                dark
+                  ? 'border-white/10 bg-white/5 text-white'
+                  : 'border-ink/10 bg-white/80 text-ink'
+              }`}
+            />
+            <div className="mb-2 flex gap-1">
+              {TIME_EXTEND_OPTIONS.map((opt) => (
+                <button
+                  key={opt.minutes}
+                  type="button"
+                  disabled={sessionLoading}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    void addPrepaidMinutes(opt.minutes)
+                  }}
+                  className={`flex-1 rounded-lg py-1.5 text-[10px] font-bold ${chip} disabled:opacity-55`}
+                  title={`Lisa ${opt.minutes} minutit`}
+                >
+                  {sessionAction === 'extend' ? '…' : opt.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              {activeSession ? (
+                <button
+                  type="button"
+                  disabled={sessionLoading}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    void endParkingSession()
+                  }}
+                  className="flex-1 rounded-xl bg-clay py-2 text-xs font-bold text-white disabled:opacity-55"
+                >
+                  {sessionAction === 'stop' ? 'Lõpetan…' : 'Lõpeta sessioon'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={sessionLoading || !selected || carNumber.trim().length < 2}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    void beginParkingSession()
+                  }}
+                  className="flex-1 rounded-xl bg-moss py-2 text-xs font-bold text-white disabled:opacity-55"
+                >
+                  {sessionAction === 'start' ? 'Alustan…' : 'Alusta sessiooni'}
+                </button>
+              )}
               <button
-                key={opt.minutes}
                 type="button"
                 disabled={sessionLoading}
-                onClick={() => void addPrepaidMinutes(opt.minutes)}
-                className={`flex-1 rounded-lg py-1.5 text-[10px] font-bold ${chip} disabled:opacity-55`}
-                title={`Lisa ${opt.minutes} minutit`}
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  void refreshParkingStatus()
+                }}
+                className={`rounded-xl px-3 py-2 text-xs font-bold ${chip} disabled:opacity-55`}
+                title="Ainult staatuse päring (ei peata ega alusta)"
               >
-                {sessionAction === 'extend' ? '…' : opt.label}
+                {sessionAction === 'status' ? '…' : 'Staatus'}
               </button>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            {activeSession ? (
               <button
                 type="button"
                 disabled={sessionLoading}
-                onClick={() => void endParkingSession()}
-                className="flex-1 rounded-xl bg-clay py-2 text-xs font-bold text-white disabled:opacity-55"
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  void loadActiveSessionsOverview()
+                }}
+                className={`rounded-xl px-3 py-2 text-xs font-bold ${chip} disabled:opacity-55`}
+                title="Kõik aktiivsed sessioonid"
               >
-                {sessionAction === 'stop' ? 'Lõpetan…' : 'Lõpeta sessioon'}
+                Kõik
               </button>
-            ) : (
-              <button
-                type="button"
-                disabled={sessionLoading || !selected || carNumber.trim().length < 2}
-                onClick={() => void beginParkingSession()}
-                className="flex-1 rounded-xl bg-moss py-2 text-xs font-bold text-white disabled:opacity-55"
-              >
-                {sessionAction === 'start' ? 'Alustan…' : 'Alusta sessiooni'}
-              </button>
-            )}
-            <button
-              type="button"
-              disabled={sessionLoading}
-              onClick={() => void refreshParkingStatus()}
-              className={`rounded-xl px-3 py-2 text-xs font-bold ${chip} disabled:opacity-55`}
-              title="Ainult staatuse päring (ei peata ega alusta)"
-            >
-              {sessionAction === 'status' ? '…' : 'Staatus'}
-            </button>
-            <button
-              type="button"
-              disabled={sessionLoading}
-              onClick={() => void loadActiveSessionsOverview()}
-              className={`rounded-xl px-3 py-2 text-xs font-bold ${chip} disabled:opacity-55`}
-              title="Kõik aktiivsed sessioonid"
-            >
-              Kõik
-            </button>
-          </div>
+            </div>
+          </form>
           {sessionNotice ? (
             <p
               data-testid="session-notice"
@@ -1081,10 +1121,19 @@ export default function App() {
           activeSession={activeSession}
           sessionNotice={sessionNotice}
           onClose={closeSheet}
-          onStartSession={() => void beginParkingSession()}
-          onStopSession={() => void endParkingSession()}
-          onCheckStatus={() => void refreshParkingStatus()}
-          onExtendMinutes={(mins) => void addPrepaidMinutes(mins)}
+          onStartSession={() => {
+            void beginParkingSession()
+          }}
+          onStopSession={() => {
+            void endParkingSession()
+          }}
+          onCheckStatus={() => {
+            // Async status fetch only — no navigation / reload
+            void refreshParkingStatus()
+          }}
+          onExtendMinutes={(mins) => {
+            void addPrepaidMinutes(mins)
+          }}
         />
       ) : null}
 
