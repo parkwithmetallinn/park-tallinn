@@ -5,11 +5,21 @@ Puhas 3D parkimiskaart Tallinnale (MapLibre). Tänavaäärsed tsoonid on teedega
 ## Käivitamine
 
 ```bash
+cp .env.example .env   # täida VITE_N8N_WEBHOOK_URL ja VITE_N8N_API_KEY
 npm install
 npm run dev
 ```
 
 Ava [http://127.0.0.1:43127](http://127.0.0.1:43127).
+
+### Keskkonnamuutujad
+
+| Muutuja | Kirjeldus |
+|---------|-----------|
+| `VITE_N8N_WEBHOOK_URL` | n8n webhook URL (nt `https://…/webhook/parkimine`) |
+| `VITE_N8N_API_KEY` | Header Auth väärtus päisele `X-N8N-API-KEY` |
+
+Kasutatakse klientis (`src/lib/parkingSession.ts`) ning Vite / Vercel `/api/parkimine` proxy’s. Ära commit’i `.env` faili — ainult `.env.example`.
 
 ## Zoom LOD (tasemed)
 
@@ -36,11 +46,10 @@ Diagonaalseid “läbi majade” jooni ei joonistata — ainult lühikesed, teel
 - **Bottom sheet** — Waze, Google Maps, Apple Maps navigeerimine
 - **Floating glass UI** — ümarad paneelid + backdrop-blur
 
-## Parkimissessioon (n8n — production)
+## Parkimissessioon (n8n)
 
-Bottom sheet / kellapaneel saadavad POST production webhook’ile:
-
-`https://mairon8n.app.n8n.cloud/webhook/parkimine`
+Bottom sheet / kellapaneel saadavad POST webhook’ile (`VITE_N8N_WEBHOOK_URL`),
+tavaliselt same-origin `/api/parkimine` proxy kaudu:
 
 ```json
 { "action": "start", "carNumber": "123ABC", "zone": "KESKLINN" }
@@ -58,20 +67,14 @@ Bottom sheet / kellapaneel saadavad POST production webhook’ile:
 { "action": "status" }
 ```
 
-- **start** / **stop** — nõuavad `carNumber` + `zone`
-- **status** ühe numbriga — body on täpselt `{ action, carNumber }` (ilma zone’ta); vastus `{ success, message, sessionDetails }`
-- **status** ilma `carNumber`-ita (või **Kõik** nupp) — `{ success, message, activeSessions[], count }` ülevaade kõigist aktiivsetest sessioonidest
-- Kui auto kohta aktiivset sessiooni pole (`Autol … puudub aktiivne parkimine`), UI näitab info-teadet — mitte vigast errorit
-- UI kuvab backend’i `message`, tunnihinna ja staatuse toast’is / bottom sheet’is / kellapaneelis; nimekiri avaneb modaalis
-- CORS-probleemi korral fallback: `/api/parkimine` proxy
-
-Iga päring (start / stop / status) saadab Header Auth. Brauser kutsub
-same-origin `/api/parkimine` proxy’t; Vite / Vercel lisavad päised upstream’ile:
-
-```http
-X-N8N-API-KEY: SecurityMHMJ26%
-Content-Type: application/json
+```json
+{ "action": "extend", "carNumber": "123ABC", "zone": "KESKLINN", "minutes": 15 }
 ```
+
+- **start** / **stop** / **extend** — nõuavad `carNumber` + `zone`
+- **status** ühe numbriga — body on täpselt `{ action, carNumber }` (ilma zone’ta)
+- **status** ilma `carNumber`-ita (või **Kõik** nupp) — `{ activeSessions[], count }`
+- Header Auth: `X-N8N-API-KEY` = `VITE_N8N_API_KEY` (ei ole hardcode’itud lähtekoodis)
 
 Deep-link testimiseks (ilma kaardiklõpsuta):
 

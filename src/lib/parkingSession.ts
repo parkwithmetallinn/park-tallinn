@@ -1,42 +1,40 @@
 /**
- * Parking session API — production n8n webhook.
+ * Parking session API — n8n webhook.
  *
- * POST https://mairon8n.app.n8n.cloud/webhook/parkimine
- * Body:  { action: "start"|"stop"|"status", carNumber?, zone? }
+ * Credentials come from Vite env (see `.env.example`):
+ *   VITE_N8N_WEBHOOK_URL
+ *   VITE_N8N_API_KEY
  *
- * Responses:
- * - start/stop/single status → { success, message, sessionDetails }
- * - status without carNumber (list) → { success, message, activeSessions[], count }
- *
- * Every request sends Header Auth:
- *   X-N8N-API-KEY: SecurityMHMJ26%
- *   Content-Type: application/json
+ * Body:  { action: "start"|"stop"|"status"|"extend", carNumber?, zone?, minutes? }
+ * Prefers same-origin `/api/parkimine` (server also reads the same env vars).
  */
 
-/** Direct cloud URL — used only as a last-resort fallback. */
+/** Direct cloud URL — last-resort fallback when the proxy is unavailable. */
 export const PARKING_WEBHOOK_URL =
-  import.meta.env.VITE_PARKING_WEBHOOK_URL ??
-  'https://mairon8n.app.n8n.cloud/webhook/parkimine'
+  import.meta.env.VITE_N8N_WEBHOOK_URL ||
+  import.meta.env.VITE_PARKING_WEBHOOK_URL ||
+  ''
+
+/** Header Auth value from env — never hardcode secrets in source. */
+export const PARKING_WEBHOOK_API_KEY = import.meta.env.VITE_N8N_API_KEY || ''
 
 /**
- * Header Auth required by the production n8n webhook.
- * Sent on every start / stop / status POST (client + Vite/Vercel proxy).
+ * Headers sent on every client POST (start / stop / status / extend).
+ * The Vite/Vercel proxy also injects X-N8N-API-KEY from the same env vars.
  */
 export const PARKING_WEBHOOK_HEADERS: Record<string, string> = {
-  'X-N8N-API-KEY': 'SecurityMHMJ26%',
+  'X-N8N-API-KEY': PARKING_WEBHOOK_API_KEY,
   'Content-Type': 'application/json',
 }
 
-/**
- * Same-origin proxy — preferred path.
- * Vite (`vite.config.ts`) and Vercel (`api/parkimine.js`) inject the same
- * X-N8N-API-KEY header upstream on every request.
- */
+/** Same-origin proxy — preferred path. */
 const PARKING_WEBHOOK_PROXY = '/api/parkimine'
 
 function webhookHeaders(): Headers {
   const headers = new Headers()
-  headers.set('X-N8N-API-KEY', PARKING_WEBHOOK_HEADERS['X-N8N-API-KEY'])
+  if (PARKING_WEBHOOK_API_KEY) {
+    headers.set('X-N8N-API-KEY', PARKING_WEBHOOK_API_KEY)
+  }
   headers.set('Content-Type', 'application/json')
   return headers
 }
@@ -396,9 +394,22 @@ export async function sendParkingSession(
     minutes: input.minutes,
   }
 
+  if (!PARKING_WEBHOOK_API_KEY) {
+    return {
+      success: false,
+      message: 'VITE_N8N_API_KEY puudub — seadista .env fail',
+    }
+  }
+
   try {
     return await postSession(PARKING_WEBHOOK_PROXY, body, signal)
   } catch {
+    if (!PARKING_WEBHOOK_URL) {
+      return {
+        success: false,
+        message: 'VITE_N8N_WEBHOOK_URL puudub — seadista .env fail',
+      }
+    }
     try {
       return await postSession(PARKING_WEBHOOK_URL, body, signal)
     } catch {

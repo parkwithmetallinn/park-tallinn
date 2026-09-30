@@ -24,6 +24,11 @@ dist/
 *.sln
 *.sw?
 
+# Secrets — keep .env.example committed, never commit real keys
+.env
+.env.*
+!.env.example
+
 # App / agent artifacts
 uploads/
 agent-tools/

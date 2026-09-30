@@ -1,14 +1,23 @@
 /**
  * Vercel serverless proxy for the n8n parking webhook.
- * Injects Header Auth on every upstream POST so the browser never relies
- * on CORS-exposed custom headers reaching n8n directly.
+ * Injects Header Auth from environment variables on every upstream POST.
+ *
+ * Env (any of these):
+ *   VITE_N8N_WEBHOOK_URL / PARKING_WEBHOOK_URL
+ *   VITE_N8N_API_KEY / N8N_API_KEY
  */
 
 const UPSTREAM =
+  process.env.VITE_N8N_WEBHOOK_URL ||
   process.env.PARKING_WEBHOOK_URL ||
-  'https://mairon8n.app.n8n.cloud/webhook/parkimine'
+  process.env.VITE_PARKING_WEBHOOK_URL ||
+  ''
 
-const API_KEY = process.env.N8N_API_KEY || process.env.PARKING_WEBHOOK_API_KEY || 'SecurityMHMJ26%'
+const API_KEY =
+  process.env.VITE_N8N_API_KEY ||
+  process.env.N8N_API_KEY ||
+  process.env.PARKING_WEBHOOK_API_KEY ||
+  ''
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -21,6 +30,15 @@ export default async function handler(req, res) {
 
   if (req.method !== 'POST') {
     res.status(405).json({ success: false, message: 'Method not allowed' })
+    return
+  }
+
+  if (!UPSTREAM || !API_KEY) {
+    res.status(500).json({
+      success: false,
+      message:
+        'Server misconfigured — set VITE_N8N_WEBHOOK_URL and VITE_N8N_API_KEY',
+    })
     return
   }
 
