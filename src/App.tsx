@@ -10,14 +10,19 @@ import {
   Sun,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActiveSessionsModal } from './components/ActiveSessionsModal'
 import { MapErrorBoundary } from './components/MapErrorBoundary'
 import { MapView } from './components/MapView'
 import { ModalShell } from './components/ModalShell'
 import { LocationInfoSheet } from './components/LocationInfoSheet'
 import { ParkingBottomSheet } from './components/ParkingBottomSheet'
+import { ReportModal, type ReportModalContext } from './components/ReportModal'
 import { Toast, type ToastState } from './components/Toast'
+import {
+  loadApprovedOverlays,
+  loadSuppressedFeatureIds,
+} from './lib/parkingRequests'
 import { MOCK_KESKLINN_SPOTS } from './data/mockKesklinn'
 import { PARKING_SPOTS, TALLINN_CENTER } from './data/parking'
 import { distanceMeters, formatDistance } from './lib/geo'
@@ -28,7 +33,7 @@ import {
   type SearchLocation,
 } from './lib/geocode'
 import { normalizeSpot } from './lib/geojson'
-import { formatHMS, TYPE_LABELS } from './lib/parking'
+import { formatHMS } from './lib/parking'
 import {
   activeSessionFromDetails,
   checkParkingStatus,
@@ -63,10 +68,9 @@ import {
   loadCustomSpots,
   saveActiveSession,
   saveCarNumber,
-  saveCustomSpot,
 } from './lib/storage'
 import { PARKING_LAYER_META } from './map/parkingLayers'
-import type { FilterId, ParkingSpot, SpotType } from './types'
+import type { FilterId, ParkingSpot } from './types'
 
 /** Apple HIG quick filters — primary parking intents */
 const FILTERS: { id: FilterId; label: string; color?: string }[] = [
@@ -102,7 +106,9 @@ export default function App() {
   const [searchLocation, setSearchLocation] = useState<SearchLocation | null>(null)
   const [searchSheetOpen, setSearchSheetOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
-  const [reportOpen, setReportOpen] = useState(false)
+  const [reportContext, setReportContext] = useState<ReportModalContext | null>(null)
+  const [approvedOverlays, setApprovedOverlays] = useState<ParkingSpot[]>([])
+  const [suppressedIds, setSuppressedIds] = useState<Set<string>>(() => new Set())
   const [timerSeconds, setTimerSeconds] = useState(0)
   const [timerRunning, setTimerRunning] = useState(false)
   const [timerMode, setTimerMode] = useState<TimerMode>('elapsed')
@@ -132,6 +138,8 @@ export default function App() {
 
   useEffect(() => {
     setCustomSpots(loadCustomSpots())
+    setApprovedOverlays(loadApprovedOverlays())
+    setSuppressedIds(loadSuppressedFeatureIds())
     setCarNumber(loadCarNumber())
     const saved = loadActiveSession()
     if (saved) {
@@ -246,8 +254,10 @@ export default function App() {
     )
     const mocks = MOCK_KESKLINN_SPOTS.map((s) => normalizeSpot(s))
     const custom = customSpots.map((s) => normalizeSpot(s))
+    const overlays = approvedOverlays.map((s) => normalizeSpot(s))
     // Precise GeoJSON lots / street lines take precedence over stub mocks
     const mockWithoutDupes = mocks.filter((m) => {
+      if (suppressedIds.has(m.id)) return false
       if (m.polygon) {
         return !preciseSpots.some(
           (p) =>
@@ -264,8 +274,17 @@ export default function App() {
       }
       return true
     })
-    return [...preciseSpots, ...streetSpots, ...mockWithoutDupes, ...curated, ...custom]
-  }, [customSpots, preciseSpots, streetSpots])
+    const filteredPrecise = preciseSpots.filter((s) => !suppressedIds.has(s.id))
+    const filteredStreet = streetSpots.filter((s) => !suppressedIds.has(s.id))
+    return [
+      ...filteredPrecise,
+      ...filteredStreet,
+      ...mockWithoutDupes,
+      ...curated.filter((s) => !suppressedIds.has(s.id)),
+      ...custom,
+      ...overlays,
+    ]
+  }, [customSpots, preciseSpots, streetSpots, approvedOverlays, suppressedIds])
 
   // Deep-link: /?spot=<id> opens the parking sheet (no map click needed)
   const deepLinkApplied = useRef(false)
@@ -770,35 +789,22 @@ export default function App() {
     )
   }
 
-  const submitReport = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const fd = new FormData(e.currentTarget)
-    const type = (fd.get('type') as ParkingSpot['type']) || 'free'
-    const kind = (fd.get('kind') as ParkingSpot['kind']) || 'street'
-    const name = String(fd.get('name') || '').trim()
-    const address = String(fd.get('address') || '').trim()
-    const limit = String(fd.get('limit') || 'Tasuta').trim()
-    const notes = String(fd.get('notes') || '').trim()
-    if (!name || !address) return
-
-    const spot = normalizeSpot({
-      id: `custom-${Date.now()}`,
-      name,
-      type,
-      kind,
-      badge: type === 'free' ? (kind === 'street' ? 'TÄNAV' : 'TASUTA') : type === 'pr' ? 'P&R' : 'KELLAGA',
-      timeLimit: limit,
-      lat: userLocation[0] + (Math.random() - 0.5) * 0.004,
-      lng: userLocation[1] + (Math.random() - 0.5) * 0.004,
-      address,
-      desc: notes || 'Kasutaja lisatud koht',
-      custom: true,
-      landmark: true,
+  const openProposeNew = () => {
+    setReportContext({
+      mode: 'PROPOSE_NEW',
+      lat: userLocation[0],
+      lng: userLocation[1],
+      target: selected,
     })
-    saveCustomSpot(spot)
-    setCustomSpots(loadCustomSpots())
-    setReportOpen(false)
-    e.currentTarget.reset()
+  }
+
+  const openReportInvalid = (spot: ParkingSpot) => {
+    setReportContext({
+      mode: 'REPORT_INVALID',
+      lat: spot.lat,
+      lng: spot.lng,
+      target: spot,
+    })
   }
 
   useEffect(() => {
@@ -849,6 +855,7 @@ export default function App() {
             onZoomChange={() => {}}
             onPreciseSpotsLoaded={setPreciseSpots}
             onStreetSpotsLoaded={setStreetSpots}
+            suppressedFeatureIds={suppressedIds}
           />
         </MapErrorBoundary>
       </div>
@@ -993,9 +1000,9 @@ export default function App() {
         </button>
         <button
           type="button"
-          onClick={() => setReportOpen(true)}
+          onClick={openProposeNew}
           className="flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[#34C759] text-white shadow-[0_4px_16px_rgba(52,199,89,0.35)] transition active:scale-95"
-          title="Lisa koht"
+          title="Paku uut kohta (ülevaatusse)"
         >
           <Plus className="h-6 w-6" strokeWidth={2.4} />
         </button>
@@ -1177,6 +1184,7 @@ export default function App() {
           onExtendMinutes={(mins) => {
             void addPrepaidMinutes(mins)
           }}
+          onReportInvalid={() => openReportInvalid(selected)}
         />
       ) : null}
 
@@ -1221,87 +1229,31 @@ export default function App() {
             <div className="rounded-2xl border border-moss/20 bg-moss/8 p-3">
               <h4 className="mb-1 text-sm font-bold text-moss">Kaart</h4>
               <p>
-                Rohelised jooned = tasuta tänav · kollased = kellaga · värvilised alad =
-                eraparklad. Otsi aadressi ülevalt.
+                Roheline = kontrollitud tasuta · hall = määramata avalik · värvilised =
+                operaatorid. “+” saadab ettepaneku ülevaatusse (GeoJSON ei muutu otse).
               </p>
             </div>
+            <a
+              href="/admin"
+              className="block rounded-2xl border border-ink/10 bg-paper-2 px-3 py-2.5 text-center text-xs font-bold text-ink-soft transition hover:bg-ink/5"
+            >
+              Admin / Review (peidetud)
+            </a>
           </div>
         </ModalShell>
       ) : null}
 
-      {reportOpen ? (
-        <ModalShell onClose={() => setReportOpen(false)} title="Teata uuest kohast">
-          <form onSubmit={submitReport} className="space-y-3">
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-ink-soft">Nimi</label>
-              <input
-                name="name"
-                required
-                placeholder="nt Pelguranna tasuta tänav"
-                className="w-full rounded-xl border border-ink/10 bg-paper-2 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-moss/25"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-ink-soft">Tüüp</label>
-                <select
-                  name="type"
-                  className="w-full rounded-xl border border-ink/10 bg-paper-2 px-3 py-2 text-sm outline-none"
-                >
-                  {(Object.keys(TYPE_LABELS) as SpotType[])
-                    .filter((t) => t !== 'paid')
-                    .map((t) => (
-                      <option key={t} value={t}>
-                        {TYPE_LABELS[t]}
-                      </option>
-                    ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-ink-soft">Koht</label>
-                <select
-                  name="kind"
-                  className="w-full rounded-xl border border-ink/10 bg-paper-2 px-3 py-2 text-sm outline-none"
-                >
-                  <option value="street">Tänavaäär</option>
-                  <option value="lot">Avalik parkla</option>
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-ink-soft">Ajapiirang</label>
-              <input
-                name="limit"
-                placeholder="nt 2 tundi / Piiranguta"
-                className="w-full rounded-xl border border-ink/10 bg-paper-2 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-moss/25"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-ink-soft">Aadress</label>
-              <input
-                name="address"
-                required
-                placeholder="Tänav, linnaosa"
-                className="w-full rounded-xl border border-ink/10 bg-paper-2 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-moss/25"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-ink-soft">Lisainfo</label>
-              <textarea
-                name="notes"
-                rows={2}
-                placeholder="Tingimused, märgid…"
-                className="w-full rounded-xl border border-ink/10 bg-paper-2 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-moss/25"
-              />
-            </div>
-            <button
-              type="submit"
-              className="w-full rounded-xl bg-moss py-3 text-sm font-bold text-white shadow-lg transition hover:bg-moss-deep"
-            >
-              Lisa parkimiskoht
-            </button>
-          </form>
-        </ModalShell>
+      {reportContext ? (
+        <ReportModal
+          context={reportContext}
+          onClose={() => setReportContext(null)}
+          onSubmitted={(message) => {
+            setToast({ kind: 'info', title: 'Saadetud ülevaatusse', detail: message })
+            // Refresh moderation layer if admin approved in another tab later
+            setApprovedOverlays(loadApprovedOverlays())
+            setSuppressedIds(loadSuppressedFeatureIds())
+          }}
+        />
       ) : null}
 
       {!hasGps ? null : null}

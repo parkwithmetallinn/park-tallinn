@@ -1,4 +1,4 @@
-import { MapPin, Navigation, RefreshCw, Square, X } from 'lucide-react'
+import { Flag, MapPin, Navigation, RefreshCw, Square, X } from 'lucide-react'
 import { useCallback, useState, type FormEvent, type MouseEvent } from 'react'
 import type { ActiveParkingSession } from '../lib/parkingSession'
 import { formatHourlyRate, formatSessionInstant } from '../lib/parkingSession'
@@ -47,6 +47,7 @@ export function ParkingBottomSheet({
   onStopSession,
   onCheckStatus,
   onExtendMinutes,
+  onReportInvalid,
 }: {
   spot: ParkingSpot
   distanceLabel?: string | null
@@ -61,6 +62,8 @@ export function ParkingBottomSheet({
   onStopSession: () => void
   onCheckStatus: () => void
   onExtendMinutes?: (minutes: number) => void
+  /** Crowdsource: queue REPORT_INVALID (does not mutate GeoJSON). */
+  onReportInvalid?: () => void
 }) {
   const stableClose = useCallback(() => onClose(), [onClose])
   const { requestClose, sheetClassName } = useSheetClose(stableClose)
@@ -358,6 +361,20 @@ export function ParkingBottomSheet({
             >
               {sessionNotice.text}
             </p>
+          ) : null}
+
+          {onReportInvalid ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                blockNav(e)
+                onReportInvalid()
+              }}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#F2F2F7] px-4 py-2.5 text-[12px] font-semibold text-[#636366] transition active:scale-[0.99]"
+            >
+              <Flag className="h-3.5 w-3.5 text-[#FF3B30]" />
+              Märgi olematuks / Teavita veast
+            </button>
           ) : null}
         </form>
       </div>

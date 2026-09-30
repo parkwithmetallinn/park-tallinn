@@ -39,6 +39,7 @@ import {
   type StreetParkingCollection,
   type StreetParkingFeature,
 } from '../lib/streetParkingLines'
+import { dedupeStreetAgainstPolygons } from '../lib/spatialDedupe'
 import { parkingIndex } from '../lib/spatialIndex'
 import type { DrivingRoute } from '../lib/routing'
 import { createBasemapStyle } from '../map/createBasemapStyle'
@@ -119,21 +120,57 @@ function filterToLayers(
   return 'all'
 }
 
-/** Apply top filter to both precise polygons + street curb LineStrings. */
+function withoutSuppressed<T extends { properties: { id: string } }>(
+  features: T[],
+  suppressed: Set<string>,
+): T[] {
+  if (suppressed.size === 0) return features
+  return features.filter((f) => !suppressed.has(f.properties.id))
+}
+
+/**
+ * Apply moderation suppress list, spatial dedupe (polygon > street), then
+ * top filter chips — both GeoJSON sources update together.
+ */
 function applyDualLayerFilter(
   map: MapLibreMapType,
   filter: FilterId,
   preciseFc: PreciseParkingCollection | null,
   streetFc: StreetParkingCollection | null,
+  suppressedIds: Set<string> = new Set(),
 ) {
   const layers = filterToLayers(filter)
-  if (preciseFc) {
-    const src = map.getSource(PRECISE_PARKING_SOURCE) as GeoJSONSource | undefined
-    src?.setData(filterPreciseCollection(preciseFc, layers) as never)
+
+  const polys: PreciseParkingCollection | null = preciseFc
+    ? {
+        type: 'FeatureCollection',
+        features: withoutSuppressed(preciseFc.features, suppressedIds),
+      }
+    : null
+
+  let streets: StreetParkingCollection | null = streetFc
+    ? {
+        type: 'FeatureCollection',
+        features: withoutSuppressed(streetFc.features, suppressedIds),
+      }
+    : null
+
+  // Spatial dedupe: drop curb lines that sit in / along lot polygons
+  if (streets && polys) {
+    const deduped = dedupeStreetAgainstPolygons(streets, polys)
+    streets = deduped.collection
+    if (import.meta.env.DEV && deduped.suppressed > 0) {
+      console.info('[parking] spatial dedupe suppressed streets', deduped.suppressed)
+    }
   }
-  if (streetFc) {
+
+  if (polys) {
+    const src = map.getSource(PRECISE_PARKING_SOURCE) as GeoJSONSource | undefined
+    src?.setData(filterPreciseCollection(polys, layers) as never)
+  }
+  if (streets) {
     const src = map.getSource(STREET_PARKING_SOURCE) as GeoJSONSource | undefined
-    src?.setData(filterStreetCollection(streetFc, layers) as never)
+    src?.setData(filterStreetCollection(streets, layers) as never)
   }
 }
 
@@ -181,6 +218,7 @@ export function MapView({
   onViewportStats,
   onPreciseSpotsLoaded,
   onStreetSpotsLoaded,
+  suppressedFeatureIds,
 }: {
   spots: ParkingSpot[]
   filter: FilterId
@@ -207,6 +245,8 @@ export function MapView({
   onPreciseSpotsLoaded?: (spots: ParkingSpot[]) => void
   /** Street LineString parking from GeoJSON. */
   onStreetSpotsLoaded?: (spots: ParkingSpot[]) => void
+  /** Admin-approved REPORT_INVALID suppressions (never mutates production GeoJSON). */
+  suppressedFeatureIds?: Set<string> | string[]
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMapType | null>(null)
@@ -219,10 +259,13 @@ export function MapView({
   const onStreetSpotsLoadedRef = useRef(onStreetSpotsLoaded)
   const preciseFcRef = useRef<PreciseParkingCollection | null>(null)
   const streetFcRef = useRef<StreetParkingCollection | null>(null)
+  /** Raw street FC before spatial dedupe (dedupe runs in applyDualLayerFilter). */
+  const streetRawFcRef = useRef<StreetParkingCollection | null>(null)
   const filterRef = useRef(filter)
   const selectedIdRef = useRef(selectedId)
   const pitch3dRef = useRef(pitch3d)
   const flyModeRef = useRef(flyMode)
+  const suppressedRef = useRef<Set<string>>(new Set())
   const loadGenRef = useRef(0)
   const [ready, setReady] = useState(false)
 
@@ -235,6 +278,11 @@ export function MapView({
   selectedIdRef.current = selectedId
   pitch3dRef.current = pitch3d
   flyModeRef.current = flyMode
+  suppressedRef.current = new Set(
+    suppressedFeatureIds instanceof Set
+      ? suppressedFeatureIds
+      : (suppressedFeatureIds ?? []),
+  )
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
@@ -368,13 +416,22 @@ export function MapView({
       emitZoom(map)
 
       // Dual-layer: parking_polygons.geojson + street_parking.geojson
-      // Prep purges private yards / resident-only and non-public underground
-      // garages so the canvas only shows accessible parking options.
+      // Prep purges private/underground; then spatial dedupe prefers polygons
+      // over overlapping street lines. Production GeoJSON is never mutated.
       void loadParkingPolygons()
         .then((fc) => {
           preciseFcRef.current = fc
-          applyDualLayerFilter(map, filterRef.current, fc, streetFcRef.current)
-          const spots = preciseCollectionToSpots(fc)
+          applyDualLayerFilter(
+            map,
+            filterRef.current,
+            fc,
+            streetRawFcRef.current,
+            suppressedRef.current,
+          )
+          const spots = preciseCollectionToSpots({
+            type: 'FeatureCollection',
+            features: withoutSuppressed(fc.features, suppressedRef.current),
+          })
           for (const s of spots) parkingIndex.insert(s)
           onPreciseSpotsLoadedRef.current?.(spots)
           applySelectionHighlight(map, selectedIdRef.current)
@@ -389,14 +446,48 @@ export function MapView({
       // Roadside curb lines — minzoom 12; green/red/blue by rules
       void loadStreetParking()
         .then((fc) => {
-          streetFcRef.current = fc
-          applyDualLayerFilter(map, filterRef.current, preciseFcRef.current, fc)
-          const spots = streetCollectionToSpots(fc)
+          streetRawFcRef.current = fc
+          const deduped = preciseFcRef.current
+            ? dedupeStreetAgainstPolygons(
+                {
+                  type: 'FeatureCollection',
+                  features: withoutSuppressed(fc.features, suppressedRef.current),
+                },
+                {
+                  type: 'FeatureCollection',
+                  features: withoutSuppressed(
+                    preciseFcRef.current.features,
+                    suppressedRef.current,
+                  ),
+                },
+              )
+            : {
+                collection: {
+                  type: 'FeatureCollection' as const,
+                  features: withoutSuppressed(fc.features, suppressedRef.current),
+                },
+                suppressed: 0,
+                kept: fc.features.length,
+                suppressedIds: [] as string[],
+              }
+          streetFcRef.current = deduped.collection
+          applyDualLayerFilter(
+            map,
+            filterRef.current,
+            preciseFcRef.current,
+            streetRawFcRef.current,
+            suppressedRef.current,
+          )
+          const spots = streetCollectionToSpots(deduped.collection)
           for (const s of spots) parkingIndex.insert(s)
           onStreetSpotsLoadedRef.current?.(spots)
           applySelectionHighlight(map, selectedIdRef.current)
           if (import.meta.env.DEV) {
             console.info('[parking] street purge', getLastStreetPurgeStats())
+            console.info('[parking] spatial dedupe', {
+              suppressed: deduped.suppressed,
+              kept: deduped.kept,
+            })
           }
         })
         .catch((err) => {
@@ -545,11 +636,17 @@ export function MapView({
       ) as Partial<Record<ParkingLayerKey, boolean>>
       setParkingLayerVisibility(map, vis)
     }
-    // Filter lot polygons + street curb lines together
-    applyDualLayerFilter(map, filter, preciseFcRef.current, streetFcRef.current)
+    // Filter lot polygons + street curb lines together (incl. dedupe)
+    applyDualLayerFilter(
+      map,
+      filter,
+      preciseFcRef.current,
+      streetRawFcRef.current ?? streetFcRef.current,
+      suppressedRef.current,
+    )
     applySelectionHighlight(map, selectedIdRef.current)
     ;(map as MapLibreMapType & { __refreshViewport?: () => void }).__refreshViewport?.()
-  }, [filter, ready])
+  }, [filter, ready, suppressedFeatureIds])
 
   useEffect(() => {
     const map = mapRef.current
