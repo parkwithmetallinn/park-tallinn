@@ -15,7 +15,6 @@ import {
   featureBounds,
   filterPreciseCollection,
   getLastPolygonPurgeStats,
-  loadParkingPolygons,
   PRECISE_FILL_LAYER,
   PRECISE_LABEL_LAYER,
   PRECISE_MULTISTOREY_BADGE_LAYER,
@@ -30,7 +29,6 @@ import {
 import {
   filterStreetCollection,
   getLastStreetPurgeStats,
-  loadStreetParking,
   STREET_PARKING_HIT_LAYER,
   STREET_PARKING_LINE_LAYER,
   STREET_PARKING_SOURCE,
@@ -39,6 +37,12 @@ import {
   type StreetParkingCollection,
   type StreetParkingFeature,
 } from '../lib/streetParkingLines'
+import {
+  getCachedPolygons,
+  getCachedStreets,
+  loadParkingPolygonsCached,
+  loadStreetParkingCached,
+} from '../lib/parkingDataCache'
 import { dedupeStreetAgainstPolygons } from '../lib/spatialDedupe'
 import { parkingIndex } from '../lib/spatialIndex'
 import type { DrivingRoute } from '../lib/routing'
@@ -218,6 +222,7 @@ export function MapView({
   onViewportStats,
   onPreciseSpotsLoaded,
   onStreetSpotsLoaded,
+  onMapReady,
   suppressedFeatureIds,
 }: {
   spots: ParkingSpot[]
@@ -245,6 +250,8 @@ export function MapView({
   onPreciseSpotsLoaded?: (spots: ParkingSpot[]) => void
   /** Street LineString parking from GeoJSON. */
   onStreetSpotsLoaded?: (spots: ParkingSpot[]) => void
+  /** Fired once when basemap style is ready (for skeleton fade-out). */
+  onMapReady?: () => void
   /** Admin-approved REPORT_INVALID suppressions (never mutates production GeoJSON). */
   suppressedFeatureIds?: Set<string> | string[]
 }) {
@@ -257,6 +264,7 @@ export function MapView({
   const onSearchPinClickRef = useRef(onSearchPinClick)
   const onPreciseSpotsLoadedRef = useRef(onPreciseSpotsLoaded)
   const onStreetSpotsLoadedRef = useRef(onStreetSpotsLoaded)
+  const onMapReadyRef = useRef(onMapReady)
   const preciseFcRef = useRef<PreciseParkingCollection | null>(null)
   const streetFcRef = useRef<StreetParkingCollection | null>(null)
   /** Raw street FC before spatial dedupe (dedupe runs in applyDualLayerFilter). */
@@ -274,6 +282,7 @@ export function MapView({
   onSearchPinClickRef.current = onSearchPinClick
   onPreciseSpotsLoadedRef.current = onPreciseSpotsLoaded
   onStreetSpotsLoadedRef.current = onStreetSpotsLoaded
+  onMapReadyRef.current = onMapReady
   filterRef.current = filter
   selectedIdRef.current = selectedId
   pitch3dRef.current = pitch3d
@@ -412,84 +421,92 @@ export function MapView({
         /* older style without light support */
       }
       setReady(true)
+      onMapReadyRef.current?.()
       void refreshViewport(map)
       emitZoom(map)
 
-      // Dual-layer: parking_polygons.geojson + street_parking.geojson
-      // Prep purges private/underground; then spatial dedupe prefers polygons
-      // over overlapping street lines. Production GeoJSON is never mutated.
-      void loadParkingPolygons()
-        .then((fc) => {
-          preciseFcRef.current = fc
-          applyDualLayerFilter(
-            map,
-            filterRef.current,
-            fc,
-            streetRawFcRef.current,
-            suppressedRef.current,
-          )
-          const spots = preciseCollectionToSpots({
-            type: 'FeatureCollection',
-            features: withoutSuppressed(fc.features, suppressedRef.current),
-          })
-          for (const s of spots) parkingIndex.insert(s)
-          onPreciseSpotsLoadedRef.current?.(spots)
-          applySelectionHighlight(map, selectedIdRef.current)
-          if (import.meta.env.DEV) {
-            console.info('[parking] polygon purge', getLastPolygonPurgeStats())
-          }
+      // Dual-layer with cache-first loaders (instant remount if warm).
+      // Prep purges private/underground; spatial dedupe prefers polygons.
+      const applyPoly = (fc: PreciseParkingCollection) => {
+        preciseFcRef.current = fc
+        applyDualLayerFilter(
+          map,
+          filterRef.current,
+          fc,
+          streetRawFcRef.current,
+          suppressedRef.current,
+        )
+        const spots = preciseCollectionToSpots({
+          type: 'FeatureCollection',
+          features: withoutSuppressed(fc.features, suppressedRef.current),
         })
+        for (const s of spots) parkingIndex.insert(s)
+        onPreciseSpotsLoadedRef.current?.(spots)
+        applySelectionHighlight(map, selectedIdRef.current)
+        if (import.meta.env.DEV) {
+          console.info('[parking] polygon purge', getLastPolygonPurgeStats())
+        }
+      }
+
+      const applyStreet = (fc: StreetParkingCollection) => {
+        streetRawFcRef.current = fc
+        const deduped = preciseFcRef.current
+          ? dedupeStreetAgainstPolygons(
+              {
+                type: 'FeatureCollection',
+                features: withoutSuppressed(fc.features, suppressedRef.current),
+              },
+              {
+                type: 'FeatureCollection',
+                features: withoutSuppressed(
+                  preciseFcRef.current.features,
+                  suppressedRef.current,
+                ),
+              },
+            )
+          : {
+              collection: {
+                type: 'FeatureCollection' as const,
+                features: withoutSuppressed(fc.features, suppressedRef.current),
+              },
+              suppressed: 0,
+              kept: fc.features.length,
+              suppressedIds: [] as string[],
+            }
+        streetFcRef.current = deduped.collection
+        applyDualLayerFilter(
+          map,
+          filterRef.current,
+          preciseFcRef.current,
+          streetRawFcRef.current,
+          suppressedRef.current,
+        )
+        const spots = streetCollectionToSpots(deduped.collection)
+        for (const s of spots) parkingIndex.insert(s)
+        onStreetSpotsLoadedRef.current?.(spots)
+        applySelectionHighlight(map, selectedIdRef.current)
+        if (import.meta.env.DEV) {
+          console.info('[parking] street purge', getLastStreetPurgeStats())
+          console.info('[parking] spatial dedupe', {
+            suppressed: deduped.suppressed,
+            kept: deduped.kept,
+          })
+        }
+      }
+
+      const warmPoly = getCachedPolygons()
+      const warmStreet = getCachedStreets()
+      if (warmPoly) applyPoly(warmPoly)
+      if (warmStreet) applyStreet(warmStreet)
+
+      void loadParkingPolygonsCached()
+        .then(applyPoly)
         .catch((err) => {
           console.warn('parking_polygons.geojson failed to load', err)
         })
 
-      // Roadside curb lines — minzoom 12; green/red/blue by rules
-      void loadStreetParking()
-        .then((fc) => {
-          streetRawFcRef.current = fc
-          const deduped = preciseFcRef.current
-            ? dedupeStreetAgainstPolygons(
-                {
-                  type: 'FeatureCollection',
-                  features: withoutSuppressed(fc.features, suppressedRef.current),
-                },
-                {
-                  type: 'FeatureCollection',
-                  features: withoutSuppressed(
-                    preciseFcRef.current.features,
-                    suppressedRef.current,
-                  ),
-                },
-              )
-            : {
-                collection: {
-                  type: 'FeatureCollection' as const,
-                  features: withoutSuppressed(fc.features, suppressedRef.current),
-                },
-                suppressed: 0,
-                kept: fc.features.length,
-                suppressedIds: [] as string[],
-              }
-          streetFcRef.current = deduped.collection
-          applyDualLayerFilter(
-            map,
-            filterRef.current,
-            preciseFcRef.current,
-            streetRawFcRef.current,
-            suppressedRef.current,
-          )
-          const spots = streetCollectionToSpots(deduped.collection)
-          for (const s of spots) parkingIndex.insert(s)
-          onStreetSpotsLoadedRef.current?.(spots)
-          applySelectionHighlight(map, selectedIdRef.current)
-          if (import.meta.env.DEV) {
-            console.info('[parking] street purge', getLastStreetPurgeStats())
-            console.info('[parking] spatial dedupe', {
-              suppressed: deduped.suppressed,
-              kept: deduped.kept,
-            })
-          }
-        })
+      void loadStreetParkingCached()
+        .then(applyStreet)
         .catch((err) => {
           console.warn('street_parking.geojson failed to load', err)
         })

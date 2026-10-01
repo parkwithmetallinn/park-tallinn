@@ -140,6 +140,78 @@ body {
   animation: fade-in 0.35s ease-out both;
 }
 
+/* ——— Micro-interactions: press physics ——— */
+.pressable {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition:
+    transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 140ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    filter 160ms ease;
+  will-change: transform;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pressable:hover:not(:disabled) {
+    filter: brightness(1.04);
+  }
+}
+
+.pressable:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.pressable:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* FAB / chip helpers already using Tailwind active:scale — unify feel */
+.tap-scale {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 140ms ease;
+}
+
+.tap-scale:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+/* ——— Skeleton shimmer ——— */
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    #e8edf1 0%,
+    #f7fafc 45%,
+    #e8edf1 90%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.map-dark .skeleton-shimmer,
+.dark-skeleton .skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgb(255 255 255 / 0.06) 0%,
+    rgb(255 255 255 / 0.14) 45%,
+    rgb(255 255 255 / 0.06) 90%
+  );
+  background-size: 200% 100%;
+}
+
 .sheet-spring-in {
   animation: sheet-spring-in 0.52s cubic-bezier(0.22, 1.2, 0.36, 1) both;
   will-change: transform, opacity;

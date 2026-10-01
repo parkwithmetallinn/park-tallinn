@@ -284,7 +284,7 @@ export function ParkingBottomSheet({
                 blockNav(e)
                 onStopSession()
               }}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#FF3B30] px-4 py-3.5 text-[15px] font-semibold text-white transition active:scale-[0.99] disabled:opacity-55"
+              className="tap-scale flex w-full items-center justify-center gap-2 rounded-2xl bg-[#FF3B30] px-4 py-3.5 text-[15px] font-semibold text-white disabled:opacity-55"
             >
               <Square className="h-4 w-4 fill-current" />
               {sessionAction === 'stop' ? 'Lõpetan…' : 'Lõpeta sessioon'}
@@ -299,7 +299,7 @@ export function ParkingBottomSheet({
                 if (!carOk) return
                 onStartSession()
               }}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#34C759] px-4 py-3.5 text-[15px] font-semibold text-white transition active:scale-[0.99] disabled:opacity-55"
+              className="tap-scale flex w-full items-center justify-center gap-2 rounded-2xl bg-[#34C759] px-4 py-3.5 text-[15px] font-semibold text-white disabled:opacity-55"
             >
               {sessionAction === 'start' ? 'Alustan…' : 'Alusta sessiooni'}
             </button>
@@ -323,7 +323,7 @@ export function ParkingBottomSheet({
                     blockNav(e)
                     onExtendMinutes(opt.minutes)
                   }}
-                  className="rounded-xl bg-[#FF9F0A]/12 px-1 py-2.5 text-[12px] font-bold text-[#C93400] transition active:scale-[0.98] disabled:opacity-55"
+                  className="tap-scale rounded-xl bg-[#FF9F0A]/12 px-1 py-2.5 text-[12px] font-bold text-[#C93400] disabled:opacity-55"
                 >
                   {sessionAction === 'extend' ? '…' : opt.label}
                 </button>
@@ -340,7 +340,7 @@ export function ParkingBottomSheet({
               if (!carOk) return
               onCheckStatus()
             }}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#007AFF]/10 px-4 py-3 text-[14px] font-semibold text-[#007AFF] transition active:scale-[0.99] disabled:opacity-55"
+            className="tap-scale flex w-full items-center justify-center gap-2 rounded-2xl bg-[#007AFF]/10 px-4 py-3 text-[14px] font-semibold text-[#007AFF] disabled:opacity-55"
           >
             <RefreshCw className={`h-4 w-4 ${sessionAction === 'status' ? 'animate-spin' : ''}`} />
             {sessionAction === 'status' ? 'Kontrollin…' : 'Kontrolli staatust'}
@@ -370,7 +370,7 @@ export function ParkingBottomSheet({
                 blockNav(e)
                 onReportInvalid()
               }}
-              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#F2F2F7] px-4 py-2.5 text-[12px] font-semibold text-[#636366] transition active:scale-[0.99]"
+              className="tap-scale flex w-full items-center justify-center gap-2 rounded-2xl bg-[#F2F2F7] px-4 py-2.5 text-[12px] font-semibold text-[#636366]"
             >
               <Flag className="h-3.5 w-3.5 text-[#FF3B30]" />
               Märgi olematuks / Teavita veast

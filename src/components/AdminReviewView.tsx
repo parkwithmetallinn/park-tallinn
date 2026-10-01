@@ -25,9 +25,16 @@ import {
   rejectParkingRequest,
   type ParkingRequest,
 } from '../lib/parkingRequests'
-import { loadParkingPolygons, preciseCollectionToSpots } from '../lib/preciseParkingPolygons'
-import { loadStreetParking, streetCollectionToSpots } from '../lib/streetParkingLines'
+import { preciseCollectionToSpots } from '../lib/preciseParkingPolygons'
+import { streetCollectionToSpots } from '../lib/streetParkingLines'
+import {
+  loadParkingPolygonsCached,
+  loadStreetParkingCached,
+  prefetchParkingLayers,
+} from '../lib/parkingDataCache'
 import type { ParkingSpot } from '../types'
+import { AdminRequestListSkeleton } from './ui/Skeleton'
+import { Pressable } from './ui/Pressable'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
 setWorkerUrl(maplibreWorker)
@@ -66,6 +73,7 @@ export function AdminReviewView() {
   const [officialSpots, setOfficialSpots] = useState<ParkingSpot[]>([])
   const [toast, setToast] = useState<string | null>(null)
   const [stats, setStats] = useState({ overlays: 0, suppressed: 0 })
+  const [dbLoading, setDbLoading] = useState(true)
   const mapEl = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const markerRef = useRef<Marker | null>(null)
@@ -87,7 +95,9 @@ export function AdminReviewView() {
 
   useEffect(() => {
     refresh()
-    void Promise.all([loadParkingPolygons(), loadStreetParking()])
+    prefetchParkingLayers()
+    setDbLoading(true)
+    void Promise.all([loadParkingPolygonsCached(), loadStreetParkingCached()])
       .then(([poly, street]) => {
         setOfficialSpots([
           ...preciseCollectionToSpots(poly),
@@ -97,6 +107,7 @@ export function AdminReviewView() {
       .catch(() => {
         /* offline / missing data */
       })
+      .finally(() => setDbLoading(false))
   }, [])
 
   useEffect(() => {
@@ -173,30 +184,31 @@ export function AdminReviewView() {
             </p>
           </div>
         </div>
-        <button
-          type="button"
+        <Pressable
           onClick={refresh}
+          onMouseEnter={() => prefetchParkingLayers()}
           className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-2.5 py-1.5 text-xs font-semibold hover:bg-white/15"
         >
           <RefreshCw className="h-3.5 w-3.5" />
           Värskenda
-        </button>
+        </Pressable>
       </header>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[340px_1fr]">
         <aside className="min-h-0 overflow-y-auto border-b border-white/10 lg:border-r lg:border-b-0">
-          <div className="space-y-2 p-3">
-            {requests.length === 0 ? (
+          <div className="dark-skeleton space-y-2 p-3">
+            {dbLoading && requests.length === 0 ? (
+              <AdminRequestListSkeleton count={4} />
+            ) : requests.length === 0 ? (
               <p className="rounded-xl bg-white/5 px-3 py-4 text-center text-xs text-white/60">
                 Ootel päringuid pole. Kasuta kaardil “+” või “Teavita veast”.
               </p>
             ) : (
               requests.map((r) => (
-                <button
+                <Pressable
                   key={r.id}
-                  type="button"
                   onClick={() => setSelectedId(r.id)}
-                  className={`w-full rounded-xl px-3 py-2.5 text-left transition ${
+                  className={`w-full rounded-xl px-3 py-2.5 text-left ${
                     selected?.id === r.id
                       ? 'bg-[#22C55E]/20 ring-1 ring-[#22C55E]/50'
                       : 'bg-white/5 hover:bg-white/10'
@@ -230,7 +242,7 @@ export function AdminReviewView() {
                   <p className="truncate text-[10px] text-white/45">
                     {new Date(r.createdAt).toLocaleString('et-EE')}
                   </p>
-                </button>
+                </Pressable>
               ))
             )}
           </div>
@@ -326,22 +338,20 @@ export function AdminReviewView() {
 
               {selected.status === 'pending' ? (
                 <div className="flex gap-2">
-                  <button
-                    type="button"
+                  <Pressable
                     onClick={onApprove}
                     className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#22C55E] py-2.5 text-sm font-bold text-white"
                   >
                     <Check className="h-4 w-4" />
                     Approve
-                  </button>
-                  <button
-                    type="button"
+                  </Pressable>
+                  <Pressable
                     onClick={onReject}
                     className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#FF3B30] py-2.5 text-sm font-bold text-white"
                   >
                     <X className="h-4 w-4" />
                     Reject
-                  </button>
+                  </Pressable>
                 </div>
               ) : (
                 <p className="text-center text-xs text-white/45">

@@ -1,8 +1,11 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { QueryClientProvider } from '@tanstack/react-query'
 import './index.css'
 import App from './App.tsx'
 import { AdminReviewView } from './components/AdminReviewView.tsx'
+import { queryClient } from './lib/queryClient'
+import { prefetchParkingLayers } from './lib/parkingDataCache'
 
 const path = window.location.pathname.replace(/\/+$/, '') || '/'
 const isAdmin =
@@ -10,6 +13,13 @@ const isAdmin =
   path.endsWith('/admin') ||
   new URLSearchParams(window.location.search).has('admin')
 
+// Warm parking layer cache as soon as the shell boots
+prefetchParkingLayers()
+
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>{isAdmin ? <AdminReviewView /> : <App />}</StrictMode>,
+  <StrictMode>
+    <QueryClientProvider client={queryClient}>
+      {isAdmin ? <AdminReviewView /> : <App />}
+    </QueryClientProvider>
+  </StrictMode>,
 )

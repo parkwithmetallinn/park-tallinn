@@ -17,12 +17,22 @@ import { MapView } from './components/MapView'
 import { ModalShell } from './components/ModalShell'
 import { LocationInfoSheet } from './components/LocationInfoSheet'
 import { ParkingBottomSheet } from './components/ParkingBottomSheet'
+import { OfflineBanner } from './components/OfflineBanner'
 import { ReportModal, type ReportModalContext } from './components/ReportModal'
 import { Toast, type ToastState } from './components/Toast'
+import { MapChromeSkeleton } from './components/ui/Skeleton'
 import {
   loadApprovedOverlays,
   loadSuppressedFeatureIds,
 } from './lib/parkingRequests'
+import {
+  enqueueOfflineAction,
+  isBrowserOnline,
+  registerOfflineProcessor,
+  type QueuedAction,
+} from './lib/offlineQueue'
+import { parkingQueryKeys, queryClient } from './lib/queryClient'
+import { prefetchParkingLayers } from './lib/parkingDataCache'
 import { MOCK_KESKLINN_SPOTS } from './data/mockKesklinn'
 import { PARKING_SPOTS, TALLINN_CENTER } from './data/parking'
 import { distanceMeters, formatDistance } from './lib/geo'
@@ -132,11 +142,22 @@ export default function App() {
   const [pitch3d, setPitch3d] = useState(true)
   const [preciseSpots, setPreciseSpots] = useState<ParkingSpot[]>([])
   const [streetSpots, setStreetSpots] = useState<ParkingSpot[]>([])
+  const [mapReady, setMapReady] = useState(false)
   const geoAbort = useRef<AbortController | null>(null)
+  /** Snapshot for optimistic session rollback */
+  const sessionSnapshotRef = useRef<{
+    activeSession: ActiveParkingSession | null
+    timerSeconds: number
+    timerRunning: boolean
+    timerMode: TimerMode
+    timerLabel: string
+    timerOpen: boolean
+  } | null>(null)
 
   const dismissToast = useCallback(() => setToast(null), [])
 
   useEffect(() => {
+    prefetchParkingLayers()
     setCustomSpots(loadCustomSpots())
     setApprovedOverlays(loadApprovedOverlays())
     setSuppressedIds(loadSuppressedFeatureIds())
@@ -443,6 +464,29 @@ export default function App() {
     setToast(null)
   }
 
+  const rollbackSessionSnapshot = () => {
+    const snap = sessionSnapshotRef.current
+    if (!snap) return
+    persistActive(snap.activeSession)
+    setTimerSeconds(snap.timerSeconds)
+    setTimerRunning(snap.timerRunning)
+    setTimerMode(snap.timerMode)
+    setTimerLabel(snap.timerLabel)
+    setTimerOpen(snap.timerOpen)
+    sessionSnapshotRef.current = null
+  }
+
+  const captureSessionSnapshot = () => {
+    sessionSnapshotRef.current = {
+      activeSession,
+      timerSeconds,
+      timerRunning,
+      timerMode,
+      timerLabel,
+      timerOpen,
+    }
+  }
+
   const beginParkingSession = async () => {
     if (!selected) return
     const zone = selected.zone_code
@@ -460,9 +504,39 @@ export default function App() {
       return
     }
 
-    setSessionLoading(true)
+    // Optimistic UI — reflect start immediately, roll back on hard failure
+    captureSessionSnapshot()
+    const optimisticStartedAt = new Date().toISOString()
+    const hourlyRate =
+      selected.price_per_hour > 0 ? selected.price_per_hour : undefined
+    const rateLabel = formatHourlyRate(hourlyRate)
+    persistActive({
+      carNumber: plate.toUpperCase(),
+      zone,
+      spotName: selected.name,
+      startedAt: optimisticStartedAt,
+      status: 'ACTIVE',
+      hourlyRate,
+    })
+    startElapsedTimer(
+      optimisticStartedAt,
+      `Sessioon: ${selected.name} · ${plate.toUpperCase()}${rateLabel ? ` · ${rateLabel}` : ''}`,
+    )
     setSessionAction('start')
-    showSessionFeedback('loading', 'Alustan parkimissessiooni…', `${plate} · ${zone}`)
+    setSessionLoading(true)
+    showSessionFeedback('success', 'Parkimine alanud', `${plate} · ${zone}`)
+
+    if (!isBrowserOnline()) {
+      enqueueOfflineAction('session_start', { carNumber: plate, zone })
+      setSessionLoading(false)
+      setSessionAction(null)
+      showSessionFeedback(
+        'info',
+        'Offline — salvestatud järjekorda',
+        'Saadetakse ühenduse taastudes',
+      )
+      return
+    }
 
     const result = await startParkingSession({ carNumber: plate, zone })
 
@@ -470,34 +544,30 @@ export default function App() {
     setSessionAction(null)
     if (result.success) {
       const details = result.sessionDetails
-      const startedAt = sessionStartIso(details)
+      const startedAt = sessionStartIso(details) || optimisticStartedAt
       const status = String(details?.status ?? 'ACTIVE')
-      const hourlyRate =
-        sessionHourlyRate(details) ??
-        (selected.price_per_hour > 0 ? selected.price_per_hour : undefined)
+      const serverRate = sessionHourlyRate(details) ?? hourlyRate
       const resolvedZone = String(details?.zone ?? zone)
       const resolvedPlate = String(details?.carNumber ?? plate).toUpperCase()
-      // Keep sheet open — UI switches to active details + "Lõpeta sessioon"
       persistActive({
         carNumber: resolvedPlate,
         zone: resolvedZone,
         spotName: selected.name,
         startedAt,
         status,
-        hourlyRate,
+        hourlyRate: serverRate,
       })
       if (resolvedPlate !== carNumber.trim().toUpperCase()) {
         setCarNumber(resolvedPlate)
         saveCarNumber(resolvedPlate)
       }
-
-      const rateLabel = formatHourlyRate(hourlyRate)
-      // Mode 1 — live duration counter (ticks up from startTime)
-      startElapsedTimer(
-        startedAt || new Date().toISOString(),
-        `Sessioon: ${selected.name} · ${resolvedPlate}${rateLabel ? ` · ${rateLabel}` : ''}`,
+      const serverRateLabel = formatHourlyRate(serverRate)
+      setTimerLabel(
+        `Sessioon: ${selected.name} · ${resolvedPlate}${
+          serverRateLabel ? ` · ${serverRateLabel}` : ''
+        }`,
       )
-
+      sessionSnapshotRef.current = null
       showSessionFeedback(
         'success',
         'Parkimine alanud',
@@ -505,7 +575,9 @@ export default function App() {
           details?.sessionId ? `ID ${details.sessionId}` : null,
         ]),
       )
+      void queryClient.invalidateQueries({ queryKey: parkingQueryKeys.sessions })
     } else {
+      rollbackSessionSnapshot()
       showSessionFeedback('error', 'Sessiooni ei alustatud', result.message)
     }
   }
@@ -513,15 +585,33 @@ export default function App() {
   const endParkingSession = async () => {
     const session = activeSession
     if (!session) {
-      // Already idle — quiet reset, no "no active session" banner
       clearLocalSession()
       clearSessionFeedback()
       return
     }
 
-    setSessionLoading(true)
+    // Optimistic stop — UI returns to Start immediately
+    captureSessionSnapshot()
+    clearLocalSession()
+    clearSessionFeedback()
     setSessionAction('stop')
-    // No loading toast — stop should feel quiet; button shows "Lõpetan…"
+    setSessionLoading(true)
+
+    if (!isBrowserOnline()) {
+      enqueueOfflineAction('session_stop', {
+        carNumber: session.carNumber,
+        zone: session.zone,
+      })
+      setSessionLoading(false)
+      setSessionAction(null)
+      sessionSnapshotRef.current = null
+      setToast({
+        kind: 'info',
+        title: 'Offline — lõpetamine järjekorras',
+        detail: 'Saadetakse ühenduse taastudes',
+      })
+      return
+    }
 
     const result = await stopParkingSession({
       carNumber: session.carNumber,
@@ -535,32 +625,96 @@ export default function App() {
     const detailsStopped =
       result.sessionDetails != null && !isActiveSessionStatus(result.sessionDetails)
 
-    // Expected stop outcomes (success, already ended, or "not found") →
-    // quietly return to "Alusta sessiooni" with no blue/red warning toast.
     if (result.success || missing || detailsStopped) {
-      clearLocalSession()
-      clearSessionFeedback()
+      sessionSnapshotRef.current = null
+      void queryClient.invalidateQueries({ queryKey: parkingQueryKeys.sessions })
       return
     }
 
-    // Unexpected stop failure — still unstick UI so Start is available again,
-    // but do not surface a scary banner for a session the user already ended.
-    clearLocalSession()
-    clearSessionFeedback()
+    // Hard failure — restore previous active session quietly + non-intrusive toast
+    rollbackSessionSnapshot()
+    setToast({
+      kind: 'error',
+      title: 'Lõpetamine ebaõnnestus',
+      detail: result.message || 'Proovi uuesti',
+    })
   }
+
+  // Offline queue processor — drains FIFO on reconnect
+  useEffect(() => {
+    registerOfflineProcessor(async (action: QueuedAction) => {
+      if (action.type === 'session_start') {
+        const plate = String(action.payload.carNumber ?? '')
+        const zone = String(action.payload.zone ?? '')
+        if (!plate || !zone) return true
+        const result = await startParkingSession({ carNumber: plate, zone })
+        return result.success
+      }
+      if (action.type === 'session_stop') {
+        const plate = String(action.payload.carNumber ?? '')
+        const zone = String(action.payload.zone ?? '')
+        if (!plate || !zone) return true
+        const result = await stopParkingSession({ carNumber: plate, zone })
+        const missing = isSessionNotFoundMessage(result.message)
+        return result.success || missing
+      }
+      if (action.type === 'session_extend') {
+        const plate = String(action.payload.carNumber ?? '')
+        const zone = String(action.payload.zone ?? '')
+        const minutes = Number(action.payload.minutes ?? 0)
+        if (!plate || !zone || minutes <= 0) return true
+        const result = await extendParkingSession({
+          carNumber: plate,
+          zone,
+          minutes,
+        })
+        return result.success
+      }
+      // parking_request already persisted locally when enqueued
+      return true
+    })
+  }, [])
 
   const loadActiveSessionsOverview = async () => {
     setSessionLoading(true)
     setSessionAction('status')
-    showSessionFeedback('loading', 'Laadin aktiivseid sessioone…')
+    // Keep prior list visible (SWR) — no full-page blank
+    if (activeSessionsList.length === 0) {
+      setSessionsOverviewOpen(true)
+    }
 
-    const result = await listActiveParkingSessions()
+    const cached = queryClient.getQueryData<{
+      success: boolean
+      activeSessions?: ParkingSessionDetails[]
+      count?: number
+      message?: string
+    }>(parkingQueryKeys.sessions)
+    if (cached?.success && cached.activeSessions) {
+      setActiveSessionsList(cached.activeSessions)
+      setActiveSessionsCount(cached.count ?? cached.activeSessions.length)
+      setActiveSessionsMessage(cached.message)
+      setSessionsOverviewOpen(true)
+    }
+
+    const result = await queryClient.fetchQuery({
+      queryKey: parkingQueryKeys.sessions,
+      queryFn: () => listActiveParkingSessions(),
+      staleTime: 15_000,
+    })
 
     setSessionLoading(false)
     setSessionAction(null)
 
     if (!result.success) {
-      showSessionFeedback('error', 'Sessioonide nimekiri ebaõnnestus', result.message)
+      if (activeSessionsList.length === 0) {
+        showSessionFeedback('error', 'Sessioonide nimekiri ebaõnnestus', result.message)
+      } else {
+        setToast({
+          kind: 'error',
+          title: 'Värskendus ebaõnnestus',
+          detail: result.message,
+        })
+      }
       return
     }
 
@@ -742,6 +896,20 @@ export default function App() {
       return
     }
 
+    if (!isBrowserOnline()) {
+      enqueueOfflineAction('session_extend', {
+        carNumber: activeSession.carNumber,
+        zone: activeSession.zone,
+        minutes,
+      })
+      showSessionFeedback(
+        'info',
+        `+${minutes} min · offline järjekord`,
+        `${activeSession.carNumber} · ${activeSession.zone}`,
+      )
+      return
+    }
+
     setSessionLoading(true)
     setSessionAction('extend')
     const result = await extendParkingSession({
@@ -825,7 +993,7 @@ export default function App() {
       )
     : null
 
-  const fabClass = `flex h-[52px] w-[52px] items-center justify-center rounded-full ${panel} ${text} shadow-[0_4px_16px_rgba(15,23,42,0.14)] transition active:scale-95`
+  const fabClass = `tap-scale flex h-[52px] w-[52px] items-center justify-center rounded-full ${panel} ${text} shadow-[0_4px_16px_rgba(15,23,42,0.14)]`
 
   return (
     <div className={`relative h-full overflow-hidden ${dark ? 'bg-[#0f1714]' : 'bg-transparent'}`}>
@@ -855,10 +1023,14 @@ export default function App() {
             onZoomChange={() => {}}
             onPreciseSpotsLoaded={setPreciseSpots}
             onStreetSpotsLoaded={setStreetSpots}
+            onMapReady={() => setMapReady(true)}
             suppressedFeatureIds={suppressedIds}
           />
         </MapErrorBoundary>
+        {!mapReady ? <MapChromeSkeleton /> : null}
       </div>
+
+      <OfflineBanner />
 
       {/* Top floating search + filter pills (Apple HIG) */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-30 px-3 pt-[max(0.65rem,env(safe-area-inset-top))] sm:px-4">
@@ -945,7 +1117,7 @@ export default function App() {
                   type="button"
                   data-filter={f.id}
                   onClick={() => setFilter(f.id)}
-                  className={`shrink-0 rounded-full px-4 py-2 text-[13px] font-semibold shadow-sm transition active:scale-[0.97] ${
+                  className={`tap-scale shrink-0 rounded-full px-4 py-2 text-[13px] font-semibold shadow-sm ${
                     active ? chipActive : `${panel} ${chip}`
                   }`}
                 >
@@ -1001,7 +1173,7 @@ export default function App() {
         <button
           type="button"
           onClick={openProposeNew}
-          className="flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[#34C759] text-white shadow-[0_4px_16px_rgba(52,199,89,0.35)] transition active:scale-95"
+          className="tap-scale flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[#34C759] text-white shadow-[0_4px_16px_rgba(52,199,89,0.35)]"
           title="Paku uut kohta (ülevaatusse)"
         >
           <Plus className="h-6 w-6" strokeWidth={2.4} />
@@ -1206,6 +1378,13 @@ export default function App() {
           loading={sessionLoading && sessionAction === 'status'}
           onClose={() => setSessionsOverviewOpen(false)}
           onRefresh={() => void loadActiveSessionsOverview()}
+          onPrefetch={() => {
+            void queryClient.prefetchQuery({
+              queryKey: parkingQueryKeys.sessions,
+              queryFn: () => listActiveParkingSessions(),
+              staleTime: 15_000,
+            })
+          }}
           onSelect={adoptListedSession}
         />
       ) : null}
@@ -1235,7 +1414,9 @@ export default function App() {
             </div>
             <a
               href="/admin"
-              className="block rounded-2xl border border-ink/10 bg-paper-2 px-3 py-2.5 text-center text-xs font-bold text-ink-soft transition hover:bg-ink/5"
+              onMouseEnter={() => prefetchParkingLayers()}
+              onTouchStart={() => prefetchParkingLayers()}
+              className="tap-scale block rounded-2xl border border-ink/10 bg-paper-2 px-3 py-2.5 text-center text-xs font-bold text-ink-soft hover:bg-ink/5"
             >
               Admin / Review (peidetud)
             </a>

@@ -88,7 +88,7 @@ export function ReportModal({
         <button
           type="button"
           onClick={() => setMode('PROPOSE_NEW')}
-          className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-[12px] font-bold transition ${
+          className={`tap-scale flex items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-[12px] font-bold ${
             mode === 'PROPOSE_NEW'
               ? 'bg-[#22C55E] text-white'
               : 'bg-[#F2F2F7] text-[#3A3A3C]'
@@ -101,7 +101,7 @@ export function ReportModal({
           type="button"
           onClick={() => setMode('REPORT_INVALID')}
           disabled={!context.target}
-          className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-[12px] font-bold transition disabled:opacity-40 ${
+          className={`tap-scale flex items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-[12px] font-bold disabled:opacity-40 ${
             mode === 'REPORT_INVALID'
               ? 'bg-[#FF3B30] text-white'
               : 'bg-[#F2F2F7] text-[#3A3A3C]'
@@ -215,7 +215,7 @@ export function ReportModal({
         <button
           type="submit"
           disabled={submitting || (mode === 'REPORT_INVALID' && !context.target)}
-          className="w-full rounded-xl bg-moss py-3 text-sm font-bold text-white shadow-lg transition hover:bg-moss-deep disabled:opacity-55"
+          className="tap-scale w-full rounded-xl bg-moss py-3 text-sm font-bold text-white shadow-lg hover:bg-moss-deep disabled:opacity-55"
         >
           {mode === 'PROPOSE_NEW' ? 'Saada ettepanek' : 'Saada veateade'}
         </button>
