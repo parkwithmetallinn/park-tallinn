@@ -214,7 +214,7 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
     })
   }
 
-  // ——— High-precision parking polygons (public/data/parking_polygons.geojson) ———
+  // ——— High-precision parking polygons (estonia_parking_master.geojson lots) ———
   if (!map.getSource(PRECISE_PARKING_SOURCE)) {
     map.addSource(PRECISE_PARKING_SOURCE, {
       type: 'geojson',
@@ -415,7 +415,7 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
     })
   }
 
-  // ——— Street-side parking lines from street_parking.geojson (minzoom 12) ———
+  // ——— Street-side parking lines from estonia_parking_master (minzoom 12) ———
   if (!map.getSource(STREET_PARKING_SOURCE)) {
     map.addSource(STREET_PARKING_SOURCE, {
       type: 'geojson',

@@ -2,8 +2,8 @@
  * Zoom LOD for Park Tallinn map overlays.
  *
  *   zoom < 13  → district badges only (Vanalinn, Kesklinn, Mustamäe, …)
- *   13+        → lot polygons (parking_polygons.geojson)
- *   zoom ≥ 12  → street curb LineStrings (street_parking.geojson)
+ *   13+        → lot polygons (from estonia_parking_master.geojson)
+ *   zoom ≥ 12  → street curb lines (street_side / lane from master)
  */
 export const ZOOM = {
   /** Hide pins & street detail below this; show district zones only. */
@@ -13,7 +13,7 @@ export const ZOOM = {
   /** Lot polygons appear from this zoom. */
   lotMin: 13,
   /**
-   * Street parking curb lines (street_parking.geojson).
+   * Street parking curb lines (master street_side / lane features).
    * Product: visible from zoom 12.
    */
   streetMin: 12,

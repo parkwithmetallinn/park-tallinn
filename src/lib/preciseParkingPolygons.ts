@@ -24,7 +24,8 @@ export function getLastPolygonPurgeStats(): ParkingPrepPurgeStats {
   return lastPolygonPurgeStats
 }
 
-export const PARKING_POLYGONS_URL = '/data/parking_polygons.geojson'
+/** @deprecated Use estonia_parking_master via parkingDataCache / loadEstoniaParkingMaster */
+export const PARKING_POLYGONS_URL = '/data/estonia_parking_master.geojson'
 
 export const PRECISE_PARKING_SOURCE = 'parking-polygons'
 export const PRECISE_FILL_LAYER = 'parking-fill'
@@ -512,6 +513,11 @@ export function filterPreciseCollection(
 export async function loadParkingPolygons(
   url = PARKING_POLYGONS_URL,
 ): Promise<PreciseParkingCollection> {
+  // Master file is split into lots vs streets — never paint curb polygons as lots.
+  if (url.includes('estonia_parking_master')) {
+    const { loadEstoniaParkingMaster } = await import('./estoniaParkingMaster')
+    return (await loadEstoniaParkingMaster(url)).polygons
+  }
   const res = await fetch(url)
   if (!res.ok) throw new Error(`Failed to load parking polygons (${res.status})`)
   const raw = (await res.json()) as RawCollection

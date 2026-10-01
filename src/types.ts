@@ -41,7 +41,7 @@ export type ParkingLayerKey =
   | 'loading'
   | 'park_ride'
 
-/** Precise lot structure from parking_polygons.geojson */
+/** Precise lot structure from estonia_parking_master.geojson */
 export type ParkingStructureType = 'surface' | 'underground' | 'multi_storey'
 
 export interface ParkingSpot {

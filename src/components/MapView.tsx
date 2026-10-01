@@ -389,7 +389,7 @@ export function MapView({
       }
 
       ;(m.getSource(PARKING_VIEWPORT_SOURCE) as GeoJSONSource | undefined)?.setData(geo.points)
-      // Street lines come only from street_parking.geojson — never invent diagonals
+      // Street lines come only from master street_side/lane features — never invent diagonals
       ;(m.getSource(PARKING_LINES_SOURCE) as GeoJSONSource | undefined)?.setData(empty)
       // Stub lot polygons stay empty — precise GeoJSON owns lot boundaries
       ;(m.getSource(PARKING_LOTS_SOURCE) as GeoJSONSource | undefined)?.setData(empty)
@@ -425,7 +425,7 @@ export function MapView({
       void refreshViewport(map)
       emitZoom(map)
 
-      // Dual-layer with cache-first loaders (instant remount if warm).
+      // Dual-layer from estonia_parking_master.geojson (cache-first).
       // Prep purges private/underground; spatial dedupe prefers polygons.
       const applyPoly = (fc: PreciseParkingCollection) => {
         preciseFcRef.current = fc
@@ -502,13 +502,13 @@ export function MapView({
       void loadParkingPolygonsCached()
         .then(applyPoly)
         .catch((err) => {
-          console.warn('parking_polygons.geojson failed to load', err)
+          console.warn('estonia_parking_master (lots) failed to load', err)
         })
 
       void loadStreetParkingCached()
         .then(applyStreet)
         .catch((err) => {
-          console.warn('street_parking.geojson failed to load', err)
+          console.warn('estonia_parking_master (streets) failed to load', err)
         })
     }
 

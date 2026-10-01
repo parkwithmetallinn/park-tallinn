@@ -19,7 +19,8 @@ export function getLastStreetPurgeStats(): ParkingPrepPurgeStats {
 }
 import type { ParkingLayerKey, ParkingOperator, ParkingSpot } from '../types'
 
-export const STREET_PARKING_URL = '/data/street_parking.geojson'
+/** @deprecated Use estonia_parking_master via parkingDataCache / loadEstoniaParkingMaster */
+export const STREET_PARKING_URL = '/data/estonia_parking_master.geojson'
 
 export const STREET_PARKING_SOURCE = 'street-parking'
 export const STREET_PARKING_LINE_LAYER = 'street-parking-line'
@@ -449,6 +450,10 @@ export function filterStreetCollection(
 export async function loadStreetParking(
   url = STREET_PARKING_URL,
 ): Promise<StreetParkingCollection> {
+  if (url.includes('estonia_parking_master')) {
+    const { loadEstoniaParkingMaster } = await import('./estoniaParkingMaster')
+    return (await loadEstoniaParkingMaster(url)).streets
+  }
   const res = await fetch(url)
   if (!res.ok) throw new Error(`Failed to load street parking (${res.status})`)
   const raw = (await res.json()) as RawCollection

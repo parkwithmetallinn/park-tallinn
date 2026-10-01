@@ -35,8 +35,9 @@ Diagonaalseid “läbi majade” jooni ei joonistata — ainult lühikesed, teel
 
 ## Andmed
 
-- `public/data/parking_polygons.geojson` — Overpass Tallinn `amenity=parking` polügoonid (~5.4k). Täide operaatori/tsooni värviga (opacity 0.35), 2px ääris; klõps avab bottom sheet’i (operaator, hind, tasuta minutid + Waze / Google / Apple).
-- `public/data/street_parking.geojson` — teeäärsed curb-jooned (street_side / lane → LineString; zoom ≥ 12). Roheline = tasuta, punane = tasuline, sinine = kellaga. Filtrid rakenduvad mõlemale kihile; otsingu Destination Interceptor suunab ≤400 m lähima parkla tsentroidile.
+- `public/data/estonia_parking_master.geojson` — ühtne Eesti OSM-stiilis parkimiskiht (~10.8k feature’t). Laadimisel jagatakse lot-polügoonideks ja teeäärseks (street_side / lane / LineString) kihiks (`src/lib/estoniaParkingMaster.ts`). Vanad `parking_polygons.geojson` / `street_parking.geojson` failid on asendatud.
+- Lotid: täide operaatori/tsooni värviga (opacity 0.35), 2px ääris; klõps avab bottom sheet’i (operaator, hind, tasuta minutid + Waze / Google / Apple).
+- Teeäär: curb-jooned (zoom ≥ 12). Roheline = tasuta, punane = tasuline, sinine = kellaga. Filtrid rakenduvad mõlemale kihile; otsingu Destination Interceptor suunab ≤400 m lähima parkla tsentroidile.
 
 ## Funktsioonid
 

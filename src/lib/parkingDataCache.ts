@@ -1,104 +1,81 @@
 /**
- * Cache-first parking GeoJSON loaders (stale-while-revalidate).
- * Production files are never mutated; results live in memory + optional IDB-ish
- * session markers so revisits / remounts paint immediately.
+ * Cache-first parking loaders backed by estonia_parking_master.geojson.
+ * Production master file is never mutated; results live in memory.
  */
 
 import {
-  loadParkingPolygons,
-  type PreciseParkingCollection,
-} from './preciseParkingPolygons'
-import {
-  loadStreetParking,
-  type StreetParkingCollection,
-} from './streetParkingLines'
+  getCachedMasterSplit,
+  loadEstoniaParkingMaster,
+  type MasterParkingSplit,
+} from './estoniaParkingMaster'
+import type { PreciseParkingCollection } from './preciseParkingPolygons'
+import type { StreetParkingCollection } from './streetParkingLines'
 
-const POLY_META_KEY = 'parkvibe_poly_cache_meta'
-const STREET_META_KEY = 'parkvibe_street_cache_meta'
+const META_KEY = 'parkvibe_master_cache_meta'
 
-type CacheMeta = { fetchedAt: number; featureCount: number }
+type CacheMeta = { fetchedAt: number; rawCount: number; lots: number; streets: number }
 
-let polyMemory: PreciseParkingCollection | null = null
-let streetMemory: StreetParkingCollection | null = null
-let polyInflight: Promise<PreciseParkingCollection> | null = null
-let streetInflight: Promise<StreetParkingCollection> | null = null
-
-function readMeta(key: string): CacheMeta | null {
+function writeMeta(meta: CacheMeta) {
   try {
-    const raw = sessionStorage.getItem(key)
+    sessionStorage.setItem(META_KEY, JSON.stringify(meta))
+  } catch {
+    /* ignore */
+  }
+}
+
+function readMeta(): CacheMeta | null {
+  try {
+    const raw = sessionStorage.getItem(META_KEY)
     return raw ? (JSON.parse(raw) as CacheMeta) : null
   } catch {
     return null
   }
 }
 
-function writeMeta(key: string, meta: CacheMeta) {
-  try {
-    sessionStorage.setItem(key, JSON.stringify(meta))
-  } catch {
-    /* ignore */
-  }
+async function ensureMaster(force = false): Promise<MasterParkingSplit> {
+  const split = await loadEstoniaParkingMaster(undefined, force)
+  writeMeta({
+    fetchedAt: Date.now(),
+    rawCount: split.rawCount,
+    lots: split.polygons.features.length,
+    streets: split.streets.features.length,
+  })
+  return split
 }
 
 export function getCachedPolygons(): PreciseParkingCollection | null {
-  return polyMemory
+  return getCachedMasterSplit()?.polygons ?? null
 }
 
 export function getCachedStreets(): StreetParkingCollection | null {
-  return streetMemory
+  return getCachedMasterSplit()?.streets ?? null
 }
 
 export async function loadParkingPolygonsCached(
   force = false,
 ): Promise<PreciseParkingCollection> {
-  if (!force && polyMemory) return polyMemory
-  if (!force && polyInflight) return polyInflight
-  polyInflight = loadParkingPolygons()
-    .then((fc) => {
-      polyMemory = fc
-      writeMeta(POLY_META_KEY, {
-        fetchedAt: Date.now(),
-        featureCount: fc.features.length,
-      })
-      return fc
-    })
-    .finally(() => {
-      polyInflight = null
-    })
-  return polyInflight
+  const split = await ensureMaster(force)
+  return split.polygons
 }
 
 export async function loadStreetParkingCached(
   force = false,
 ): Promise<StreetParkingCollection> {
-  if (!force && streetMemory) return streetMemory
-  if (!force && streetInflight) return streetInflight
-  streetInflight = loadStreetParking()
-    .then((fc) => {
-      streetMemory = fc
-      writeMeta(STREET_META_KEY, {
-        fetchedAt: Date.now(),
-        featureCount: fc.features.length,
-      })
-      return fc
-    })
-    .finally(() => {
-      streetInflight = null
-    })
-  return streetInflight
+  const split = await ensureMaster(force)
+  return split.streets
 }
 
-/** Prefetch both layers (call on app boot / hover admin). */
+/** Prefetch master layer (call on app boot / hover admin). */
 export function prefetchParkingLayers(): void {
-  void loadParkingPolygonsCached()
-  void loadStreetParkingCached()
+  void ensureMaster(false)
 }
 
 export function parkingCacheMeta() {
+  const mem = getCachedMasterSplit()
   return {
-    polygons: readMeta(POLY_META_KEY),
-    streets: readMeta(STREET_META_KEY),
-    hasPolyMemory: Boolean(polyMemory),
-    hasStreetMemory: Boolean(streetMemory),
+    master: readMeta(),
+    hasMemory: Boolean(mem),
+    lots: mem?.polygons.features.length ?? 0,
+    streets: mem?.streets.features.length ?? 0,
   }
 }
