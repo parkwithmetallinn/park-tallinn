@@ -1,135 +1,87 @@
 import type { DistrictZone } from '../types'
+import tallinnDistricts from './tallinn_districts.json'
+
+type DistrictFeature = {
+  id?: string
+  properties: {
+    id: string
+    name: string
+    color: string
+    kind: DistrictZone['kind']
+    summary: string
+    layerRole?: DistrictZone['layerRole']
+    labelRank?: number
+    fillSort?: number
+    labelLng?: number
+    labelLat?: number
+  }
+  geometry: {
+    type: 'Polygon' | 'MultiPolygon'
+    coordinates: number[][][] | number[][][][]
+  }
+}
+
+function ringArea(ring: number[][]): number {
+  let a = 0
+  for (let i = 0; i < ring.length - 1; i++) {
+    const [x1, y1] = ring[i]
+    const [x2, y2] = ring[i + 1]
+    a += x1 * y2 - x2 * y1
+  }
+  return Math.abs(a) / 2
+}
+
+/** Largest mainland outer ring as [lat, lng][] for PIP / synthetic sampling. */
+function outerRingLatLng(geometry: DistrictFeature['geometry']): [number, number][] {
+  const polys =
+    geometry.type === 'Polygon'
+      ? [geometry.coordinates as number[][][]]
+      : (geometry.coordinates as number[][][][])
+  const mainland = polys.filter((poly) => {
+    const ys = poly[0].map((p) => p[1])
+    return Math.max(...ys) < 59.52
+  })
+  const use = mainland.length ? mainland : polys
+  let best = use[0][0]
+  let bestA = 0
+  for (const poly of use) {
+    const a = ringArea(poly[0])
+    if (a > bestA) {
+      bestA = a
+      best = poly[0]
+    }
+  }
+  const open =
+    best.length > 1 &&
+    best[0][0] === best[best.length - 1][0] &&
+    best[0][1] === best[best.length - 1][1]
+      ? best.slice(0, -1)
+      : best
+  return open.map(([lng, lat]) => [lat, lng] as [number, number])
+}
+
+const features = (tallinnDistricts as unknown as { features: DistrictFeature[] })
+  .features
 
 /**
- * Linnaosa / piirkonna tsoonid — välja zoomides kuvatakse polügoonidena
- * koos kohalike parkimiskohtade arvuga (arvutatakse dünaamiliselt).
- * Koordinaadid: [lat, lng] nagu PaidZone.
+ * Tallinn linnaosad + paid sub-zones (Vanalinn, Südalinn).
+ * Geometry comes from official Tallinn GIS borders (coastline-clipped, non-overlapping
+ * districts) — see `tallinn_districts.geojson`.
  */
-export const DISTRICT_ZONES: DistrictZone[] = [
-  {
-    id: 'd-vanalinn',
-    name: 'Vanalinn',
-    color: '#B45309',
-    kind: 'paid',
-    summary: 'Vanalinna tasuline tsoon · kõrgeim tariif',
-    coords: [
-      [59.4415, 24.739],
-      [59.442, 24.752],
-      [59.4355, 24.754],
-      [59.4345, 24.742],
-      [59.438, 24.738],
-    ],
-  },
-  {
-    id: 'd-kesklinn',
-    name: 'Kesklinn',
-    color: '#0F766E',
-    kind: 'mixed',
-    summary: 'Tasuline tsoon · öösel & pühapäeval tasuta',
-    coords: [
-      [59.445, 24.73],
-      [59.448, 24.77],
-      [59.428, 24.785],
-      [59.418, 24.75],
-      [59.425, 24.72],
-    ],
-  },
-  {
-    id: 'd-pohja',
-    name: 'Põhja-Tallinn',
-    color: '#0B6E4F',
-    kind: 'free',
-    summary: 'Enamik tänavaid tasuta väljaspool tsooni',
-    coords: [
-      [59.46, 24.66],
-      [59.462, 24.73],
-      [59.448, 24.74],
-      [59.44, 24.7],
-      [59.445, 24.65],
-    ],
-  },
-  {
-    id: 'd-mustamae',
-    name: 'Mustamäe',
-    color: '#1D4E89',
-    kind: 'free',
-    summary: 'Elamupiirkonna tasuta tänavad & parklad',
-    coords: [
-      [59.415, 24.64],
-      [59.42, 24.7],
-      [59.395, 24.71],
-      [59.39, 24.65],
-      [59.4, 24.63],
-    ],
-  },
-  {
-    id: 'd-lasnamae',
-    name: 'Lasnamäe',
-    color: '#0369A1',
-    kind: 'free',
-    summary: 'Laialdane tasuta tänavaparkimine',
-    coords: [
-      [59.45, 24.78],
-      [59.452, 24.88],
-      [59.42, 24.89],
-      [59.415, 24.79],
-      [59.43, 24.77],
-    ],
-  },
-  {
-    id: 'd-kristiine',
-    name: 'Kristiine',
-    color: '#4D7C0F',
-    kind: 'free',
-    summary: 'Tasuta tänavad tsooni piiri taga',
-    coords: [
-      [59.435, 24.69],
-      [59.435, 24.73],
-      [59.41, 24.74],
-      [59.405, 24.69],
-      [59.42, 24.68],
-    ],
-  },
-  {
-    id: 'd-haabersti',
-    name: 'Haabersti / Õismäe',
-    color: '#0E7490',
-    kind: 'free',
-    summary: 'Tasuta elamutänavad · P&R lähedal',
-    coords: [
-      [59.44, 24.58],
-      [59.44, 24.66],
-      [59.405, 24.67],
-      [59.4, 24.6],
-      [59.42, 24.57],
-    ],
-  },
-  {
-    id: 'd-nomme',
-    name: 'Nõmme',
-    color: '#15803D',
-    kind: 'free',
-    summary: 'Peaaegu kõik tänavad tasuta',
-    coords: [
-      [59.4, 24.64],
-      [59.4, 24.72],
-      [59.36, 24.72],
-      [59.355, 24.6],
-      [59.38, 24.59],
-    ],
-  },
-  {
-    id: 'd-pirita',
-    name: 'Pirita',
-    color: '#0284C7',
-    kind: 'mixed',
-    summary: 'Ranna tsoon tasuline · elamud tasuta',
-    coords: [
-      [59.48, 24.8],
-      [59.485, 24.87],
-      [59.455, 24.86],
-      [59.45, 24.79],
-      [59.465, 24.78],
-    ],
-  },
-]
+export const DISTRICT_ZONES: DistrictZone[] = features.map((f) => {
+  const p = f.properties
+  return {
+    id: p.id,
+    name: p.name,
+    color: p.color,
+    kind: p.kind,
+    summary: p.summary,
+    coords: outerRingLatLng(f.geometry),
+    layerRole: p.layerRole ?? 'district',
+    labelRank: p.labelRank,
+    fillSort: p.fillSort,
+    labelLng: p.labelLng,
+    labelLat: p.labelLat,
+    geometry: f.geometry,
+  }
+})

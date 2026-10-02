@@ -1,5 +1,8 @@
 import type { Map as MapLibreMapType } from 'maplibre-gl'
-import { districtsToGeoJSON } from '../lib/districtsGeoJSON'
+import {
+  districtLabelsToGeoJSON,
+  districtsToGeoJSON,
+} from '../lib/districtsGeoJSON'
 import {
   PRECISE_FILL_LAYER,
   PRECISE_LABEL_LAYER,
@@ -33,6 +36,7 @@ import { ZOOM } from './zoom'
 
 const ROUTE_SOURCE = 'nav-route'
 export const DISTRICT_SOURCE = 'district-zones'
+export const DISTRICT_LABEL_SOURCE = 'district-zone-labels'
 export const DISTRICT_FILL_LAYER = 'district-zones-fill'
 export const DISTRICT_OUTLINE_LAYER = 'district-zones-outline'
 export const DISTRICT_LABEL_LAYER = 'district-zones-label'
@@ -156,10 +160,15 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
   ensureUndergroundHatch(map)
 
   // ——— District badges (city macro, zoom < 13) ———
+  // Precise Tallinn GIS borders; sub-zones (Vanalinn, Südalinn) sort above linnaosad.
   if (!map.getSource(DISTRICT_SOURCE)) {
     map.addSource(DISTRICT_SOURCE, {
       type: 'geojson',
       data: districtsToGeoJSON(),
+    })
+    map.addSource(DISTRICT_LABEL_SOURCE, {
+      type: 'geojson',
+      data: districtLabelsToGeoJSON(),
     })
     map.addLayer({
       id: DISTRICT_FILL_LAYER,
@@ -169,10 +178,18 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       layout: { visibility: 'visible' },
       paint: {
         'fill-color': ['get', 'color'],
-        'fill-opacity': 0.16,
-      },
+        'fill-opacity': [
+          'match',
+          ['get', 'layerRole'],
+          'subzone',
+          0.28,
+          0.14,
+        ],
+        // MapLibre paints sub-zones above linnaosad when fillSort is higher
+        ...({ 'fill-sort-key': ['get', 'fillSort'] } as Record<string, unknown>),
+      } as Record<string, unknown>,
     })
-    // Soft outline only — no solid debug-looking diagonals across the city
+    // Soft outline only — shared municipal borders, no rough rectangles
     map.addLayer({
       id: DISTRICT_OUTLINE_LAYER,
       type: 'line',
@@ -185,14 +202,27 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': 1,
-        'line-opacity': 0.28,
+        'line-width': [
+          'match',
+          ['get', 'layerRole'],
+          'subzone',
+          1.6,
+          1.1,
+        ],
+        'line-opacity': [
+          'match',
+          ['get', 'layerRole'],
+          'subzone',
+          0.55,
+          0.32,
+        ],
       },
     })
+    // Labels use explicit centroid Point features (not bbox / polygon defaults)
     map.addLayer({
       id: DISTRICT_LABEL_LAYER,
       type: 'symbol',
-      source: DISTRICT_SOURCE,
+      source: DISTRICT_LABEL_SOURCE,
       maxzoom: ZOOM.lotMin,
       layout: {
         'text-field': ['get', 'name'],
@@ -202,14 +232,15 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
         'text-letter-spacing': 0.02,
         'symbol-placement': 'point',
         'symbol-sort-key': ['get', 'labelRank'],
-        'text-padding': 4,
+        'text-padding': 6,
         'text-optional': true,
         ...noOverlapSymbol,
       },
       paint: {
         'text-color': ['get', 'color'],
-        'text-halo-color': '#F8FAFC',
-        'text-halo-width': 2.2,
+        'text-halo-color': 'rgba(248, 250, 252, 0.92)',
+        'text-halo-width': 2.6,
+        'text-halo-blur': 0.4,
       },
     })
   }

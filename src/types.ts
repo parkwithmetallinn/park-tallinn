@@ -108,7 +108,22 @@ export interface DistrictZone {
   color: string
   kind: 'free' | 'mixed' | 'paid'
   summary: string
+  /** Outer ring as [lat, lng][] for point-in-polygon helpers */
   coords: [number, number][]
+  /** Municipal district vs paid/core sub-zone overlay */
+  layerRole?: 'district' | 'subzone'
+  /** Lower draws/labels first; sub-zones use smaller ranks so they win collisions */
+  labelRank?: number
+  /** MapLibre fill-sort-key — sub-zones paint above districts */
+  fillSort?: number
+  /** Precomputed visual label anchor (lng / lat) */
+  labelLng?: number
+  labelLat?: number
+  /** Precise Polygon / MultiPolygon in [lng, lat] GeoJSON order */
+  geometry?: {
+    type: 'Polygon' | 'MultiPolygon'
+    coordinates: number[][][] | number[][][][]
+  }
 }
 
 export type FilterId = 'all' | ParkingLayerKey
