@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="et">
+<html lang="et" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -10,14 +10,13 @@
       content="Tallinna tasuta ja kellaajaga parkimine — avalikud parklad, tänavaäärsed kohad, Pargi ja Reisi."
     />
     <script>
+      /* Must match THEME_STORAGE_KEY / LEGACY in src/lib/theme.ts */
       try {
-        var t = localStorage.getItem('parkvibe_theme')
-        if (t !== 'light' && t !== 'dark') {
-          t = window.matchMedia('(prefers-color-scheme: dark)').matches
-            ? 'dark'
-            : 'light'
-        }
+        localStorage.removeItem('parkvibe_theme')
+        var t = localStorage.getItem('parktallinn:theme:v2')
+        if (t !== 'light' && t !== 'dark') t = 'light'
         document.documentElement.classList.toggle('map-dark', t === 'dark')
+        document.documentElement.dataset.theme = t
         document.documentElement.style.colorScheme = t
         var m = document.querySelector('meta[name="theme-color"]')
         if (m) m.setAttribute('content', t === 'dark' ? '#12161c' : '#F2F4F7')

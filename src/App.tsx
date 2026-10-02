@@ -372,7 +372,6 @@ export default function App() {
 
   useEffect(() => {
     applyDocumentTheme(theme)
-    persistTheme(theme)
   }, [theme])
 
   const panel = dark ? glassDark : glass
@@ -471,7 +470,13 @@ export default function App() {
               </button>
               <button
                 type="button"
-                onClick={() => setTheme((t) => toggleTheme(t))}
+                onClick={() => {
+                  setTheme((t) => {
+                    const next = toggleTheme(t)
+                    persistTheme(next)
+                    return next
+                  })
+                }}
                 className={`rounded-full p-2.5 ${chip}`}
                 title={dark ? 'Hele režiim' : 'Tume režiim'}
                 aria-label={dark ? 'Lülita hele režiim' : 'Lülita tume režiim'}

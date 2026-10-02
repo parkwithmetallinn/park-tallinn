@@ -1,34 +1,54 @@
 export type ThemeMode = 'light' | 'dark'
 
-const STORAGE_KEY = 'parkvibe_theme'
+/**
+ * Versioned theme preference. Only set when the user taps the toggle.
+ * Keep in sync with the inline boot script in index.html.
+ */
+export const THEME_STORAGE_KEY = 'parktallinn:theme:v2'
 
-function systemPrefersDark(): boolean {
-  if (typeof window === 'undefined' || !window.matchMedia) return false
-  return window.matchMedia('(prefers-color-scheme: dark)').matches
+/** Pre-v2 keys — cleared so auto-dark users reset to light once. */
+const LEGACY_THEME_KEYS = ['parkvibe_theme'] as const
+
+function clearLegacyThemeKeys(): void {
+  try {
+    for (const key of LEGACY_THEME_KEYS) {
+      localStorage.removeItem(key)
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
-/** Resolve initial theme: saved override → system preference → light. */
+/**
+ * Initial theme: explicit v2 preference only → otherwise always light.
+ * Does NOT follow prefers-color-scheme.
+ */
 export function getInitialTheme(): ThemeMode {
+  clearLegacyThemeKeys()
   try {
-    const saved = localStorage.getItem(STORAGE_KEY)
+    const saved = localStorage.getItem(THEME_STORAGE_KEY)
     if (saved === 'light' || saved === 'dark') return saved
   } catch {
     /* ignore */
   }
-  return systemPrefersDark() ? 'dark' : 'light'
+  return 'light'
 }
 
+/** Persist only after an explicit user toggle. */
 export function persistTheme(mode: ThemeMode) {
+  clearLegacyThemeKeys()
   try {
-    localStorage.setItem(STORAGE_KEY, mode)
+    localStorage.setItem(THEME_STORAGE_KEY, mode)
   } catch {
     /* ignore */
   }
 }
 
+/** Single DOM applicator: html class, color-scheme, theme-color meta. */
 export function applyDocumentTheme(mode: ThemeMode) {
   const root = document.documentElement
   root.classList.toggle('map-dark', mode === 'dark')
+  root.dataset.theme = mode
   root.style.colorScheme = mode
   const meta = document.querySelector('meta[name="theme-color"]')
   if (meta) {
