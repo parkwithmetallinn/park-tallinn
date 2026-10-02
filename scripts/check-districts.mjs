@@ -232,5 +232,49 @@ if (!pohja) {
   }
 }
 
+// --- Haabersti coastal coverage (must include Kakumäe / Rocca / Õismäe) ---
+console.log('\n[haabersti coastal]')
+const haabersti = fc.features.find((f) => f.properties.name_et === 'Haabersti')
+if (!haabersti) {
+  fail('Haabersti feature missing')
+} else {
+  const haKm2 = area(haabersti) / 1e6
+  if (haKm2 > 21.5 && haKm2 < 23.5) ok(`Haabersti area ${haKm2.toFixed(3)} km²`)
+  else fail(`Haabersti area unexpected: ${haKm2.toFixed(3)} km² (expect ~22.2)`)
+  const haBbox = bbox(haabersti)
+  if (haBbox[3] >= 59.46) ok(`Haabersti reaches north coast (maxLat=${haBbox[3].toFixed(5)})`)
+  else fail(`Haabersti north bbox too low: ${haBbox[3]} (ocean erase remnant?)`)
+  if (haabersti.geometry.type === 'MultiPolygon' || haabersti.geometry.type === 'Polygon') {
+    ok(`Haabersti geometry ${haabersti.geometry.type}`)
+  }
+  const haIn = [
+    { name: 'Õismäe', lng: 24.655, lat: 59.416 },
+    { name: 'Veskimetsa', lng: 24.66, lat: 59.425 },
+    { name: 'Rocca al Mare', lng: 24.645, lat: 59.435 },
+    { name: 'Kakumäe', lng: 24.58, lat: 59.445 },
+    { name: 'Harku lake', lng: 24.62, lat: 59.405 },
+  ]
+  for (const r of haIn) {
+    if (booleanPointInPolygon(point([r.lng, r.lat]), haabersti)) {
+      ok(`${r.name} [${r.lng}, ${r.lat}] inside Haabersti`)
+    } else {
+      fail(`${r.name} [${r.lng}, ${r.lat}] NOT inside Haabersti`)
+    }
+  }
+  // No significant overlap with land neighbors
+  for (const name of ['Põhja-Tallinn', 'Kristiine', 'Mustamäe', 'Nõmme']) {
+    const n = fc.features.find((f) => f.properties.name_et === name)
+    if (!n) continue
+    try {
+      const inter = intersect(featureCollection([haabersti, n]))
+      const m2 = inter ? area(inter) : 0
+      if (m2 > 50) fail(`Haabersti ∩ ${name} = ${m2.toFixed(1)} m²`)
+      else ok(`Haabersti ∩ ${name} = ${m2.toFixed(1)} m²`)
+    } catch (e) {
+      fail(`Haabersti ∩ ${name}: ${e.message}`)
+    }
+  }
+}
+
 console.log('\n' + (failed ? `FAILED (${failed} errors)` : 'ALL CHECKS PASSED'))
 process.exit(failed ? 1 : 0)
