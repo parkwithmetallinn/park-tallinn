@@ -65,7 +65,9 @@ import {
 } from './lib/parkingClassification'
 import {
   fetchRoute,
+  fetchWalkingRoute,
   formatDuration,
+  type NavRouteBundle,
   type RouteResult,
 } from './lib/routing'
 import {
@@ -160,9 +162,7 @@ export default function App() {
   const routeAbort = useRef<AbortController | null>(null)
   const routeRunId = useRef(0)
   const gpsRouteToastShown = useRef(false)
-  const [routeData, setRouteData] = useState<
-    (RouteResult & { destination: [number, number]; label: string }) | null
-  >(null)
+  const [routeData, setRouteData] = useState<NavRouteBundle | null>(null)
   const [routeSummaryReady, setRouteSummaryReady] = useState(false)
   const [, setRouteLoading] = useState(false)
   const [, setRouteError] = useState<string | null>(null)
@@ -619,6 +619,7 @@ export default function App() {
 
     setSearchSheetOpen(false)
     setSelected(null)
+    // House / address stays the fixed final destination (search pin)
     setSearchLocation(loc)
     setQuery(loc.name)
     setAlternatives([])
@@ -627,9 +628,15 @@ export default function App() {
     // Destination Interceptor — nearest roadside / lot parking within 400 m
     const nearby = parkingIndex.queryNearbyParking(loc.lat, loc.lng, 400)
     const destSpot = opts?.preferSpot ?? nearby?.spot ?? null
-    const destination: [number, number] = destSpot
+    const house: [number, number] = [loc.lat, loc.lng]
+    // Drive to parking when found; otherwise drive to the house itself
+    const parking: [number, number] = destSpot
       ? [destSpot.lat, destSpot.lng]
-      : [loc.lat, loc.lng]
+      : house
+    const sameAsHouse =
+      !destSpot ||
+      (Math.abs(parking[0] - house[0]) < 1e-6 &&
+        Math.abs(parking[1] - house[1]) < 1e-6)
     const label =
       destSpot?.name || loc.name || loc.label || 'Sihtkoht'
 
@@ -648,14 +655,14 @@ export default function App() {
       distanceMeters(
         userLocation[0],
         userLocation[1],
-        destination[0],
-        destination[1],
+        parking[0],
+        parking[1],
       ) < 40
 
     if (nearUser) {
-      // Too close for a driving route — only zoom into the destination
+      // Too close for a driving route — only zoom into the house
       setFlyMode('fly')
-      setFlyTarget(destination)
+      setFlyTarget(house)
       setFlyZoom(17)
       setFlyKey((k) => k + 1)
       searchSheetTimer.current = window.setTimeout(() => {
@@ -681,7 +688,7 @@ export default function App() {
     setRouteError(null)
     const timeout = window.setTimeout(() => ac.abort(), 8000)
 
-    const waitForRoute = fetchRoute(userLocation, destination, ac.signal)
+    const waitForRoute = fetchRoute(userLocation, parking, ac.signal)
       .then((result) => {
         if (ac.signal.aborted || routeRunId.current !== runId) return null
         return result
@@ -707,14 +714,35 @@ export default function App() {
         }
       })
 
+    const waitForWalkRoute: Promise<RouteResult | null> = sameAsHouse
+      ? Promise.resolve(null)
+      : fetchWalkingRoute(parking, house, ac.signal)
+          .then((result) => {
+            if (ac.signal.aborted || routeRunId.current !== runId) return null
+            return result
+          })
+          .catch((e) => {
+            if ((e as Error).name === 'AbortError') return null
+            return null
+          })
+
     void mapApiRef.current
       ?.playRouteIntro({
-        destination,
+        house,
+        parking,
+        origin: userLocation,
         waitForRoute,
+        waitForWalkRoute,
         routeWaitMs: 3000,
-        onBeforeFitBounds: (result) => {
+        onBeforeFitBounds: (drive, walk) => {
           if (routeRunId.current !== runId) return
-          setRouteData({ ...result, destination, label })
+          setRouteData({
+            drive,
+            walk,
+            parking,
+            house,
+            label,
+          })
           openInfoSheet()
         },
         onFailed: () => {
@@ -765,7 +793,14 @@ export default function App() {
       setSelected(spot)
       setIsDropdownOpen(false)
 
-      const destination: [number, number] = [spot.lat, spot.lng]
+      const parking: [number, number] = [spot.lat, spot.lng]
+      // Keep original house destination when available
+      const house: [number, number] = searchLocation
+        ? [searchLocation.lat, searchLocation.lng]
+        : parking
+      const sameAsHouse =
+        Math.abs(parking[0] - house[0]) < 1e-6 &&
+        Math.abs(parking[1] - house[1]) < 1e-6
       const label = spot.name
 
       if (opts?.toastTitle) {
@@ -776,13 +811,13 @@ export default function App() {
         distanceMeters(
           userLocation[0],
           userLocation[1],
-          destination[0],
-          destination[1],
+          parking[0],
+          parking[1],
         ) < 40
 
       if (nearUser) {
         setFlyMode('fly')
-        setFlyTarget(destination)
+        setFlyTarget(house)
         setFlyZoom(17)
         setFlyKey((k) => k + 1)
         return
@@ -792,7 +827,7 @@ export default function App() {
       routeAbort.current = ac
       setRouteLoading(true)
       const timeout = window.setTimeout(() => ac.abort(), 8000)
-      const waitForRoute = fetchRoute(userLocation, destination, ac.signal)
+      const waitForRoute = fetchRoute(userLocation, parking, ac.signal)
         .then((result) => {
           if (ac.signal.aborted || routeRunId.current !== runId) return null
           return result
@@ -815,19 +850,40 @@ export default function App() {
           }
         })
 
+      const waitForWalkRoute: Promise<RouteResult | null> = sameAsHouse
+        ? Promise.resolve(null)
+        : fetchWalkingRoute(parking, house, ac.signal)
+            .then((result) => {
+              if (ac.signal.aborted || routeRunId.current !== runId) return null
+              return result
+            })
+            .catch((e) => {
+              if ((e as Error).name === 'AbortError') return null
+              return null
+            })
+
       void mapApiRef.current
         ?.playRouteIntro({
-          destination,
+          house,
+          parking,
+          origin: userLocation,
           waitForRoute,
+          waitForWalkRoute,
           routeWaitMs: 3000,
-          onBeforeFitBounds: (result) => {
+          onBeforeFitBounds: (drive, walk) => {
             if (routeRunId.current !== runId) return
-            setRouteData({ ...result, destination, label })
+            setRouteData({
+              drive,
+              walk,
+              parking,
+              house,
+              label,
+            })
           },
           onFailed: () => {
             if (routeRunId.current !== runId) return
             setFlyMode('fly')
-            setFlyTarget(destination)
+            setFlyTarget(house)
             setFlyZoom(16.5)
             setFlyKey((k) => k + 1)
           },
@@ -837,7 +893,7 @@ export default function App() {
           if (status === 'fitted') setRouteSummaryReady(true)
         })
     },
-    [userLocation, setToast],
+    [userLocation, searchLocation, setToast],
   )
 
   const runFindAlternatives = useCallback(
@@ -973,7 +1029,8 @@ export default function App() {
                 : null
             }
             onSearchPinClick={openSearchSheet}
-            route={routeData}
+            route={routeData?.drive ?? null}
+            walkRoute={routeData?.walk ?? null}
             navigating={Boolean(routeData)}
             onNavigate={openSheet}
             onBackgroundClick={dismissMapOverlays}
@@ -1121,7 +1178,7 @@ export default function App() {
           style={{ top: 'calc(env(safe-area-inset-top) + 6.25rem)' }}
         >
           <div
-            className={`pointer-events-auto flex w-full max-w-xs animate-fade-in items-center gap-3 px-3 py-2.5 ${panel}`}
+            className={`pointer-events-auto flex w-full max-w-sm animate-fade-in items-center gap-3 px-3 py-2.5 ${panel}`}
             role="status"
             aria-live="polite"
           >
@@ -1129,10 +1186,27 @@ export default function App() {
               <p className={`truncate text-[13px] font-semibold ${text}`}>
                 {routeData.label}
               </p>
-              <p className={`mt-0.5 text-[12px] font-medium ${muted}`}>
-                {formatDistance(routeData.distanceMeters)}
-                {' · '}
-                {formatDuration(routeData.durationSeconds)}
+              <p className={`mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] font-medium ${muted}`}>
+                <span className="inline-flex items-center gap-1">
+                  <span
+                    className="inline-block h-1.5 w-3 rounded-full bg-[#007AFF]"
+                    aria-hidden
+                  />
+                  Sõida {formatDistance(routeData.drive.distanceMeters)}
+                  {' · '}
+                  {formatDuration(routeData.drive.durationSeconds)}
+                </span>
+                {routeData.walk ? (
+                  <span className="inline-flex items-center gap-1">
+                    <span
+                      className="inline-block h-1.5 w-3 rounded-full border border-dashed border-[#059669] bg-[#059669]/30"
+                      aria-hidden
+                    />
+                    Jalgsi {formatDistance(routeData.walk.distanceMeters)}
+                    {' · '}
+                    {formatDuration(routeData.walk.durationSeconds)}
+                  </span>
+                ) : null}
               </p>
             </div>
             <button

@@ -1,15 +1,32 @@
 /**
- * OSRM driving routes via same-origin `/api/osrm` proxy (Vite / Vercel).
+ * OSRM routes via same-origin `/api/osrm` proxy (Vite / Vercel).
  * App coords are [lat, lng]; OSRM wants lng,lat in the URL and GeoJSON.
  */
 
 export type LonLat = [number, number]
+
+export type RouteProfile = 'driving' | 'foot'
 
 /** App-facing route geometry — [lat, lng] for drawing helpers / camera. */
 export type RouteResult = {
   coords: [number, number][]
   distanceMeters: number
   durationSeconds: number
+  profile: RouteProfile
+}
+
+/** Drive to parking + optional walk from parking to the house destination. */
+export type NavRouteBundle = {
+  /** Driving leg: user → parking */
+  drive: RouteResult
+  /** Walking leg: parking → house (null when parking is the destination) */
+  walk: RouteResult | null
+  /** Selected parking [lat, lng] */
+  parking: [number, number]
+  /** Final destination house / address [lat, lng] */
+  house: [number, number]
+  /** Label for the parking target */
+  label: string
 }
 
 /** @deprecated Prefer RouteResult — kept for any leftover call sites. */
@@ -37,8 +54,12 @@ function round5(n: number) {
   return Math.round(n * 1e5) / 1e5
 }
 
-function cacheKey(from: [number, number], to: [number, number]) {
-  return `${round5(from[0])},${round5(from[1])}->${round5(to[0])},${round5(to[1])}`
+function cacheKey(
+  from: [number, number],
+  to: [number, number],
+  profile: RouteProfile,
+) {
+  return `${profile}:${round5(from[0])},${round5(from[1])}->${round5(to[0])},${round5(to[1])}`
 }
 
 /** Initial bearing from A → B in degrees (0 = north, clockwise). */
@@ -79,21 +100,23 @@ export function routeCoordsToLngLat(coords: [number, number][]): LonLat[] {
 }
 
 /**
- * Fetch a driving route. Throws Estonian Error messages (except AbortError).
+ * Fetch an OSRM route for a given profile.
+ * Throws Estonian Error messages (except AbortError).
  */
-export async function fetchRoute(
+export async function fetchRouteProfile(
   from: [number, number],
   to: [number, number],
+  profile: RouteProfile,
   signal?: AbortSignal,
 ): Promise<RouteResult> {
-  const key = cacheKey(from, to)
+  const key = cacheKey(from, to, profile)
   const hit = cache.get(key)
   if (hit) return hit
 
   const [fromLat, fromLng] = from
   const [toLat, toLng] = to
   const path =
-    `/api/osrm/route/v1/driving/` +
+    `/api/osrm/route/v1/${profile}/` +
     `${fromLng},${fromLat};${toLng},${toLat}` +
     `?overview=full&geometries=geojson&steps=false`
 
@@ -136,9 +159,56 @@ export async function fetchRoute(
     coords: lngLat.map(([lng, lat]) => [lat, lng] as [number, number]),
     distanceMeters: route.distance,
     durationSeconds: route.duration,
+    profile,
   }
   cache.set(key, result)
   return result
+}
+
+/** Driving route (user → parking / destination). */
+export async function fetchRoute(
+  from: [number, number],
+  to: [number, number],
+  signal?: AbortSignal,
+): Promise<RouteResult> {
+  return fetchRouteProfile(from, to, 'driving', signal)
+}
+
+/** Walking route (parking → house). Falls back to a straight segment if OSRM fails. */
+export async function fetchWalkingRoute(
+  from: [number, number],
+  to: [number, number],
+  signal?: AbortSignal,
+): Promise<RouteResult> {
+  try {
+    return await fetchRouteProfile(from, to, 'foot', signal)
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw e
+    // Straight-line fallback so the walk leg still renders
+    const distM = haversineMeters(from[0], from[1], to[0], to[1])
+    return {
+      coords: [from, to],
+      distanceMeters: distM,
+      durationSeconds: Math.max(60, Math.round((distM / 1.4) * 1)), // ~1.4 m/s walk
+      profile: 'foot',
+    }
+  }
+}
+
+function haversineMeters(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+): number {
+  const R = 6371000
+  const toRad = (d: number) => (d * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)))
 }
 
 /** Legacy wrapper — returns null on failure (older call sites). */

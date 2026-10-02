@@ -62,6 +62,9 @@ import {
   DISTRICT_SUBZONE_FILL_LAYER,
   ensureParkingOverlaySources,
   ROUTE_SOURCE,
+  WALK_ROUTE_CASING,
+  WALK_ROUTE_LINE,
+  WALK_ROUTE_SOURCE,
   setCityDistrictOverlays,
   setDistrictDebugVisible,
   setDistrictHover,
@@ -176,14 +179,24 @@ function delay(ms: number, signal?: { cancelled: boolean }): Promise<void> {
 /** Imperative camera API for the auto-route intro (avoids fighting flyTarget). */
 export type MapViewHandle = {
   /**
-   * Fly to destination → pause → wait for route → fitBounds.
-   * Opens the info sheet via onBeforeFitBounds at the start of step 2.
+   * Zoom out from the house → pause → zoom in to parking + house.
+   * Driving route is user → parking; walking route is parking → house.
+   * Opens the info sheet via onBeforeFitBounds before the zoom-in.
    */
   playRouteIntro: (args: {
-    destination: [number, number]
+    /** Final destination (house / address) [lat, lng] */
+    house: [number, number]
+    /** Selected parking [lat, lng] — drive target */
+    parking: [number, number]
+    /** User start [lat, lng] — included in final fit when nearby */
+    origin?: [number, number]
     waitForRoute: Promise<RouteResult | null>
+    waitForWalkRoute?: Promise<RouteResult | null>
     routeWaitMs?: number
-    onBeforeFitBounds?: (result: RouteResult) => void
+    onBeforeFitBounds?: (
+      drive: RouteResult,
+      walk: RouteResult | null,
+    ) => void
     onFailed?: () => void
   }) => Promise<'fitted' | 'near' | 'failed' | 'cancelled'>
   cancelRouteIntro: () => void
@@ -347,7 +360,10 @@ export const MapView = forwardRef<
     /** Dropped search / address pin */
     searchPin?: { lat: number; lng: number } | null
     onSearchPinClick?: () => void
+    /** Driving route (user → parking) */
     route: RouteResult | null
+    /** Walking route (parking → house), dashed on the map */
+    walkRoute?: RouteResult | null
     navigating: boolean
     onNavigate: (spot: ParkingSpot) => void
     /** Empty map tap — close sheets / search popup. */
@@ -384,6 +400,7 @@ export const MapView = forwardRef<
     searchPin = null,
     onSearchPinClick,
     route,
+    walkRoute = null,
     navigating,
     onNavigate,
     onBackgroundClick,
@@ -407,6 +424,7 @@ export const MapView = forwardRef<
   const routeAnimatingRef = useRef(false)
   const routeIntroCancelRef = useRef({ cancelled: false })
   const routeDrawRafRef = useRef(0)
+  const walkRouteRef = useRef(walkRoute)
   const onNavigateRef = useRef(onNavigate)
   const onBackgroundClickRef = useRef(onBackgroundClick)
   const onSearchPinClickRef = useRef(onSearchPinClick)
@@ -446,6 +464,7 @@ export const MapView = forwardRef<
   infoPanelOpenRef.current = infoPanelOpen
   cityIdRef.current = cityId
   routeRef.current = route
+  walkRouteRef.current = walkRoute
   navigatingRef.current = navigating
   suppressedRef.current = new Set(
     suppressedFeatureIds instanceof Set
@@ -641,6 +660,27 @@ export const MapView = forwardRef<
                 geometry: {
                   type: 'LineString',
                   coordinates: routeCoordsToLngLat(r.coords),
+                },
+              },
+            ],
+          })
+        }
+      }
+      const walkSrc = map.getSource(WALK_ROUTE_SOURCE) as GeoJSONSource | undefined
+      if (walkSrc) {
+        const w = walkRouteRef.current
+        if (!w || !navigatingRef.current || w.coords.length < 2) {
+          walkSrc.setData({ type: 'FeatureCollection', features: [] })
+        } else {
+          walkSrc.setData({
+            type: 'FeatureCollection',
+            features: [
+              {
+                type: 'Feature',
+                properties: { kind: 'walk' },
+                geometry: {
+                  type: 'LineString',
+                  coordinates: routeCoordsToLngLat(w.coords),
                 },
               },
             ],
@@ -1199,6 +1239,7 @@ export const MapView = forwardRef<
     const map = mapRef.current
     if (!map || !ready) return
     const source = map.getSource(ROUTE_SOURCE) as GeoJSONSource | undefined
+    const walkSource = map.getSource(WALK_ROUTE_SOURCE) as GeoJSONSource | undefined
     if (!source) return
 
     if (routeDrawRafRef.current) {
@@ -1206,13 +1247,21 @@ export const MapView = forwardRef<
       routeDrawRafRef.current = 0
     }
 
+    const empty = { type: 'FeatureCollection' as const, features: [] as never[] }
+
     if (!route || !navigating) {
-      source.setData({ type: 'FeatureCollection', features: [] })
+      source.setData(empty)
+      walkSource?.setData(empty)
       return
     }
 
     const full = routeCoordsToLngLat(route.coords)
-    const setSlice = (coords: [number, number][]) => {
+    const walkFull =
+      walkRoute && walkRoute.coords.length >= 2
+        ? routeCoordsToLngLat(walkRoute.coords)
+        : null
+
+    const setDriveSlice = (coords: [number, number][]) => {
       source.setData({
         type: 'FeatureCollection',
         features:
@@ -1220,11 +1269,29 @@ export const MapView = forwardRef<
             ? [
                 {
                   type: 'Feature',
-                  properties: {},
+                  properties: { kind: 'drive' },
                   geometry: { type: 'LineString', coordinates: coords },
                 },
               ]
             : [],
+      })
+    }
+
+    const setWalkFull = () => {
+      if (!walkSource) return
+      if (!walkFull) {
+        walkSource.setData(empty)
+        return
+      }
+      walkSource.setData({
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            properties: { kind: 'walk' },
+            geometry: { type: 'LineString', coordinates: walkFull },
+          },
+        ],
       })
     }
 
@@ -1240,13 +1307,21 @@ export const MapView = forwardRef<
           map.moveLayer('nav-route-outline', beforeId)
         }
         if (map.getLayer('nav-route-line')) map.moveLayer('nav-route-line', beforeId)
+        if (map.getLayer(WALK_ROUTE_CASING)) map.moveLayer(WALK_ROUTE_CASING, beforeId)
+        if (map.getLayer(WALK_ROUTE_LINE)) map.moveLayer(WALK_ROUTE_LINE, beforeId)
+        if (map.getLayer('nav-walk-route-label')) {
+          map.moveLayer('nav-walk-route-label', beforeId)
+        }
       }
     } catch {
       /* ok */
     }
 
+    // Show walk path immediately (short leg); animate the drive line
+    setWalkFull()
+
     if (prefersReducedMotion() || full.length < 2) {
-      setSlice(full)
+      setDriveSlice(full)
       return
     }
 
@@ -1256,7 +1331,7 @@ export const MapView = forwardRef<
       const t = Math.min(1, (now - started) / duration)
       const eased = 1 - (1 - t) ** 3
       const n = Math.max(2, Math.floor(1 + eased * (full.length - 1)))
-      setSlice(full.slice(0, n) as [number, number][])
+      setDriveSlice(full.slice(0, n) as [number, number][])
       if (t < 1) {
         routeDrawRafRef.current = requestAnimationFrame(tick)
       } else {
@@ -1271,7 +1346,7 @@ export const MapView = forwardRef<
         routeDrawRafRef.current = 0
       }
     }
-  }, [route, navigating, ready])
+  }, [route, walkRoute, navigating, ready])
 
   useImperativeHandle(
     ref,
@@ -1289,8 +1364,11 @@ export const MapView = forwardRef<
         }
       },
       async playRouteIntro({
-        destination,
+        house,
+        parking,
+        origin,
         waitForRoute,
+        waitForWalkRoute,
         routeWaitMs = 3000,
         onBeforeFitBounds,
         onFailed,
@@ -1323,8 +1401,11 @@ export const MapView = forwardRef<
           routeAnimatingRef.current = false
         }
 
-        const destCenter: [number, number] = [destination[1], destination[0]]
+        const houseCenter: [number, number] = [house[1], house[0]]
+        const parkingCenter: [number, number] = [parking[1], parking[0]]
         const easeOutCubic = (t: number) => 1 - (1 - t) ** 3
+        const easeInOutCubic = (t: number) =>
+          t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
 
         const fitPaddingForPanel = () => {
           const panelOpen = infoPanelOpenRef.current
@@ -1341,30 +1422,62 @@ export const MapView = forwardRef<
           }
         }
 
+        /** Final camera: parking + house (+ origin when not far away). */
+        const buildArrivalBounds = (
+          drive: RouteResult,
+          walk: RouteResult | null,
+        ) => {
+          const bounds = new LngLatBounds()
+          bounds.extend(parkingCenter)
+          bounds.extend(houseCenter)
+          if (walk) {
+            for (const [lat, lng] of walk.coords) bounds.extend([lng, lat])
+          }
+          if (origin) {
+            const dPark = Math.hypot(
+              origin[0] - parking[0],
+              origin[1] - parking[1],
+            )
+            // ~1.2 km in degrees ≈ 0.011 — keep start in frame when nearby
+            if (dPark < 0.012) {
+              bounds.extend([origin[1], origin[0]])
+            }
+          }
+          // Nudge with the last stretch of the drive so the approach isn't clipped
+          const tail = drive.coords.slice(-8)
+          for (const [lat, lng] of tail) bounds.extend([lng, lat])
+          return bounds
+        }
+
         try {
           const reduced = prefersReducedMotion()
+          const walkPromise = waitForWalkRoute ?? Promise.resolve(null)
 
           if (reduced) {
-            const result = await Promise.race([
-              waitForRoute,
-              delay(routeWaitMs).then(() => null),
+            const [drive, walk] = await Promise.all([
+              Promise.race([
+                waitForRoute,
+                delay(routeWaitMs).then(() => null),
+              ]),
+              Promise.race([
+                walkPromise,
+                delay(routeWaitMs).then(() => null),
+              ]),
             ])
             if (signal.cancelled) return 'cancelled'
-            if (!result || result.coords.length < 2) {
+            if (!drive || drive.coords.length < 2) {
               onFailed?.()
               map.jumpTo({
-                center: destCenter,
-                zoom: 17,
+                center: houseCenter,
+                zoom: 16.5,
                 pitch: pitch3dRef.current ? NAV_PITCH : 0,
               })
               return 'failed'
             }
-            onBeforeFitBounds?.(result)
-            const bounds = new LngLatBounds()
-            for (const [lat, lng] of result.coords) bounds.extend([lng, lat])
-            map.fitBounds(bounds, {
+            onBeforeFitBounds?.(drive, walk)
+            map.fitBounds(buildArrivalBounds(drive, walk), {
               padding: fitPaddingForPanel(),
-              maxZoom: 16,
+              maxZoom: 16.5,
               pitch: 0,
               bearing: 0,
               animate: false,
@@ -1373,51 +1486,68 @@ export const MapView = forwardRef<
             return 'fitted'
           }
 
-          // Step 1 — zoom into destination (parallel with route fetch in App)
+          // ——— Step 0: land on the house (final destination stays fixed) ———
           map.flyTo({
-            center: destCenter,
-            zoom: 17,
+            center: houseCenter,
+            zoom: 17.2,
             pitch: pitch3dRef.current ? NAV_PITCH : 0,
-            duration: 1500,
+            duration: 1200,
             essential: true,
             easing: easeOutCubic,
           })
-          await waitMoveEnd(map, 2200)
+          await waitMoveEnd(map, 1800)
           if (signal.cancelled) return 'cancelled'
 
-          await delay(700, signal)
+          // ——— Step 1: zoom OUT to reveal surrounding parking ———
+          map.easeTo({
+            center: houseCenter,
+            zoom: 14.1,
+            pitch: Math.min(40, pitch3dRef.current ? NAV_PITCH : 0),
+            duration: 1400,
+            essential: true,
+            easing: easeInOutCubic,
+          })
+          await waitMoveEnd(map, 2000)
           if (signal.cancelled) return 'cancelled'
 
-          // Wait for route (max routeWaitMs) then fitBounds
-          const result = await Promise.race([
-            waitForRoute,
-            delay(routeWaitMs, signal).then(() => null),
+          // Brief hold so the user can scan nearby lots
+          await delay(1200, signal)
+          if (signal.cancelled) return 'cancelled'
+
+          // Wait for drive (+ walk) routes
+          const [drive, walk] = await Promise.all([
+            Promise.race([
+              waitForRoute,
+              delay(routeWaitMs, signal).then(() => null),
+            ]),
+            Promise.race([
+              walkPromise,
+              delay(routeWaitMs, signal).then(() => null),
+            ]),
           ])
           if (signal.cancelled) return 'cancelled'
 
-          if (!result || result.coords.length < 2) {
+          if (!drive || drive.coords.length < 2) {
             onFailed?.()
             return 'failed'
           }
 
-          // Step 2 — reveal sheet + zoom out to full route (draw starts via route prop)
-          onBeforeFitBounds?.(result)
-          // Let React commit infoPanelOpen before measuring padding
-          await delay(40, signal)
+          // Reveal sheet + draw routes (via React state), then zoom IN
+          onBeforeFitBounds?.(drive, walk)
+          await delay(50, signal)
           if (signal.cancelled) return 'cancelled'
 
-          const bounds = new LngLatBounds()
-          for (const [lat, lng] of result.coords) bounds.extend([lng, lat])
-          map.fitBounds(bounds, {
+          // ——— Step 2: zoom IN to parking + house (balanced frame) ———
+          map.fitBounds(buildArrivalBounds(drive, walk), {
             padding: fitPaddingForPanel(),
-            maxZoom: 16,
-            duration: 2000,
+            maxZoom: 16.8,
+            duration: 1800,
             pitch: 0,
             bearing: 0,
             essential: true,
             easing: easeOutCubic,
           })
-          await waitMoveEnd(map, 2600)
+          await waitMoveEnd(map, 2400)
           return signal.cancelled ? 'cancelled' : 'fitted'
         } finally {
           finish()

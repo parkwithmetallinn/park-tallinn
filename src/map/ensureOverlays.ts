@@ -46,6 +46,10 @@ import {
 import { ZOOM } from './zoom'
 
 const ROUTE_SOURCE = 'nav-route'
+/** Dashed walking leg: parking → house */
+const WALK_ROUTE_SOURCE = 'nav-walk-route'
+const WALK_ROUTE_LINE = 'nav-walk-route-line'
+const WALK_ROUTE_CASING = 'nav-walk-route-casing'
 export const DISTRICT_SOURCE = 'district-zones'
 export const DISTRICT_LABEL_SOURCE = 'district-zone-labels'
 export const DISTRICT_DEBUG_SOURCE = 'district-debug-refs'
@@ -1043,8 +1047,17 @@ export function ensureParkingOverlaySources(
       data: { type: 'FeatureCollection', features: [] },
     })
   }
+  if (!map.getSource(WALK_ROUTE_SOURCE)) {
+    map.addSource(WALK_ROUTE_SOURCE, {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    })
+  }
   const routeMain = mode === 'dark' ? '#0A84FF' : '#007AFF'
   const routeOutline = mode === 'dark' ? '#0B1220' : '#FFFFFF'
+  /** Walking path — distinct teal, dashed */
+  const walkMain = mode === 'dark' ? '#34D399' : '#059669'
+  const walkCasing = mode === 'dark' ? '#0B1220' : '#FFFFFF'
   const routeWidthMain = [
     'interpolate',
     ['linear'],
@@ -1129,6 +1142,65 @@ export function ensureParkingOverlaySources(
   } else {
     map.setPaintProperty('nav-route-line', 'line-color', routeMain)
     map.setPaintProperty('nav-route-line', 'line-width', routeWidthMain)
+  }
+
+  // Walking leg — dashed teal (parking → house)
+  if (!map.getLayer(WALK_ROUTE_CASING)) {
+    map.addLayer({
+      id: WALK_ROUTE_CASING,
+      type: 'line',
+      source: WALK_ROUTE_SOURCE,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': walkCasing,
+        'line-width': 7,
+        'line-opacity': 0.9,
+        'line-dasharray': [0.4, 1.6],
+      },
+    })
+  } else {
+    map.setPaintProperty(WALK_ROUTE_CASING, 'line-color', walkCasing)
+  }
+  if (!map.getLayer(WALK_ROUTE_LINE)) {
+    map.addLayer({
+      id: WALK_ROUTE_LINE,
+      type: 'line',
+      source: WALK_ROUTE_SOURCE,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': walkMain,
+        'line-width': 4,
+        'line-opacity': 1,
+        'line-dasharray': [0.4, 1.6],
+      },
+    })
+  } else {
+    map.setPaintProperty(WALK_ROUTE_LINE, 'line-color', walkMain)
+  }
+  // Soft label along the walk path
+  if (!map.getLayer('nav-walk-route-label')) {
+    map.addLayer({
+      id: 'nav-walk-route-label',
+      type: 'symbol',
+      source: WALK_ROUTE_SOURCE,
+      layout: {
+        'symbol-placement': 'line-center',
+        'text-field': 'Jalgsi',
+        'text-font': ['Noto Sans Bold'],
+        'text-size': 11,
+        'text-allow-overlap': false,
+        'text-ignore-placement': false,
+        'text-padding': 4,
+      },
+      paint: {
+        'text-color': walkMain,
+        'text-halo-color': walkCasing,
+        'text-halo-width': 1.6,
+      },
+    })
+  } else {
+    map.setPaintProperty('nav-walk-route-label', 'text-color', walkMain)
+    map.setPaintProperty('nav-walk-route-label', 'text-halo-color', walkCasing)
   }
 
   syncLodZoomLimits(map)
@@ -1307,4 +1379,4 @@ export function setParkingLayerVisibility(
   }
 }
 
-export { ROUTE_SOURCE }
+export { ROUTE_SOURCE, WALK_ROUTE_SOURCE, WALK_ROUTE_LINE, WALK_ROUTE_CASING }
