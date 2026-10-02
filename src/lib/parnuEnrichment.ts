@@ -1,6 +1,9 @@
 /**
- * Enrich Pärnu parking features with zone rules, FREE/KELL/EV labels,
+ * Enrich Pärnu parking features with zone rules, FREE/KELL/PAID labels,
  * source + lastVerified, and freeNow / freeUntil from freeRules.
+ *
+ * Paid zone polygons (Kesklinn / Rand) are injected as RED municipal lots
+ * so they appear under Tasuline and Kõik.
  */
 
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
@@ -11,11 +14,16 @@ import {
   type ParanuZoneId,
   type ParanuZoneRule,
 } from '../data/parnuZones'
-import type { PreciseParkingCollection } from './preciseParkingPolygons'
+import type {
+  PreciseParkingCollection,
+  PreciseParkingFeature,
+} from './preciseParkingPolygons'
 import type { StreetParkingCollection } from './streetParkingLines'
 import { evaluateFreeRules } from './freeRules'
-import { PARKING_COLOR_FREE, PARKING_COLOR_TIMED } from './parkingClassification'
-import { lotFillColor } from '../map/streetLineTheme'
+import {
+  categoryPaintColor,
+  PARKING_COLOR_PAID,
+} from './parkingClassification'
 
 const OSM_SOURCE = 'OpenStreetMap (Overpass extract via estonia_parking_master)'
 const DEFAULT_VERIFIED = '2026-10-02'
@@ -101,58 +109,49 @@ function enrichProps(
   const zone = zoneAt(lng, lat)
   const source = String(props.source ?? OSM_SOURCE)
   const lastVerified = String(props.lastVerified ?? DEFAULT_VERIFIED)
+  const operator = props.operator?.includes('Tallinn')
+    ? 'Pärnu Linn'
+    : props.operator || 'Pärnu Linn'
 
-  // Already verified free from OSM fee=no — keep FREE unless inside a paid zone
-  // that overrides (municipal paid zone wins for curb inside kesklinn/rand).
+  // Outside paid zones — keep OSM classification; never force green.
   if (!zone) {
-    const isTimed = props.layer === 'timed' || props.zone_code === 'KELL'
-    // Outside paid zones: prefer FREE for unknown (many OSM lots lack fee tags)
-    const freeLabel = props.layer === 'ev' ? 'EV' : isTimed ? 'KELL' : 'FREE'
-    return {
+    const next = {
       ...props,
-      operator: props.operator?.includes('Tallinn') ? 'Pärnu Linn' : props.operator || 'Pärnu Linn',
-      zone_code: freeLabel,
-      badge: freeLabel,
-      layer: freeLabel === 'KELL' ? 'timed' : freeLabel === 'EV' ? 'ev' : 'free_street',
-      verified_free: freeLabel === 'FREE',
-      free_minutes: freeLabel === 'KELL' ? props.free_minutes || 15 : 0,
-      price_per_hour: 0,
-      color: freeLabel === 'FREE' ? PARKING_COLOR_FREE : props.color,
+      operator,
       source,
       lastVerified,
-      cityId: 'parnu',
-      freeNow: freeLabel === 'FREE',
-      freeUntil: null,
-      freeReason:
-        freeLabel === 'FREE'
-          ? 'Väljaspool tasulist tsooni'
-          : 'Kellaga / ajapiirang',
-      exemptions: [],
-      verifyOnSite: true,
+      cityId: 'parnu' as const,
       parnuZone: null,
+      verifyOnSite: true,
+    }
+    return {
+      ...next,
+      color: categoryPaintColor({
+        layer: String(next.layer),
+        free_minutes: Number(next.free_minutes ?? 0),
+        price_per_hour: Number(next.price_per_hour ?? 0),
+        verified_free: Boolean(next.verified_free),
+        zone_code: String(next.zone_code ?? ''),
+      }),
     }
   }
 
+  // Inside Kesklinn / Rand — always paid municipal (RED), even when currently free
   const evaled = evaluateFreeRules(zone.freeRules, at)
-  const label = evaled.label
-  const layer = label === 'FREE' ? 'free_street' : 'timed'
-  const price = evaled.freeNow ? 0 : zone.pricePerHour
-
   return {
     ...props,
     name:
-      props.name && !/^Zone |^Surface|^Underground|^Multi/i.test(props.name)
+      props.name && !/^Zone |^Surface|^Underground|^Multi|^Tänav/i.test(props.name)
         ? props.name
-        : `${zone.name} · parkla`,
+        : `Pärnu ${zone.name}`,
     operator: 'Pärnu Linn',
-    zone_code: label,
-    badge: label,
-    layer,
-    verified_free: evaled.freeNow,
+    zone_code: zone.id === 'kesklinn' ? 'PKESK' : 'PRAND',
+    badge: 'PAID',
+    layer: 'municipal',
+    verified_free: false,
     free_minutes: zone.freeMinutesWithDisc,
-    price_per_hour: price,
-    color: evaled.freeNow ? PARKING_COLOR_FREE : PARKING_COLOR_TIMED,
-    // keep municipal paint for paid via timed color
+    price_per_hour: zone.pricePerHour,
+    color: PARKING_COLOR_PAID,
     desc: [
       `${zone.name}: ${zone.pricePerHour} €/h · ${zone.pricePer24h} €/24h`,
       evaled.reason,
@@ -168,31 +167,72 @@ function enrichProps(
     exemptions: zone.exemptions,
     verifyOnSite: true,
     parnuZone: zone.id,
-    // When paid, still use timed layer so KELL filter works; price from zone
-    ...(evaled.freeNow
-      ? {}
-      : {
-          layer: 'timed',
-          color: lotFillColor('timed'),
-        }),
   }
+}
+
+/** Large paid-zone footprints so Tasuline / Kõik show RED areas. */
+function parnuZoneLotFeatures(): PreciseParkingFeature[] {
+  return PARNU_ZONE_LIST.map((z) => {
+    const id = `parnu-zone-${z.id}`
+    return {
+      type: 'Feature' as const,
+      id,
+      properties: {
+        id,
+        name: `Pärnu ${z.name} — tasuline tsoon`,
+        zone_code: z.id === 'kesklinn' ? 'PKESK' : 'PRAND',
+        operator: 'Pärnu Linn',
+        layer: 'municipal' as const,
+        type: 'surface' as const,
+        floors: 1,
+        free_minutes: z.freeMinutesWithDisc,
+        price_per_hour: z.pricePerHour,
+        badge: 'PAID',
+        address: `Pärnu ${z.name}`,
+        desc: `${z.pricePerHour} €/h · ketas ${z.freeMinutesWithDisc} min · ${z.source}`,
+        color: PARKING_COLOR_PAID,
+        verified_free: false,
+        area_m2: 0,
+        labelRank: 0,
+        floors_label: '',
+        structure_label: 'Surface',
+        source: z.source,
+        lastVerified: z.lastVerified,
+        cityId: 'parnu' as const,
+        parnuZone: z.id,
+        verifyOnSite: true,
+        freeReason: `${z.name} tasuline tsoon`,
+      },
+      geometry: {
+        type: 'Polygon' as const,
+        coordinates: [z.ring],
+      },
+    }
+  })
 }
 
 export function enrichParnuPolygons(
   fc: PreciseParkingCollection,
   at: Date = new Date(),
 ): PreciseParkingCollection {
+  const enriched = fc.features.map((f) => {
+    const c = centroidOfGeom(f.geometry)
+    if (!c) return f
+    const props = enrichProps(
+      f.properties as unknown as EnrichableProps,
+      c.lng,
+      c.lat,
+      at,
+    )
+    return {
+      ...f,
+      properties: props as unknown as typeof f.properties,
+    }
+  })
+  // Prepend zone polygons so large RED paid areas are always present
   return {
     type: 'FeatureCollection',
-    features: fc.features.map((f) => {
-      const c = centroidOfGeom(f.geometry)
-      if (!c) return f
-      const props = enrichProps(f.properties as unknown as EnrichableProps, c.lng, c.lat, at)
-      return {
-        ...f,
-        properties: props as unknown as typeof f.properties,
-      }
-    }),
+    features: [...parnuZoneLotFeatures(), ...enriched],
   }
 }
 
@@ -205,7 +245,12 @@ export function enrichParnuStreets(
     features: fc.features.map((f) => {
       const c = centroidOfGeom(f.geometry as never)
       if (!c) return f
-      const props = enrichProps(f.properties as unknown as EnrichableProps, c.lng, c.lat, at)
+      const props = enrichProps(
+        f.properties as unknown as EnrichableProps,
+        c.lng,
+        c.lat,
+        at,
+      )
       return {
         ...f,
         properties: props as unknown as typeof f.properties,

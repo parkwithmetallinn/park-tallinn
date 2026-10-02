@@ -74,7 +74,8 @@ export const PARNU_ZONE_RULES: Record<ParanuZoneId, ParanuZoneRule> = {
   kesklinn: {
     id: 'kesklinn',
     name: 'Kesklinn',
-    color: '#0A84FF',
+    /** Strict Tasuline red */
+    color: '#FF3B30',
     pricePerHour: 2,
     pricePer24h: 10,
     freeMinutesWithDisc: 60,
@@ -98,7 +99,8 @@ export const PARNU_ZONE_RULES: Record<ParanuZoneId, ParanuZoneRule> = {
   rand: {
     id: 'rand',
     name: 'Rand',
-    color: '#FF9F0A',
+    /** Strict Tasuline red */
+    color: '#FF3B30',
     pricePerHour: 3,
     pricePer24h: 15,
     freeMinutesWithDisc: 30,

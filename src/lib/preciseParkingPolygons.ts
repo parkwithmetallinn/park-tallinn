@@ -1,6 +1,5 @@
 import area from '@turf/area'
 import { PARKING_LAYER_META } from '../map/parkingLayers'
-import { lotFillColor } from '../map/streetLineTheme'
 import type {
   ParkingLayerKey,
   ParkingOperator,
@@ -10,14 +9,13 @@ import type {
 import { normalizeSpot } from './geojson'
 import { mapLabelForLayer } from './mapLabels'
 import {
+  categoryPaintColor,
   getParkingExclusionReason,
   isClockLimitedParking,
   isPaidFeeTag,
   isUnclassifiedParking,
   isUnlimitedFreeParking,
   isVerifiedFreeParking,
-  PARKING_COLOR_FREE,
-  PARKING_COLOR_UNKNOWN,
   type ParkingPrepPurgeStats,
   emptyPurgeStats,
 } from './parkingClassification'
@@ -433,14 +431,14 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
           ? 1
           : Math.max(2, 1_000_000 - area_m2)
 
-    // Green ONLY when layer is free_street (verified free, no private/provider).
-    // Unknown ZONE / untagged municipal → muted gray — never free-green.
-    const color =
-      layer === 'free_street'
-        ? PARKING_COLOR_FREE
-        : layer === 'municipal' && !feeIsPaid
-          ? PARKING_COLOR_UNKNOWN
-          : lotFillColor(layer)
+    // Strict category paint: green / yellow / red / gray (not operator brands).
+    const color = categoryPaintColor({
+      layer,
+      free_minutes,
+      price_per_hour,
+      verified_free: verified_free && layer === 'free_street',
+      zone_code,
+    })
 
     const descParts = [
       str(p.description),

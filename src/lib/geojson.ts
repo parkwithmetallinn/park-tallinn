@@ -1,4 +1,3 @@
-import { PARKING_LAYER_META } from '../map/parkingLayers'
 import { lotFillColor, streetLineColor } from '../map/streetLineTheme'
 import type {
   ParkingFeatureType,
@@ -453,7 +452,8 @@ export function spotsToGeoJSON(spots: ParkingSpot[]) {
 }
 
 export function layerColor(layer: ParkingLayerKey): string {
-  return PARKING_LAYER_META[layer]?.color ?? '#64748B'
+  // Strict category palette (paid=red, clock=yellow, free=green)
+  return lotFillColor(layer)
 }
 
 /** @deprecated use layerColor */

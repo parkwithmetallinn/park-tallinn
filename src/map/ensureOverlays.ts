@@ -2,8 +2,18 @@ import type { Map as MapLibreMapType } from 'maplibre-gl'
 import type { ThemeMode } from '../lib/theme'
 import { districtDebugRefsToGeoJSON } from '../lib/districtsGeoJSON'
 import type { CityId } from '../data/cities'
+import {
+  parnuZoneLabelsToGeoJSON,
+  parnuZonesToGeoJSON,
+} from '../data/parnuZones'
+import { PARKING_COLOR_PAID } from '../lib/parkingClassification'
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] as never[] }
+
+/** Tracks which city owns the district/subzone overlay so theme paints don't wipe Pärnu. */
+let activeDistrictCity: CityId = 'tallinn'
+/** When false, Pärnu paid-zone overlays stay hidden (e.g. Tasuta / Kellaga filter). */
+let parnuPaidZonesVisible = true
 import {
   PRECISE_FILL_LAYER,
   PRECISE_LABEL_LAYER,
@@ -120,13 +130,25 @@ function syncLodZoomLimits(map: MapLibreMapType) {
     if (map.getLayer(id)) map.setLayerZoomRange(id, 0, z)
   }
 
-  // Fill fades by zoom 14; lines/labels stay useful a bit longer / labels 10–13
+  // Tallinn district fills fade by 14. Pärnu paid RED subzones stay at all zooms.
   setMax(DISTRICT_FILL_LAYER, 14)
-  setMax(DISTRICT_SUBZONE_FILL_LAYER, 14)
   setMax(DISTRICT_OUTLINE_LAYER, 14)
-  setMax(DISTRICT_SUBZONE_OUTLINE_LAYER, 14)
-  if (map.getLayer(DISTRICT_LABEL_LAYER)) {
-    map.setLayerZoomRange(DISTRICT_LABEL_LAYER, 10, 13)
+  if (activeDistrictCity === 'parnu') {
+    if (map.getLayer(DISTRICT_SUBZONE_FILL_LAYER)) {
+      map.setLayerZoomRange(DISTRICT_SUBZONE_FILL_LAYER, 0, 24)
+    }
+    if (map.getLayer(DISTRICT_SUBZONE_OUTLINE_LAYER)) {
+      map.setLayerZoomRange(DISTRICT_SUBZONE_OUTLINE_LAYER, 0, 24)
+    }
+    if (map.getLayer(DISTRICT_LABEL_LAYER)) {
+      map.setLayerZoomRange(DISTRICT_LABEL_LAYER, 10, 16)
+    }
+  } else {
+    setMax(DISTRICT_SUBZONE_FILL_LAYER, 14)
+    setMax(DISTRICT_SUBZONE_OUTLINE_LAYER, 14)
+    if (map.getLayer(DISTRICT_LABEL_LAYER)) {
+      map.setLayerZoomRange(DISTRICT_LABEL_LAYER, 10, 13)
+    }
   }
 
   setMin(PARKING_LOTS_FILL_LAYER, ZOOM.lotMin)
@@ -184,7 +206,9 @@ function applyOverlayThemePaints(map: MapLibreMapType, mode: ThemeMode) {
   const casing = dark ? CASING_DARK : CASING_LIGHT
   const circleStroke = dark ? CIRCLE_STROKE_DARK : CIRCLE_STROKE_LIGHT
 
-  // Administrative district overlays stay disabled (empty source + hidden).
+  // Tallinn districts stay hidden. Pärnu paid subzones keep RED fills.
+  const parnuZones =
+    activeDistrictCity === 'parnu' && parnuPaidZonesVisible
   for (const id of [
     DISTRICT_FILL_LAYER,
     DISTRICT_OUTLINE_LAYER,
@@ -192,26 +216,48 @@ function applyOverlayThemePaints(map: MapLibreMapType, mode: ThemeMode) {
     DISTRICT_SUBZONE_OUTLINE_LAYER,
     DISTRICT_LABEL_LAYER,
   ]) {
-    if (map.getLayer(id)) {
-      map.setLayoutProperty(id, 'visibility', 'none')
-    }
+    if (!map.getLayer(id)) continue
+    const showParnu =
+      parnuZones &&
+      (id === DISTRICT_SUBZONE_FILL_LAYER ||
+        id === DISTRICT_SUBZONE_OUTLINE_LAYER ||
+        id === DISTRICT_LABEL_LAYER)
+    map.setLayoutProperty(id, 'visibility', showParnu ? 'visible' : 'none')
   }
   if (map.getLayer(DISTRICT_FILL_LAYER)) {
     map.setPaintProperty(DISTRICT_FILL_LAYER, 'fill-opacity', 0)
   }
   if (map.getLayer(DISTRICT_SUBZONE_FILL_LAYER)) {
-    map.setPaintProperty(DISTRICT_SUBZONE_FILL_LAYER, 'fill-opacity', 0)
+    map.setPaintProperty(
+      DISTRICT_SUBZONE_FILL_LAYER,
+      'fill-opacity',
+      parnuZones ? 0.28 : 0,
+    )
+    map.setPaintProperty(
+      DISTRICT_SUBZONE_FILL_LAYER,
+      'fill-color',
+      ['coalesce', ['get', 'color'], PARKING_COLOR_PAID] as never,
+    )
   }
   if (map.getLayer(DISTRICT_SUBZONE_OUTLINE_LAYER)) {
     map.setPaintProperty(
       DISTRICT_SUBZONE_OUTLINE_LAYER,
       'line-color',
-      dark ? '#c4a574' : (['coalesce', ['get', 'color'], '#B45309'] as never),
+      parnuZones
+        ? (['coalesce', ['get', 'color'], PARKING_COLOR_PAID] as never)
+        : dark
+          ? '#c4a574'
+          : (['coalesce', ['get', 'color'], '#B45309'] as never),
     )
     map.setPaintProperty(
       DISTRICT_SUBZONE_OUTLINE_LAYER,
       'line-opacity',
-      dark ? 0.7 : 0.85,
+      parnuZones ? 0.95 : dark ? 0.7 : 0.85,
+    )
+    map.setPaintProperty(
+      DISTRICT_SUBZONE_OUTLINE_LAYER,
+      'line-width',
+      parnuZones ? 2.2 : 1.5,
     )
   }
   if (map.getLayer(DISTRICT_LABEL_LAYER)) {
@@ -393,17 +439,16 @@ export function ensureParkingOverlaySources(
       },
     })
   }
-  // Vanalinn overlay on top of district lines
+  // Paid subzones (Pärnu Kesklinn / Rand) — no maxzoom so RED areas stay at street zoom
   if (!map.getLayer(DISTRICT_SUBZONE_FILL_LAYER)) {
     map.addLayer({
       id: DISTRICT_SUBZONE_FILL_LAYER,
       type: 'fill',
       source: DISTRICT_SOURCE,
-      maxzoom: 14,
       filter: ['==', ['get', 'role'], 'subzone'],
       layout: { visibility: 'none' },
       paint: {
-        'fill-color': ['coalesce', ['get', 'color'], '#B45309'],
+        'fill-color': ['coalesce', ['get', 'color'], PARKING_COLOR_PAID],
         'fill-opacity': 0,
       },
     })
@@ -413,7 +458,6 @@ export function ensureParkingOverlaySources(
       id: DISTRICT_SUBZONE_OUTLINE_LAYER,
       type: 'line',
       source: DISTRICT_SOURCE,
-      maxzoom: 14,
       filter: ['==', ['get', 'role'], 'subzone'],
       layout: {
         visibility: 'none',
@@ -1109,16 +1153,81 @@ const DISTRICT_LAYER_IDS = [
 ] as const
 
 /**
- * Administrative district overlays are disabled — keep only parking geometry
- * on the basemap (no Tallinn linnaosad / Pärnu asum tinted fills or labels).
+ * Tallinn administrative districts stay hidden.
+ * Pärnu shows Kesklinn / Rand paid-zone footprints (RED) as subzone overlays.
+ * Pass `showPaidZones: false` under Tasuta / Kellaga so RED paid areas don't leak.
  */
-export function setCityDistrictOverlays(map: MapLibreMapType, _cityId: CityId) {
+export function setCityDistrictOverlays(
+  map: MapLibreMapType,
+  cityId: CityId,
+  opts?: { showPaidZones?: boolean },
+) {
+  activeDistrictCity = cityId
+  if (opts?.showPaidZones != null) parnuPaidZonesVisible = opts.showPaidZones
+
   const polySrc = map.getSource(DISTRICT_SOURCE) as {
     setData?: (d: unknown) => void
   } | null
   const labelSrc = map.getSource(DISTRICT_LABEL_SOURCE) as {
     setData?: (d: unknown) => void
   } | null
+
+  if (cityId === 'parnu') {
+    if (!map.getSource(DISTRICT_SOURCE)) return
+    polySrc?.setData?.(parnuZonesToGeoJSON())
+    labelSrc?.setData?.(parnuZoneLabelsToGeoJSON())
+    const showIds = new Set([
+      DISTRICT_SUBZONE_FILL_LAYER,
+      DISTRICT_SUBZONE_OUTLINE_LAYER,
+      DISTRICT_LABEL_LAYER,
+    ])
+    for (const id of DISTRICT_LAYER_IDS) {
+      try {
+        if (map.getLayer(id)) {
+          map.setLayoutProperty(
+            id,
+            'visibility',
+            parnuPaidZonesVisible && showIds.has(id) ? 'visible' : 'none',
+          )
+        }
+      } catch {
+        /* ok */
+      }
+    }
+    // Drop legacy maxzoom so RED paid zones remain visible when zoomed in
+    for (const id of [
+      DISTRICT_SUBZONE_FILL_LAYER,
+      DISTRICT_SUBZONE_OUTLINE_LAYER,
+    ]) {
+      if (map.getLayer(id)) map.setLayerZoomRange(id, 0, 24)
+    }
+    if (map.getLayer(DISTRICT_LABEL_LAYER)) {
+      map.setLayerZoomRange(DISTRICT_LABEL_LAYER, 10, 16)
+    }
+    if (map.getLayer(DISTRICT_SUBZONE_FILL_LAYER)) {
+      map.setPaintProperty(
+        DISTRICT_SUBZONE_FILL_LAYER,
+        'fill-opacity',
+        parnuPaidZonesVisible ? 0.28 : 0,
+      )
+      map.setPaintProperty(
+        DISTRICT_SUBZONE_FILL_LAYER,
+        'fill-color',
+        ['coalesce', ['get', 'color'], PARKING_COLOR_PAID] as never,
+      )
+    }
+    if (map.getLayer(DISTRICT_SUBZONE_OUTLINE_LAYER)) {
+      map.setPaintProperty(
+        DISTRICT_SUBZONE_OUTLINE_LAYER,
+        'line-color',
+        ['coalesce', ['get', 'color'], PARKING_COLOR_PAID] as never,
+      )
+      map.setPaintProperty(DISTRICT_SUBZONE_OUTLINE_LAYER, 'line-opacity', 0.95)
+      map.setPaintProperty(DISTRICT_SUBZONE_OUTLINE_LAYER, 'line-width', 2.2)
+    }
+    return
+  }
+
   polySrc?.setData?.(EMPTY_FC)
   labelSrc?.setData?.(EMPTY_FC)
   for (const id of DISTRICT_LAYER_IDS) {
@@ -1129,6 +1238,9 @@ export function setCityDistrictOverlays(map: MapLibreMapType, _cityId: CityId) {
     } catch {
       /* ok */
     }
+  }
+  if (map.getLayer(DISTRICT_SUBZONE_FILL_LAYER)) {
+    map.setPaintProperty(DISTRICT_SUBZONE_FILL_LAYER, 'fill-opacity', 0)
   }
 }
 

@@ -1,45 +1,45 @@
 import {
+  categoryPaintColor,
   PARKING_COLOR_FREE,
+  PARKING_COLOR_PAID,
+  PARKING_COLOR_TIMED,
   PARKING_COLOR_UNKNOWN,
 } from '../lib/parkingClassification'
 import type { ParkingLayerKey, ParkingSpot } from '../types'
-import { PARKING_LAYER_META } from './parkingLayers'
 
 /**
- * Curb / pin colors — green (#22C55E) only for verified free_street.
- * Zero price alone is NOT enough (unknown lots stay muted gray).
+ * Strict category colors for curb lines / pins:
+ * Green = unlimited free · Yellow = clock · Red = paid · Gray = other.
+ * Operator brand colors are intentionally NOT used on the map.
  */
 export function streetLineColor(spot: ParkingSpot): string {
-  if (spot.layer === 'free_street' || spot.zone_code === 'FREE') {
-    return PARKING_COLOR_FREE
-  }
-  if (spot.layer === 'timed' || spot.featureType === 'on-street-line') {
-    if (spot.free_minutes > 0 && spot.free_minutes <= 30) return '#FFD60A'
-    if (spot.free_minutes > 30 && spot.free_minutes <= 60) return '#FF9F0A'
-    if (spot.zone_code === 'VANALINN') return '#FF6961'
-    if (spot.zone_code === 'SÜDALINN') return '#FF9F0A'
-    if (spot.zone_code === 'KESKLINN') return '#64D2FF'
-    if (spot.zone_code === 'PIRITA') return '#5AC8FA'
-    if (spot.zone_code === 'ZONE' || spot.zone_code === 'UNK' || spot.zone_code === 'AVALIK') {
-      return PARKING_COLOR_UNKNOWN
-    }
-    return '#FFD60A'
-  }
-  if (spot.layer === 'municipal') {
-    if (spot.zone_code === 'VANALINN') return '#FF6961'
-    if (spot.zone_code === 'SÜDALINN') return '#FF9F0A'
-    if (spot.zone_code === 'KESKLINN') return '#64D2FF'
-    if (spot.zone_code === 'PIRITA') return '#5AC8FA'
-    // Unclassified / generic ZONE — muted gray, never free-green
-    return PARKING_COLOR_UNKNOWN
-  }
-  return PARKING_LAYER_META[spot.layer]?.color ?? PARKING_COLOR_UNKNOWN
+  return categoryPaintColor({
+    layer: spot.layer,
+    type: spot.type,
+    free_minutes: spot.free_minutes,
+    price_per_hour: spot.price_per_hour,
+    verified_free: spot.layer === 'free_street',
+    zone_code: spot.zone_code,
+  })
 }
 
+/** Layer-only fill color when feature props are not available. */
 export function lotFillColor(layer: ParkingLayerKey): string {
   if (layer === 'free_street') return PARKING_COLOR_FREE
+  if (layer === 'timed') return PARKING_COLOR_TIMED
+  if (
+    layer === 'europark' ||
+    layer === 'snabb' ||
+    layer === 'citypark' ||
+    layer === 'uhisteenused' ||
+    layer === 'parkit' ||
+    layer === 'park_ride' ||
+    layer === 'loading'
+  ) {
+    return PARKING_COLOR_PAID
+  }
   if (layer === 'municipal') return PARKING_COLOR_UNKNOWN
-  return PARKING_LAYER_META[layer]?.color ?? PARKING_COLOR_UNKNOWN
+  return PARKING_COLOR_UNKNOWN
 }
 
 /** MapLibre source ids for geometry-aware parking overlays */

@@ -44,10 +44,21 @@ async function loadParnu(_force = false): Promise<CitySplit> {
     }>
   }
   const { lotRaw, streetRaw } = splitMasterCollection(raw)
+  // prepare → enrich (injects Kesklinn/Rand RED paid-zone polygons)
   const polygons = enrichParnuPolygons(
     prepareParkingPolygons(lotRaw as never),
   )
   const streets = enrichParnuStreets(prepareStreetParking(streetRaw as never))
+  if (import.meta.env.DEV) {
+    const zones = polygons.features.filter((f) =>
+      String(f.properties.id).startsWith('parnu-zone-'),
+    )
+    console.info('[parking] Pärnu enriched', {
+      lots: polygons.features.length,
+      streets: streets.features.length,
+      paidZones: zones.map((z) => z.properties.id),
+    })
+  }
   return {
     cityId: 'parnu',
     polygons,

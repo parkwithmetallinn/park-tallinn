@@ -58,6 +58,9 @@ import {
   isClockLimitedParking,
   isUnclassifiedParking,
   isUnlimitedFreeParking,
+  PARKING_COLOR_FREE,
+  PARKING_COLOR_PAID,
+  PARKING_COLOR_TIMED,
   PARKING_COLOR_UNKNOWN,
 } from './lib/parkingClassification'
 import {
@@ -89,7 +92,6 @@ import {
   toggleTheme,
   type ThemeMode,
 } from './lib/theme'
-import { PARKING_LAYER_META } from './map/parkingLayers'
 import type { FilterId, ParkingSpot } from './types'
 
 const TIME_EXTEND_OPTIONS = [
@@ -102,9 +104,9 @@ const TIME_EXTEND_OPTIONS = [
 /** Compact 5-pill parking filters — paid operators merged under Tasuline */
 const FILTERS: { id: FilterId; label: string; color?: string }[] = [
   { id: 'all', label: 'Kõik' },
-  { id: 'free_street', label: 'Tasuta', color: '#22C55E' },
-  { id: 'timed', label: 'Kellaga', color: PARKING_LAYER_META.timed.color },
-  { id: 'paid', label: 'Tasuline', color: '#FF3B30' },
+  { id: 'free_street', label: 'Tasuta', color: PARKING_COLOR_FREE },
+  { id: 'timed', label: 'Kellaga', color: PARKING_COLOR_TIMED },
+  { id: 'paid', label: 'Tasuline', color: PARKING_COLOR_PAID },
   { id: 'other', label: 'Muud / Era', color: PARKING_COLOR_UNKNOWN },
 ]
 

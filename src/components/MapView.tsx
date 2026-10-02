@@ -237,6 +237,13 @@ function applyDualLayerFilter(
 ) {
   const layers = filterToLayers(filter)
 
+  // Pärnu RED paid-zone overlays only under Kõik / Tasuline
+  if (cityId === 'parnu') {
+    setCityDistrictOverlays(map, 'parnu', {
+      showPaidZones: filter === 'all' || filter === 'paid',
+    })
+  }
+
   const polys: PreciseParkingCollection | null = preciseFc
     ? {
         type: 'FeatureCollection',

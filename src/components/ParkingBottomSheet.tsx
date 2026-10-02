@@ -24,12 +24,12 @@ import type { ParkingSpot } from '../types'
 import { formatFreeUntil } from '../lib/freeRules'
 import { navLinks, openAppleMaps } from '../lib/geocode'
 import {
+  categoryPaintColor,
   clockFreeHeadline,
   isClockLimitedParking,
   isUnclassifiedParking,
   isUnlimitedFreeParking,
 } from '../lib/parkingClassification'
-import { PARKING_LAYER_META } from '../map/parkingLayers'
 import { streetLineColor } from '../map/streetLineTheme'
 import { FindParkingActions } from './FindParkingActions'
 import { InfoSidePanelShell } from './InfoSidePanel'
@@ -125,7 +125,7 @@ export function ParkingBottomSheet({
   const color =
     spot.line || spot.featureType === 'on-street-line'
       ? streetLineColor(spot)
-      : (PARKING_LAYER_META[spot.layer]?.color ?? '#30D158')
+      : categoryPaintColor(spot)
   const pricing = priceSummary(spot)
   const unclassified = isUnclassifiedParking({
     layer: spot.layer,

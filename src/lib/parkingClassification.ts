@@ -4,9 +4,14 @@
  * no time limit, no parking clock. Clock-limited free stays → "Kellaga".
  */
 
+/** Unlimited free — Tasuta (strict green). */
 export const PARKING_COLOR_FREE = '#22C55E'
 /** Unclassified / ZONE / private / unknown — not free public parking. */
 export const PARKING_COLOR_UNKNOWN = '#A0AEC0'
+/** Paid parking — Tasuline (strict red). */
+export const PARKING_COLOR_PAID = '#FF3B30'
+/** Clock / time-limited free — Kellaga (strict yellow). */
+export const PARKING_COLOR_TIMED = '#FFD60A'
 
 /** Spot-like fields used by Tasuta / Kellaga filter helpers. */
 export type FreeClockFields = {
@@ -59,6 +64,46 @@ export function clockFreeHeadline(freeMinutes: number): string {
   return 'Parkimiskellaga tasuta'
 }
 
+const PAID_LAYERS = new Set([
+  'europark',
+  'snabb',
+  'citypark',
+  'uhisteenused',
+  'parkit',
+  'park_ride',
+  'loading',
+  'municipal',
+])
+
+/**
+ * Strict category paint for map geometry (Kõik / filters):
+ * Green = unlimited free · Yellow = clock-limited free · Red = paid · Gray = other.
+ */
+export function categoryPaintColor(p: FreeClockFields): string {
+  if (isUnlimitedFreeParking(p)) return PARKING_COLOR_FREE
+  if (isClockLimitedParking(p)) return PARKING_COLOR_TIMED
+  const layer = String(p.layer || '')
+  const price = Number(p.price_per_hour ?? 0)
+  if (price > 0) return PARKING_COLOR_PAID
+  if (PAID_LAYERS.has(layer)) {
+    // Municipal with no price and no free/clock signal → unclassified gray
+    if (
+      layer === 'municipal' &&
+      isUnclassifiedParking({
+        layer,
+        price_per_hour: price,
+        zone_code: p.zone_code,
+        verified_free: p.verified_free,
+      })
+    ) {
+      return PARKING_COLOR_UNKNOWN
+    }
+    if (layer === 'municipal' && price <= 0) return PARKING_COLOR_UNKNOWN
+    return PARKING_COLOR_PAID
+  }
+  return PARKING_COLOR_UNKNOWN
+}
+
 const KNOWN_OPERATOR_LAYERS = new Set([
   'europark',
   'snabb',
@@ -100,11 +145,6 @@ export function isUnclassifiedParking(p: {
   // Municipal with no fee tags falls into the grey bucket
   return layer === 'municipal'
 }
-/** Explicitly paid municipal / curb (when no operator brand color). */
-export const PARKING_COLOR_PAID = '#FF3B30'
-/** Clock / maxstay free window. */
-export const PARKING_COLOR_TIMED = '#0A84FF'
-
 function str(v: unknown): string {
   return v == null ? '' : String(v).trim()
 }
