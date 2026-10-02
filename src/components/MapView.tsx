@@ -378,7 +378,11 @@ function applyHoverHighlight(map: MapLibreMapType, hoverId: string | null) {
 }
 
 
-/** Camera padding so the focus point sits in the free map area (not under the info panel). */
+/**
+ * Camera padding so the focus point sits in the free map area.
+ * Top chrome is search + filter pills only — route/distance summary lives
+ * inside the detail panel (never a floating banner over the filters).
+ */
 function panelCameraPadding(panelOpen: boolean): {
   top: number
   bottom: number
@@ -389,13 +393,15 @@ function panelCameraPadding(panelOpen: boolean): {
     typeof window !== 'undefined' &&
     window.matchMedia('(min-width: 640px)').matches
   if (!panelOpen) {
-    return { top: 96, bottom: 48, left: 24, right: 56 }
+    return { top: 104, bottom: 48, left: 24, right: 56 }
   }
   if (desktop) {
-    return { top: 96, bottom: 48, left: 380, right: 56 }
+    // Left rail panel (~22rem) + search/filters along the top
+    return { top: 104, bottom: 48, left: 380, right: 56 }
   }
-  const bottom = Math.round(window.innerHeight * 0.42)
-  return { top: 80, bottom, left: 16, right: 16 }
+  // Mobile bottom sheet can use up to ~85vh; keep route framing above it
+  const bottom = Math.round(window.innerHeight * 0.5)
+  return { top: 88, bottom, left: 16, right: 16 }
 }
 
 export const MapView = forwardRef<
