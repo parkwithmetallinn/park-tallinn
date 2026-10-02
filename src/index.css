@@ -152,6 +152,50 @@ body {
   }
 }
 
+@keyframes info-panel-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes info-panel-out-down {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+
+@keyframes info-panel-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes info-panel-out-left {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+}
+
 @keyframes slide-up {
   from {
     opacity: 0;
@@ -261,6 +305,32 @@ body {
   animation: sheet-spring-out 0.28s cubic-bezier(0.4, 0, 0.7, 0.2) both;
   will-change: transform, opacity;
   pointer-events: none;
+}
+
+.info-panel-in {
+  animation: info-panel-in-up 220ms ease-out both;
+  will-change: transform, opacity;
+}
+.info-panel-out {
+  animation: info-panel-out-down 180ms ease-in both;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+@media (min-width: 640px) {
+  .info-panel-in {
+    animation: info-panel-in-left 220ms ease-out both;
+  }
+  .info-panel-out {
+    animation: info-panel-out-left 180ms ease-in both;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .info-panel-in,
+  .info-panel-out,
+  .sheet-spring-in,
+  .sheet-spring-out {
+    animation: fade-in 120ms ease both;
+  }
 }
 
 .user-location-wrap {

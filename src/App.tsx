@@ -426,6 +426,9 @@ export default function App() {
             onStreetSpotsLoaded={setStreetSpots}
             onMapReady={() => setMapReady(true)}
             suppressedFeatureIds={suppressedIds}
+            infoPanelOpen={Boolean(
+              selected || (searchSheetOpen && searchLocation),
+            )}
           />
         </MapErrorBoundary>
         {!mapReady ? <MapChromeSkeleton /> : null}
@@ -544,7 +547,13 @@ export default function App() {
       </div>
 
       {/* Floating Action Buttons — location + 3D */}
-      <div className="absolute right-3 bottom-[max(6.5rem,env(safe-area-inset-bottom))] z-20 flex flex-col gap-2.5 sm:right-4">
+      <div
+        className={`absolute right-3 z-50 flex flex-col gap-2.5 sm:right-4 ${
+          selected || (searchSheetOpen && searchLocation)
+            ? 'bottom-[max(42vh,calc(env(safe-area-inset-bottom)+11rem))] sm:bottom-[max(6.5rem,env(safe-area-inset-bottom))]'
+            : 'bottom-[max(6.5rem,env(safe-area-inset-bottom))]'
+        }`}
+      >
         <button
           type="button"
           onClick={recenter}
@@ -770,6 +779,7 @@ export default function App() {
           sessionAction={sessionAction}
           activeSession={activeSession}
           sessionNotice={sessionNotice}
+          dark={dark}
           onClose={closeSheet}
           onStartSession={() => {
             void beginParkingSession()
@@ -791,6 +801,7 @@ export default function App() {
       {searchSheetOpen && searchLocation && !selected ? (
         <LocationInfoSheet
           location={searchLocation}
+          dark={dark}
           onClose={() => setSearchSheetOpen(false)}
           onClear={clearSearchLocation}
         />

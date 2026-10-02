@@ -23,7 +23,7 @@ import type { ParkingSpot } from '../types'
 import { navLinks, openAppleMaps } from '../lib/geocode'
 import { PARKING_LAYER_META } from '../map/parkingLayers'
 import { streetLineColor } from '../map/streetLineTheme'
-import { useSheetClose } from './AnimatedBottomSheet'
+import { InfoSidePanelShell } from './InfoSidePanel'
 
 function blockNav(e: MouseEvent | FormEvent) {
   e.preventDefault()
@@ -59,6 +59,7 @@ export function ParkingBottomSheet({
   sessionAction,
   activeSession,
   sessionNotice,
+  dark,
   onClose,
   onStartSession,
   onStopSession,
@@ -74,6 +75,7 @@ export function ParkingBottomSheet({
   sessionAction?: 'start' | 'stop' | 'status' | 'extend' | null
   activeSession?: ActiveParkingSession | null
   sessionNotice?: { kind: 'success' | 'error' | 'info' | 'loading'; text: string } | null
+  dark?: boolean
   onClose: () => void
   onStartSession: () => void
   onStopSession: () => void
@@ -82,8 +84,6 @@ export function ParkingBottomSheet({
   /** Crowdsource: queue REPORT_INVALID (does not mutate GeoJSON). */
   onReportInvalid?: () => void
 }) {
-  const stableClose = useCallback(() => onClose(), [onClose])
-  const { requestClose, sheetClassName } = useSheetClose(stableClose)
   const links = navLinks(spot.lat, spot.lng)
   const color =
     spot.line || spot.featureType === 'on-street-line'
@@ -162,27 +162,17 @@ export function ParkingBottomSheet({
     }
   }, [resolvedAddress])
 
-  return (
-    <div
-      className={`${sheetClassName} absolute inset-x-0 bottom-0 z-40 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-4`}
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
-    >
-      <div className="mx-auto max-w-lg overflow-hidden rounded-[1.75rem] border border-black/5 bg-white/92 shadow-[0_16px_48px_rgba(15,23,42,0.18)] backdrop-blur-xl">
-        {/* iOS grabber */}
-        <div className="flex justify-center pt-2.5 pb-1">
-          <button
-            type="button"
-            onClick={requestClose}
-            className="flex w-full justify-center py-1"
-            aria-label="Sulge"
-          >
-            <span className="h-1 w-9 rounded-full bg-black/15" />
-          </button>
-        </div>
+  const muted = dark ? 'text-[#98989D]' : 'text-[#8E8E93]'
+  const ink = dark ? 'text-[#F5F5F7]' : 'text-[#1C1C1E]'
+  const soft = dark ? 'text-[#EBEBF5]/75' : 'text-[#636366]'
+  const chipBg = dark ? 'bg-white/10' : 'bg-[#F2F2F7]'
+  const blockBg = dark ? 'bg-white/8' : 'bg-[#F2F2F7]'
 
-        <div className="flex items-start justify-between gap-3 px-5 pt-1 pb-3">
+  return (
+    <InfoSidePanelShell title={title} dark={dark} onClose={onClose}>
+      {({ requestClose }) => (
+        <>
+        <div className="mb-2.5 flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <span
@@ -202,7 +192,7 @@ export function ParkingBottomSheet({
                 </span>
               ) : null}
             </div>
-            <h3 className="text-[22px] leading-tight font-bold tracking-tight text-[#1C1C1E]">
+            <h3 className={`text-[15px] leading-snug font-bold tracking-tight ${ink}`}>
               {spot.name}
             </h3>
             <button
@@ -237,7 +227,7 @@ export function ParkingBottomSheet({
                   longPressTimer.current = null
                 }
               }}
-              className="mt-1 flex w-full min-w-0 items-center gap-1 truncate text-left text-[13px] text-[#8E8E93] disabled:cursor-default"
+              className={`mt-1 flex w-full min-w-0 items-center gap-1 truncate text-left text-[12px] ${muted} disabled:cursor-default`}
             >
               <MapPin className="h-3.5 w-3.5 shrink-0 opacity-70" />
               {addressLoading ? (
@@ -267,40 +257,40 @@ export function ParkingBottomSheet({
           <button
             type="button"
             onClick={requestClose}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F2F2F7] text-[#8E8E93] transition active:scale-95"
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition active:scale-95 ${chipBg} ${muted}`}
             aria-label="Sulge"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Price block — HIG clarity */}
-        <div className="mx-5 mb-4 overflow-hidden rounded-2xl bg-[#F2F2F7]">
+        {/* Price block — compact */}
+        <div className={`mb-2.5 overflow-hidden rounded-xl ${blockBg}`}>
           <div className="flex items-stretch">
-            <div className="flex-1 px-4 py-3.5">
-              <p className="text-[11px] font-semibold tracking-wide text-[#8E8E93] uppercase">
+            <div className="flex-1 px-3 py-2.5">
+              <p className={`text-[10px] font-semibold tracking-wide uppercase ${muted}`}>
                 Hind
               </p>
-              <p className="mt-0.5 text-[20px] font-bold tracking-tight text-[#1C1C1E]">
+              <p className={`mt-0.5 text-[15px] font-bold tracking-tight ${ink}`}>
                 {pricing.headline}
               </p>
-              <p className="mt-0.5 text-[13px] font-medium text-[#636366]">{pricing.detail}</p>
+              <p className={`mt-0.5 text-[12px] font-medium ${soft}`}>{pricing.detail}</p>
             </div>
-            <div className="w-px bg-black/6" />
-            <div className="flex w-[38%] flex-col justify-center px-4 py-3.5">
-              <p className="text-[11px] font-semibold tracking-wide text-[#8E8E93] uppercase">
+            <div className={`w-px ${dark ? 'bg-white/10' : 'bg-black/6'}`} />
+            <div className="flex w-[38%] flex-col justify-center px-3 py-2.5">
+              <p className={`text-[10px] font-semibold tracking-wide uppercase ${muted}`}>
                 Operaator
               </p>
-              <p className="mt-0.5 text-[15px] font-semibold text-[#1C1C1E]">{spot.operator}</p>
+              <p className={`mt-0.5 text-[12px] font-semibold ${ink}`}>{spot.operator}</p>
             </div>
           </div>
           {spot.structureType || typeof spot.floors === 'number' ? (
-            <div className="flex items-center justify-between gap-3 border-t border-black/6 px-4 py-2.5">
+            <div className={`flex items-center justify-between gap-3 border-t px-3 py-2 ${dark ? 'border-white/10' : 'border-black/6'}`}>
               <div>
-                <p className="text-[11px] font-semibold tracking-wide text-[#8E8E93] uppercase">
+                <p className={`text-[10px] font-semibold tracking-wide uppercase ${muted}`}>
                   Tüüp
                 </p>
-                <p className="mt-0.5 text-[14px] font-semibold text-[#1C1C1E]">
+                <p className={`mt-0.5 text-[12px] font-semibold ${ink}`}>
                   {spot.structureType === 'underground'
                     ? 'Underground'
                     : spot.structureType === 'multi_storey'
@@ -323,44 +313,43 @@ export function ParkingBottomSheet({
           ) : null}
         </div>
 
-        {/* Large navigation CTAs */}
-        <div className="space-y-2 px-5 pb-3">
-          <p className="text-[11px] font-semibold tracking-wide text-[#8E8E93] uppercase">
+        <div className="mb-2.5 space-y-1.5">
+          <p className={`text-[10px] font-semibold tracking-wide uppercase ${muted}`}>
             Navigeeri
           </p>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-1.5">
             <a
               href={links.waze}
               target="_blank"
               rel="noreferrer"
-              className="flex flex-col items-center justify-center gap-1.5 rounded-2xl bg-[#33CCFF] px-2 py-3.5 text-center shadow-sm transition active:scale-[0.98]"
+              className="flex flex-col items-center justify-center gap-1 rounded-xl bg-[#33CCFF] px-1.5 py-2.5 text-center transition active:scale-[0.98]"
             >
-              <Navigation className="h-5 w-5 text-[#053B4A]" strokeWidth={2.5} />
-              <span className="text-[12px] font-bold text-[#053B4A]">Waze</span>
+              <Navigation className="h-4 w-4 text-[#053B4A]" strokeWidth={2.5} />
+              <span className="text-[11px] font-bold text-[#053B4A]">Waze</span>
             </a>
             <a
               href={links.google}
               target="_blank"
               rel="noreferrer"
-              className="flex flex-col items-center justify-center gap-1.5 rounded-2xl bg-[#4285F4] px-2 py-3.5 text-center shadow-sm transition active:scale-[0.98]"
+              className="flex flex-col items-center justify-center gap-1 rounded-xl bg-[#4285F4] px-1.5 py-2.5 text-center transition active:scale-[0.98]"
             >
-              <MapPin className="h-5 w-5 text-white" strokeWidth={2.5} />
-              <span className="text-[12px] font-bold text-white">Google</span>
+              <MapPin className="h-4 w-4 text-white" strokeWidth={2.5} />
+              <span className="text-[11px] font-bold text-white">Google</span>
             </a>
             <button
               type="button"
               onClick={() => openAppleMaps(spot.lat, spot.lng)}
-              className="flex flex-col items-center justify-center gap-1.5 rounded-2xl bg-[#1C1C1E] px-2 py-3.5 text-center shadow-sm transition active:scale-[0.98]"
+              className="flex flex-col items-center justify-center gap-1 rounded-xl bg-[#1C1C1E] px-1.5 py-2.5 text-center transition active:scale-[0.98]"
             >
-              <MapPin className="h-5 w-5 text-white" strokeWidth={2.5} />
-              <span className="text-[12px] font-bold text-white">Apple</span>
+              <MapPin className="h-4 w-4 text-white" strokeWidth={2.5} />
+              <span className="text-[11px] font-bold text-white">Apple</span>
             </button>
           </div>
         </div>
 
         {/* Session controls — form wrapper blocks Enter/submit page reloads */}
         <form
-          className="space-y-2.5 border-t border-black/5 px-5 pt-3 pb-4"
+          className={`space-y-2 border-t pt-2.5 ${dark ? 'border-white/10' : 'border-black/5'}`}
           onSubmit={(e) => {
             blockNav(e)
             // Enter in plate field → status check only (never navigate)
@@ -369,7 +358,7 @@ export function ParkingBottomSheet({
             onCheckStatus()
           }}
         >
-          <p className="text-[11px] font-semibold tracking-wide text-[#8E8E93] uppercase">
+          <p className={`text-[10px] font-semibold tracking-wide uppercase ${muted}`}>
             Parkimissessioon
           </p>
           <input
@@ -382,7 +371,7 @@ export function ParkingBottomSheet({
             spellCheck={false}
             disabled={sessionLoading}
             enterKeyHint="done"
-            className="w-full rounded-2xl border-0 bg-[#F2F2F7] px-4 py-3.5 font-mono text-[15px] font-semibold tracking-wider text-[#1C1C1E] outline-none ring-[#007AFF]/30 focus:ring-2 disabled:opacity-60"
+            className={`w-full rounded-xl border-0 px-3 py-2.5 font-mono text-[13px] font-semibold tracking-wider outline-none ring-[#007AFF]/30 focus:ring-2 disabled:opacity-60 ${blockBg} ${ink}`}
           />
           {touched && !carOk ? (
             <p className="text-[12px] font-medium text-[#FF3B30]">Sisesta kehtiv auto number</p>
@@ -512,7 +501,8 @@ export function ParkingBottomSheet({
             </button>
           ) : null}
         </form>
-      </div>
-    </div>
+        </>
+      )}
+    </InfoSidePanelShell>
   )
 }

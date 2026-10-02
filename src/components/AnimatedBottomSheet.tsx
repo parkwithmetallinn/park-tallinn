@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 
-const CLOSE_MS = 280
+const CLOSE_MS = 200
 
-/** Spring open / ease-out close helpers for bottom info sheets. */
+/** Open / close helpers for info side panels (left desktop, bottom mobile). */
 export function useSheetClose(onClose: () => void) {
   const [exiting, setExiting] = useState(false)
   const closedRef = useRef(false)
@@ -24,6 +24,6 @@ export function useSheetClose(onClose: () => void) {
   return {
     exiting,
     requestClose,
-    sheetClassName: exiting ? 'sheet-spring-out' : 'sheet-spring-in',
+    sheetClassName: exiting ? 'info-panel-out' : 'info-panel-in',
   }
 }

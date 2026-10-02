@@ -207,6 +207,27 @@ function applySelectionHighlight(map: MapLibreMapType, selectedId: string | null
   }
 }
 
+
+/** Camera padding so the focus point sits in the free map area (not under the info panel). */
+function panelCameraPadding(panelOpen: boolean): {
+  top: number
+  bottom: number
+  left: number
+  right: number
+} {
+  const desktop =
+    typeof window !== 'undefined' &&
+    window.matchMedia('(min-width: 640px)').matches
+  if (!panelOpen) {
+    return { top: 96, bottom: 48, left: 24, right: 56 }
+  }
+  if (desktop) {
+    return { top: 96, bottom: 48, left: 380, right: 56 }
+  }
+  const bottom = Math.round(window.innerHeight * 0.42)
+  return { top: 80, bottom, left: 16, right: 16 }
+}
+
 export function MapView({
   spots,
   filter,
@@ -230,6 +251,7 @@ export function MapView({
   onStreetSpotsLoaded,
   onMapReady,
   suppressedFeatureIds,
+  infoPanelOpen = false,
 }: {
   spots: ParkingSpot[]
   filter: FilterId
@@ -262,6 +284,8 @@ export function MapView({
   onMapReady?: () => void
   /** Admin-approved REPORT_INVALID suppressions (never mutates production GeoJSON). */
   suppressedFeatureIds?: Set<string> | string[]
+  /** Left/bottom info panel open — shift camera so pin stays visible. */
+  infoPanelOpen?: boolean
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMapType | null>(null)
@@ -282,6 +306,7 @@ export function MapView({
   const pitch3dRef = useRef(pitch3d)
   const flyModeRef = useRef(flyMode)
   const themeRef = useRef(theme)
+  const infoPanelOpenRef = useRef(infoPanelOpen)
   const appliedThemeRef = useRef<ThemeMode>(theme)
   const districtDebugRef = useRef(false)
   const routeRef = useRef(route)
@@ -301,6 +326,7 @@ export function MapView({
   pitch3dRef.current = pitch3d
   flyModeRef.current = flyMode
   themeRef.current = theme
+  infoPanelOpenRef.current = infoPanelOpen
   routeRef.current = route
   navigatingRef.current = navigating
   suppressedRef.current = new Set(
@@ -649,7 +675,7 @@ export function MapView({
           const [[west, south], [east, north]] = featureBounds(fromFc.geometry)
           const bounds = new LngLatBounds([west, south], [east, north])
           map.fitBounds(bounds, {
-            padding: { top: 80, bottom: 220, left: 48, right: 48 },
+            padding: panelCameraPadding(infoPanelOpenRef.current || true),
             maxZoom: 17.2,
             duration: 900,
             pitch: pitch3dRef.current ? NAV_PITCH : 0,
@@ -820,11 +846,13 @@ export function MapView({
     const zoom = flyZoom ?? Math.max(map.getZoom(), ZOOM.detailMin + 0.4)
     const pitch = pitch3dRef.current ? NAV_PITCH : 0
 
+    const padding = panelCameraPadding(infoPanelOpenRef.current)
     if (flyModeRef.current === 'fly') {
       map.flyTo({
         center,
         zoom,
         pitch,
+        padding,
         speed: 1.2,
         curve: 1.4,
         essential: true,
@@ -834,11 +862,23 @@ export function MapView({
         center,
         zoom,
         pitch,
+        padding,
         duration: 900,
         essential: true,
       })
     }
   }, [flyTarget, flyKey, flyZoom, ready])
+
+  // Keep focus clear of the left/bottom info panel when it opens/closes
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    map.easeTo({
+      padding: panelCameraPadding(infoPanelOpen),
+      duration: 280,
+      essential: true,
+    })
+  }, [infoPanelOpen, ready])
 
   useEffect(() => {
     const map = mapRef.current
