@@ -69,13 +69,13 @@ tavaliselt same-origin `/api/parkimine` proxy kaudu:
 { "action": "status" }
 ```
 
-```json
-{ "action": "extend", "carNumber": "123ABC", "zone": "KESKLINN", "minutes": 15 }
-```
+Server toetab ainult `start` | `stop` | `status` (extend puudub). Ettemakstud minutid on ainult kohalik taimer (`endsAt` localStorage’is).
 
-- **start** / **stop** / **extend** — nõuavad `carNumber` + `zone`
+- **start** / **stop** — nõuavad `carNumber` + `zone`
 - **status** ühe numbriga — body on täpselt `{ action, carNumber }` (ilma zone’ta)
 - **status** ilma `carNumber`-ita (või **Kõik** nupp) — `{ activeSessions[], count }`
+- Vastused normaliseeritakse `ACTIVE` | `NOT_FOUND` | `ERROR` (`src/lib/parkingSession.ts`). `NOT_FOUND` ei ole viga.
+- App load / window focus / visibilitychange (≤1× / 15 s) kutsub `status` kui kohalik sessioon olemas: ACTIVE → sync; NOT_FOUND → kustuta + info toast; ERROR → hoia kohalikku olekut + „ühendus puudub“.
 - Header Auth: `X-N8N-API-KEY` = `VITE_N8N_API_KEY` (ei ole hardcode’itud lähtekoodis)
 
 Deep-link testimiseks (ilma kaardiklõpsuta):

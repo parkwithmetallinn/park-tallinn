@@ -5,6 +5,16 @@ import type { ParkingSpot } from '../types'
 const STORAGE_KEY = 'park_tallinn_custom_spots'
 const CAR_NUMBER_KEY = 'park_tallinn_car_number'
 const ACTIVE_SESSION_KEY = 'park_tallinn_active_session'
+const TIMER_STATE_KEY = 'park_tallinn_timer_state'
+
+export type TimerMode = 'elapsed' | 'prepaid'
+
+/** Persisted timer — prepaid uses absolute endsAt so reload restores countdown. */
+export type ParkingTimerState = {
+  mode: TimerMode
+  /** ISO timestamp when prepaid countdown reaches 0 */
+  endsAt?: string | null
+}
 
 export function loadCustomSpots(): ParkingSpot[] {
   try {
@@ -62,4 +72,36 @@ export function saveActiveSession(session: ActiveParkingSession | null): void {
   } catch {
     /* ignore */
   }
+}
+
+export function loadTimerState(): ParkingTimerState | null {
+  try {
+    const raw = localStorage.getItem(TIMER_STATE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as ParkingTimerState
+    if (parsed?.mode !== 'elapsed' && parsed?.mode !== 'prepaid') return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+export function saveTimerState(state: ParkingTimerState | null): void {
+  try {
+    if (!state) {
+      localStorage.removeItem(TIMER_STATE_KEY)
+      return
+    }
+    localStorage.setItem(TIMER_STATE_KEY, JSON.stringify(state))
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Remaining prepaid seconds from absolute endsAt (0 if past). */
+export function prepaidSecondsRemaining(endsAt?: string | null): number {
+  if (!endsAt) return 0
+  const endMs = Date.parse(endsAt)
+  if (!Number.isFinite(endMs)) return 0
+  return Math.max(0, Math.floor((endMs - Date.now()) / 1000))
 }

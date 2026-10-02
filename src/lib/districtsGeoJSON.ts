@@ -12,14 +12,15 @@ type DistrictProps = {
   labelPoint: [number, number]
 }
 
+type DistrictGeometry =
+  | { type: 'Polygon'; coordinates: number[][][] }
+  | { type: 'MultiPolygon'; coordinates: number[][][][] }
+
 type DistrictFeature = {
   type: 'Feature'
   id?: string
   properties: DistrictProps
-  geometry: {
-    type: 'Polygon' | 'MultiPolygon'
-    coordinates: number[][][] | number[][][][]
-  }
+  geometry: DistrictGeometry
 }
 
 type DistrictFC = {
