@@ -6,6 +6,11 @@ import {
   districtsToGeoJSON,
 } from '../lib/districtsGeoJSON'
 import {
+  parnuZoneLabelsToGeoJSON,
+  parnuZonesToGeoJSON,
+} from '../data/parnuZones'
+import type { CityId } from '../data/cities'
+import {
   PRECISE_FILL_LAYER,
   PRECISE_LABEL_LAYER,
   PRECISE_MULTISTOREY_BADGE_LAYER,
@@ -1116,6 +1121,45 @@ export function setDistrictDebugVisible(map: MapLibreMapType, visible: boolean) 
   const v = visible ? 'visible' : 'none'
   for (const id of [DISTRICT_DEBUG_CIRCLE_LAYER, DISTRICT_DEBUG_LABEL_LAYER]) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v)
+  }
+}
+
+/**
+ * Swap district/zone polygon overlays by city.
+ * Tallinn → official linnaosad; Pärnu → kesklinn/rand paid zones.
+ */
+export function setCityDistrictOverlays(map: MapLibreMapType, cityId: CityId) {
+  const polySrc = map.getSource(DISTRICT_SOURCE) as {
+    setData?: (d: unknown) => void
+  } | null
+  const labelSrc = map.getSource(DISTRICT_LABEL_SOURCE) as {
+    setData?: (d: unknown) => void
+  } | null
+  if (cityId === 'parnu') {
+    polySrc?.setData?.(parnuZonesToGeoJSON())
+    labelSrc?.setData?.(parnuZoneLabelsToGeoJSON())
+    for (const id of [
+      DISTRICT_FILL_LAYER,
+      DISTRICT_OUTLINE_LAYER,
+      DISTRICT_SUBZONE_FILL_LAYER,
+      DISTRICT_SUBZONE_OUTLINE_LAYER,
+    ]) {
+      try {
+        if (map.getLayer(id)) map.setLayerZoomRange(id, 0, 16)
+      } catch {
+        /* ok */
+      }
+    }
+    return
+  }
+  polySrc?.setData?.(districtsToGeoJSON())
+  labelSrc?.setData?.(districtLabelsToGeoJSON())
+  for (const id of [DISTRICT_FILL_LAYER, DISTRICT_OUTLINE_LAYER]) {
+    try {
+      if (map.getLayer(id)) map.setLayerZoomRange(id, 0, 14)
+    } catch {
+      /* ok */
+    }
   }
 }
 

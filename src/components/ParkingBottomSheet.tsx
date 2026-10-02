@@ -20,6 +20,7 @@ import {
   sessionStartDisabledHint,
 } from '../data/zones'
 import type { ParkingSpot } from '../types'
+import { formatFreeUntil } from '../lib/freeRules'
 import { navLinks, openAppleMaps } from '../lib/geocode'
 import { PARKING_LAYER_META } from '../map/parkingLayers'
 import { streetLineColor } from '../map/streetLineTheme'
@@ -264,6 +265,34 @@ export function ParkingBottomSheet({
           </button>
         </div>
 
+        {spot.freeNow != null || spot.freeReason ? (
+          <div
+            className={`mb-2.5 rounded-xl px-3 py-2.5 ${
+              spot.freeNow
+                ? 'bg-[#34C759]/12 text-[#248A3D]'
+                : 'bg-[#FF9F0A]/12 text-[#C93400]'
+            }`}
+          >
+            <p className="text-[10px] font-semibold tracking-wide uppercase opacity-80">
+              {spot.freeNow ? 'Praegu tasuta' : 'Praegu tasuline'}
+            </p>
+            <p className="mt-0.5 text-[13px] font-semibold">
+              {spot.freeReason || (spot.freeNow ? 'Tasuta' : 'Tasuline')}
+            </p>
+            {formatFreeUntil(spot.freeUntil) ? (
+              <p className="mt-0.5 text-[12px] font-medium opacity-90">
+                {spot.freeNow ? 'Tasuta kuni' : 'Tasuline kuni'}{' '}
+                {formatFreeUntil(spot.freeUntil)}
+              </p>
+            ) : null}
+            {spot.exemptions?.includes('ev_m1') ? (
+              <p className="mt-1 text-[11px] font-semibold">
+                Elektriauto (M1) · mootorratas · invakaart — vabastus
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         {/* Price block — compact */}
         <div className={`mb-2.5 overflow-hidden rounded-xl ${blockBg}`}>
           <div className="flex items-stretch">
@@ -499,6 +528,22 @@ export function ParkingBottomSheet({
               <Flag className="h-3.5 w-3.5 text-[#FF3B30]" />
               Märgi olematuks / Teavita veast
             </button>
+          ) : null}
+
+          {spot.verifyOnSite || spot.source || spot.lastVerified ? (
+            <div className={`mt-2 rounded-xl px-3 py-2.5 text-[11px] leading-snug ${blockBg} ${soft}`}>
+              {spot.verifyOnSite ? (
+                <p className={`font-bold ${ink}`}>Kontrolli kohapealt silti</p>
+              ) : null}
+              {spot.source ? (
+                <p className="mt-0.5">
+                  Allikas: {spot.source}
+                </p>
+              ) : null}
+              {spot.lastVerified ? (
+                <p className="mt-0.5">Viimati kontrollitud: {spot.lastVerified}</p>
+              ) : null}
+            </div>
           ) : null}
         </form>
         </>

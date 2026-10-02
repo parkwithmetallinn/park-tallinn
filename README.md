@@ -1,6 +1,6 @@
 # Park Tallinn
 
-Puhas 3D parkimiskaart Tallinnale (MapLibre). Tänavaäärsed tsoonid on teedega joondatud jooned; eraparklad on polügoonid.
+Puhas 3D parkimiskaart Tallinnale ja Pärnule (MapLibre). Tänavaäärsed tsoonid on teedega joondatud jooned; eraparklad on polügoonid. Linna vahetus otsinguribal (Tallinn | Pärnu).
 
 ## Käivitamine
 

@@ -38,21 +38,22 @@ import {
   type StreetParkingFeature,
 } from '../lib/streetParkingLines'
 import {
-  getCachedPolygons,
-  getCachedStreets,
-  loadParkingPolygonsCached,
-  loadStreetParkingCached,
-} from '../lib/parkingDataCache'
+  getCachedCityPolygons,
+  getCachedCityStreets,
+  loadCityParking,
+} from '../lib/cityParkingCache'
 import { dedupeStreetAgainstPolygons } from '../lib/spatialDedupe'
 import { parkingIndex } from '../lib/spatialIndex'
 import type { DrivingRoute } from '../lib/routing'
 import type { ThemeMode } from '../lib/theme'
+import type { CityId } from '../data/cities'
 import { createBasemapStyle } from '../map/createBasemapStyle'
 import {
   DISTRICT_FILL_LAYER,
   DISTRICT_SUBZONE_FILL_LAYER,
   ensureParkingOverlaySources,
   ROUTE_SOURCE,
+  setCityDistrictOverlays,
   setDistrictDebugVisible,
   setDistrictHover,
   setParkingLayerVisibility,
@@ -173,13 +174,42 @@ function applyDualLayerFilter(
     }
   }
 
+  const filterEvExempt = (feats: PreciseParkingCollection['features']) =>
+    feats.filter(
+      (f) =>
+        f.properties.layer === 'ev' ||
+        (Array.isArray((f.properties as { exemptions?: string[] }).exemptions) &&
+          (f.properties as { exemptions?: string[] }).exemptions!.includes('ev_m1')),
+    )
+
   if (polys) {
     const src = map.getSource(PRECISE_PARKING_SOURCE) as GeoJSONSource | undefined
-    src?.setData(filterPreciseCollection(polys, layers) as never)
+    if (filter === 'ev') {
+      src?.setData({
+        type: 'FeatureCollection',
+        features: filterEvExempt(polys.features),
+      } as never)
+    } else {
+      src?.setData(filterPreciseCollection(polys, layers) as never)
+    }
   }
   if (streets) {
     const src = map.getSource(STREET_PARKING_SOURCE) as GeoJSONSource | undefined
-    src?.setData(filterStreetCollection(streets, layers) as never)
+    if (filter === 'ev') {
+      src?.setData({
+        type: 'FeatureCollection',
+        features: streets.features.filter(
+          (f) =>
+            f.properties.layer === 'ev' ||
+            (Array.isArray((f.properties as { exemptions?: string[] }).exemptions) &&
+              (f.properties as { exemptions?: string[] }).exemptions!.includes(
+                'ev_m1',
+              )),
+        ),
+      } as never)
+    } else {
+      src?.setData(filterStreetCollection(streets, layers) as never)
+    }
   }
 }
 
@@ -252,6 +282,7 @@ export function MapView({
   onMapReady,
   suppressedFeatureIds,
   infoPanelOpen = false,
+  cityId = 'tallinn',
 }: {
   spots: ParkingSpot[]
   filter: FilterId
@@ -286,6 +317,8 @@ export function MapView({
   suppressedFeatureIds?: Set<string> | string[]
   /** Left/bottom info panel open — shift camera so pin stays visible. */
   infoPanelOpen?: boolean
+  /** Active city layer (Tallinn default — keeps existing data path). */
+  cityId?: CityId
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMapType | null>(null)
@@ -307,6 +340,7 @@ export function MapView({
   const flyModeRef = useRef(flyMode)
   const themeRef = useRef(theme)
   const infoPanelOpenRef = useRef(infoPanelOpen)
+  const cityIdRef = useRef<CityId>(cityId)
   const appliedThemeRef = useRef<ThemeMode>(theme)
   const districtDebugRef = useRef(false)
   const routeRef = useRef(route)
@@ -327,6 +361,7 @@ export function MapView({
   flyModeRef.current = flyMode
   themeRef.current = theme
   infoPanelOpenRef.current = infoPanelOpen
+  cityIdRef.current = cityId
   routeRef.current = route
   navigatingRef.current = navigating
   suppressedRef.current = new Set(
@@ -414,7 +449,11 @@ export function MapView({
             ? result.spots.filter(
                 (s) => s.layer === 'free_street' || s.zone_code === 'FREE' || s.type === 'free',
               )
-            : result.spots.filter((s) => layers.includes(s.layer))
+            : filterRef.current === 'ev'
+              ? result.spots.filter(
+                  (s) => s.layer === 'ev' || s.exemptions?.includes('ev_m1'),
+                )
+              : result.spots.filter((s) => layers.includes(s.layer))
 
       const empty = { type: 'FeatureCollection' as const, features: [] }
       let geo =
@@ -541,7 +580,7 @@ export function MapView({
         void refreshViewport(map)
         emitZoom(map)
 
-        // Dual-layer from estonia_parking_master.geojson (cache-first).
+        // Dual-layer parking (Tallinn master or Pärnu city extract).
         // Prep purges private/underground; spatial dedupe prefers polygons.
         const applyPoly = (fc: PreciseParkingCollection) => {
           preciseFcRef.current = fc
@@ -610,21 +649,21 @@ export function MapView({
           }
         }
 
-        const warmPoly = getCachedPolygons()
-        const warmStreet = getCachedStreets()
+        const city = cityIdRef.current
+        setCityDistrictOverlays(map, city)
+        const warmPoly = getCachedCityPolygons(city)
+        const warmStreet = getCachedCityStreets(city)
         if (warmPoly) applyPoly(warmPoly)
         if (warmStreet) applyStreet(warmStreet)
 
-        void loadParkingPolygonsCached()
-          .then(applyPoly)
-          .catch((err) => {
-            console.warn('estonia_parking_master (lots) failed to load', err)
+        void loadCityParking(city)
+          .then((split) => {
+            if (cityIdRef.current !== city) return
+            applyPoly(split.polygons)
+            applyStreet(split.streets)
           })
-
-        void loadStreetParkingCached()
-          .then(applyStreet)
           .catch((err) => {
-            console.warn('estonia_parking_master (streets) failed to load', err)
+            console.warn(`[parking] ${city} master failed to load`, err)
           })
         return
       }
@@ -761,6 +800,78 @@ export function MapView({
       map.jumpTo({ center, zoom, pitch, bearing })
     })
   }, [theme, ready])
+
+  /** Reload parking + district overlays when the city layer changes. */
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    cityIdRef.current = cityId
+    setCityDistrictOverlays(map, cityId)
+    preciseFcRef.current = null
+    streetRawFcRef.current = null
+    streetFcRef.current = null
+    onPreciseSpotsLoadedRef.current?.([])
+    onStreetSpotsLoadedRef.current?.([])
+
+    const warmPoly = getCachedCityPolygons(cityId)
+    const warmStreet = getCachedCityStreets(cityId)
+    if (warmPoly) {
+      preciseFcRef.current = warmPoly
+      applyDualLayerFilter(
+        map,
+        filterRef.current,
+        warmPoly,
+        streetRawFcRef.current,
+        suppressedRef.current,
+      )
+      const spots = preciseCollectionToSpots({
+        type: 'FeatureCollection',
+        features: withoutSuppressed(warmPoly.features, suppressedRef.current),
+      })
+      for (const s of spots) parkingIndex.insert(s)
+      onPreciseSpotsLoadedRef.current?.(spots)
+    }
+    if (warmStreet) {
+      streetRawFcRef.current = warmStreet
+      applyDualLayerFilter(
+        map,
+        filterRef.current,
+        preciseFcRef.current,
+        warmStreet,
+        suppressedRef.current,
+      )
+      const spots = streetCollectionToSpots(warmStreet)
+      for (const s of spots) parkingIndex.insert(s)
+      onStreetSpotsLoadedRef.current?.(spots)
+    }
+
+    void loadCityParking(cityId)
+      .then((split) => {
+        if (cityIdRef.current !== cityId || !mapRef.current) return
+        preciseFcRef.current = split.polygons
+        streetRawFcRef.current = split.streets
+        applyDualLayerFilter(
+          mapRef.current,
+          filterRef.current,
+          split.polygons,
+          split.streets,
+          suppressedRef.current,
+        )
+        const lots = preciseCollectionToSpots({
+          type: 'FeatureCollection',
+          features: withoutSuppressed(split.polygons.features, suppressedRef.current),
+        })
+        const streets = streetCollectionToSpots(split.streets)
+        for (const s of lots) parkingIndex.insert(s)
+        for (const s of streets) parkingIndex.insert(s)
+        onPreciseSpotsLoadedRef.current?.(lots)
+        onStreetSpotsLoadedRef.current?.(streets)
+        applySelectionHighlight(mapRef.current, selectedIdRef.current)
+      })
+      .catch((err) => {
+        console.warn(`[parking] city ${cityId} reload failed`, err)
+      })
+  }, [cityId, ready])
 
   useEffect(() => {
     void spots

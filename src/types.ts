@@ -16,6 +16,7 @@ export type ParkingFeatureType =
 /** Who operates / bills the spot */
 export type ParkingOperator =
   | 'Tallinna Linn'
+  | 'Pärnu Linn'
   | 'AS Ühisteenused'
   | 'EuroPark'
   | 'Snabb'
@@ -23,6 +24,8 @@ export type ParkingOperator =
   | 'Parkit'
   | 'Enefit Volt'
   | 'Eleport'
+  | 'Neste'
+  | 'Tesla'
   | 'Ignitis'
   | 'Unknown'
 
@@ -89,6 +92,22 @@ export interface ParkingSpot {
   type?: 'free' | 'timed' | 'pr' | 'paid'
   kind?: 'lot' | 'street'
   provider?: ParkingLayerKey
+  /** Data provenance (OSM, city schedule, seed, …) */
+  source?: string
+  /** ISO date YYYY-MM-DD when the record was last checked */
+  lastVerified?: string
+  /** Owning city layer */
+  cityId?: 'tallinn' | 'parnu'
+  /** freeRules evaluation snapshot */
+  freeNow?: boolean
+  freeUntil?: string | null
+  freeReason?: string
+  /** Exemption tags (e.g. ev_m1 for fully electric M1) */
+  exemptions?: Array<'ev_m1' | 'motorcycle' | 'disabled'>
+  /** Show “Kontrolli kohapealt silti” in the detail sheet */
+  verifyOnSite?: boolean
+  /** Pärnu paid zone id when inside kesklinn / rand */
+  parnuZone?: 'kesklinn' | 'rand' | null
 }
 
 export interface PaidZone {

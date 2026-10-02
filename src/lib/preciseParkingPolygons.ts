@@ -57,6 +57,15 @@ export type PreciseParkingProps = {
   labelRank: number
   floors_label: string
   structure_label: string
+  source?: string
+  lastVerified?: string
+  cityId?: 'tallinn' | 'parnu'
+  freeNow?: boolean
+  freeUntil?: string | null
+  freeReason?: string
+  exemptions?: Array<'ev_m1' | 'motorcycle' | 'disabled'>
+  verifyOnSite?: boolean
+  parnuZone?: 'kesklinn' | 'rand' | null
 }
 
 type PolygonGeom = {
@@ -450,6 +459,8 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
         labelRank,
         floors_label: structureType === 'multi_storey' ? `P+${floors}` : '',
         structure_label: structureLabel(structureType),
+        source: str(p.source) || undefined,
+        lastVerified: str(p.lastVerified) || undefined,
       },
       geometry: f.geometry,
     })
@@ -462,7 +473,7 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
 export function preciseFeatureToSpot(f: PreciseParkingFeature): ParkingSpot {
   const { lat, lng } = featureCentroid(f.geometry)
   const p = f.properties
-  return normalizeSpot({
+  const spot = normalizeSpot({
     id: p.id,
     name: p.name,
     featureType: 'off-street-lot',
@@ -497,7 +508,22 @@ export function preciseFeatureToSpot(f: PreciseParkingFeature): ParkingSpot {
     polygon: polygonToLatLng(f.geometry),
     structureType: p.type,
     floors: p.floors,
+    source: p.source,
+    lastVerified: p.lastVerified,
+    cityId: p.cityId,
+    freeNow: p.freeNow,
+    freeUntil: p.freeUntil,
+    freeReason: p.freeReason,
+    exemptions: p.exemptions,
+    verifyOnSite: p.verifyOnSite,
+    parnuZone: p.parnuZone,
   })
+  // Preserve FREE / KELL / EV badges exactly (no capacity / OSM id labels)
+  if (p.badge === 'FREE' || p.badge === 'KELL' || p.badge === 'EV') {
+    spot.badge = p.badge
+    spot.zone_code = p.badge
+  }
+  return spot
 }
 
 export function preciseCollectionToSpots(fc: PreciseParkingCollection): ParkingSpot[] {

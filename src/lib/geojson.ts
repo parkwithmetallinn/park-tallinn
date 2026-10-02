@@ -68,7 +68,7 @@ function inferOperator(spot: ParkingSpotSeed, layer: ParkingLayerKey): ParkingOp
     case 'inva':
     case 'loading':
     case 'park_ride':
-      return 'Tallinna Linn'
+      return spot.cityId === 'parnu' ? 'Pärnu Linn' : 'Tallinna Linn'
     default:
       return 'Unknown'
   }
@@ -175,14 +175,19 @@ export function normalizeSpot(spot: ParkingSpotSeed): ParkingSpot {
   const price_per_hour = inferPrice(spot, layer)
   const type = spot.type ?? inferLegacyType(layer)
   const kind = inferKind(spot, featureType)
-  const badge = mapLabelForLayer(layer, zone_code)
+  const badgeRaw = spot.badge?.trim().toUpperCase()
+  const badge =
+    badgeRaw === 'FREE' || badgeRaw === 'KELL' || badgeRaw === 'EV'
+      ? badgeRaw
+      : mapLabelForLayer(layer, zone_code)
 
   return {
     ...spot,
     featureType,
     operator,
     layer,
-    zone_code,
+    zone_code:
+      badge === 'FREE' || badge === 'KELL' || badge === 'EV' ? badge : zone_code,
     free_minutes,
     price_per_hour,
     type,

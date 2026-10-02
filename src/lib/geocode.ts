@@ -25,6 +25,7 @@ export type SearchLocation = {
 export async function searchAddress(
   query: string,
   signal?: AbortSignal,
+  viewbox = '24.55,59.35,25.00,59.55',
 ): Promise<GeocodeResult[]> {
   const q = query.trim()
   if (q.length < 3) return []
@@ -35,7 +36,7 @@ export async function searchAddress(
     addressdetails: '0',
     limit: '6',
     countrycodes: 'ee',
-    viewbox: '24.55,59.35,25.00,59.55',
+    viewbox,
     bounded: '0',
   })
 

@@ -27,8 +27,17 @@ import {
 } from './lib/parkingRequests'
 import { parkingQueryKeys, queryClient } from './lib/queryClient'
 import { prefetchParkingLayers } from './lib/parkingDataCache'
+import {
+  CITIES,
+  CITY_LIST,
+  getInitialCity,
+  persistCity,
+  type CityId,
+} from './data/cities'
 import { MOCK_KESKLINN_SPOTS } from './data/mockKesklinn'
-import { PARKING_SPOTS, TALLINN_CENTER } from './data/parking'
+import { PARKING_SPOTS } from './data/parking'
+import { parnuEvChargersAsSpots } from './data/parnuChargers'
+import { PARNU_ZONE_LIST } from './data/parnuZones'
 import {
   canStartParkingSession,
   sessionStartDisabledHint,
@@ -86,12 +95,17 @@ const glassDark =
 export default function App() {
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme())
   const dark = theme === 'dark'
+  const [cityId, setCityId] = useState<CityId>(() => getInitialCity())
+  const city = CITIES[cityId]
   const [filter, setFilter] = useState<FilterId>('all')
   const [query, setQuery] = useState('')
   const [geoResults, setGeoResults] = useState<GeocodeResult[]>([])
   const [geoLoading, setGeoLoading] = useState(false)
   const [geoError, setGeoError] = useState<string | null>(null)
-  const [userLocation, setUserLocation] = useState<[number, number]>(TALLINN_CENTER)
+  const [userLocation, setUserLocation] = useState<[number, number]>(() => {
+    const id = getInitialCity()
+    return CITIES[id].center
+  })
   const [hasGps, setHasGps] = useState(false)
   const [flyTarget, setFlyTarget] = useState<[number, number] | null>(null)
   const [flyZoom, setFlyZoom] = useState<number | undefined>(undefined)
@@ -182,7 +196,7 @@ export default function App() {
     geoAbort.current = ac
     const t = window.setTimeout(async () => {
       try {
-        const results = await searchAddress(q, ac.signal)
+        const results = await searchAddress(q, ac.signal, city.viewbox)
         if (!ac.signal.aborted) setGeoResults(results)
       } catch (e) {
         if ((e as Error).name === 'AbortError') return
@@ -196,9 +210,44 @@ export default function App() {
       window.clearTimeout(t)
       ac.abort()
     }
-  }, [query])
+  }, [query, city.viewbox])
+
+  const switchCity = useCallback(
+    (next: CityId) => {
+      if (next === cityId) return
+      setCityId(next)
+      persistCity(next)
+      setSelected(null)
+      setSearchSheetOpen(false)
+      setSearchLocation(null)
+      setPreciseSpots([])
+      setStreetSpots([])
+      setFilter('all')
+      const cfg = CITIES[next]
+      if (!hasGps) setUserLocation(cfg.center)
+      setFlyMode('fly')
+      setFlyTarget(cfg.center)
+      setFlyZoom(cfg.zoom)
+      setFlyKey((k) => k + 1)
+    },
+    [cityId, hasGps],
+  )
 
   const allSpots = useMemo(() => {
+    const filteredPrecise = preciseSpots.filter((s) => !suppressedIds.has(s.id))
+    const filteredStreet = streetSpots.filter((s) => !suppressedIds.has(s.id))
+
+    if (cityId === 'parnu') {
+      const ev = parnuEvChargersAsSpots()
+      const custom = customSpots
+        .map((s) => normalizeSpot(s))
+        .filter((s) => !suppressedIds.has(s.id) && s.cityId !== 'tallinn')
+      const overlays = approvedOverlays
+        .map((s) => normalizeSpot(s))
+        .filter((s) => !suppressedIds.has(s.id))
+      return [...filteredPrecise, ...filteredStreet, ...ev, ...custom, ...overlays]
+    }
+
     const curated = PARKING_SPOTS.map((s) =>
       normalizeSpot({
         ...s,
@@ -235,8 +284,6 @@ export default function App() {
       }
       return true
     })
-    const filteredPrecise = preciseSpots.filter((s) => !suppressedIds.has(s.id))
-    const filteredStreet = streetSpots.filter((s) => !suppressedIds.has(s.id))
     return [
       ...filteredPrecise,
       ...filteredStreet,
@@ -245,7 +292,22 @@ export default function App() {
       ...custom,
       ...overlays,
     ]
-  }, [customSpots, preciseSpots, streetSpots, approvedOverlays, suppressedIds])
+  }, [
+    cityId,
+    customSpots,
+    preciseSpots,
+    streetSpots,
+    approvedOverlays,
+    suppressedIds,
+  ])
+
+  const visibleSpots = useMemo(() => {
+    if (filter !== 'ev') return allSpots
+    // Elektriauto: chargers + Pärnu EV exemption spots
+    return allSpots.filter(
+      (s) => s.layer === 'ev' || s.exemptions?.includes('ev_m1'),
+    )
+  }, [allSpots, filter])
 
   // Deep-link: /?spot=<id> opens the parking sheet (no map click needed)
   const deepLinkApplied = useRef(false)
@@ -401,7 +463,7 @@ export default function App() {
       <div className="absolute inset-0">
         <MapErrorBoundary>
           <MapView
-            spots={allSpots}
+            spots={visibleSpots}
             filter={filter}
             theme={theme}
             userLocation={userLocation}
@@ -429,6 +491,7 @@ export default function App() {
             infoPanelOpen={Boolean(
               selected || (searchSheetOpen && searchLocation),
             )}
+            cityId={cityId}
           />
         </MapErrorBoundary>
         {!mapReady ? <MapChromeSkeleton /> : null}
@@ -493,6 +556,29 @@ export default function App() {
               </button>
             </div>
 
+            <div className="flex gap-1 border-t border-black/6 px-2 py-1.5">
+              {CITY_LIST.map((c) => {
+                const active = c.id === cityId
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => switchCity(c.id)}
+                    className={`tap-scale flex-1 rounded-xl px-2 py-1.5 text-[12px] font-bold transition ${
+                      active
+                        ? dark
+                          ? 'bg-white/15 text-white'
+                          : 'bg-[#1C1C1E] text-white'
+                        : muted
+                    }`}
+                    aria-pressed={active}
+                  >
+                    {c.label}
+                  </button>
+                )
+              })}
+            </div>
+
             {(geoLoading || geoResults.length > 0 || geoError) && query.trim().length >= 3 ? (
               <div className="max-h-52 overflow-y-auto border-t border-black/6 px-1 py-1">
                 {geoLoading ? (
@@ -543,6 +629,11 @@ export default function App() {
               )
             })}
           </div>
+          {cityId === 'parnu' && filter === 'ev' ? (
+            <p className={`px-1 pt-1 text-[11px] font-medium ${muted}`}>
+              Elektriauto (M1), mootorrattad ja invakaart — tasuta tasulistes tsoonides
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -829,8 +920,37 @@ export default function App() {
       ) : null}
 
       {infoOpen ? (
-        <ModalShell onClose={() => setInfoOpen(false)} title="Tallinna parkimisreeglid">
+        <ModalShell
+          onClose={() => setInfoOpen(false)}
+          title={
+            cityId === 'parnu' ? 'Pärnu parkimisreeglid' : 'Tallinna parkimisreeglid'
+          }
+        >
           <div className="max-h-[60vh] space-y-3 overflow-y-auto text-xs leading-relaxed text-ink-soft">
+            {cityId === 'parnu' ? (
+              <>
+                {PARNU_ZONE_LIST.map((z) => (
+                  <div key={z.id} className="rounded-2xl bg-paper-2 p-3">
+                    <h4 className="mb-1 text-sm font-bold text-ink">{z.name}</h4>
+                    <p>
+                      • {z.pricePerHour.toFixed(0)} €/h · {z.pricePer24h.toFixed(0)} €/24h
+                    </p>
+                    <p>• Ketas {z.freeMinutesWithDisc} min tasuta</p>
+                    <p className="mt-1 text-[11px] opacity-80">{z.source}</p>
+                  </div>
+                ))}
+                <div className="rounded-2xl border border-moss/20 bg-moss/8 p-3">
+                  <h4 className="mb-1 text-sm font-bold text-moss">Vabastused</h4>
+                  <p>• Täis-elektriline M1 sõiduauto</p>
+                  <p>• Mootorrattad</p>
+                  <p>• Invakaardi omanikud</p>
+                </div>
+                <p className="text-[11px] opacity-70">
+                  Kontrolli kohapealt silti. Andmed: OSM + parnu.ee/parkimine.
+                </p>
+              </>
+            ) : (
+              <>
             <div className="rounded-2xl border border-sea/20 bg-sea/8 p-3">
               <h4 className="mb-1 text-sm font-bold text-sea">Esimesed 15 minutit tasuta</h4>
               <p>
@@ -856,6 +976,8 @@ export default function App() {
               <p>• Laupäeval tasuline 08:00–15:00</p>
               <p>• Pühapäeval ja riigipühadel tasuta</p>
             </div>
+              </>
+            )}
             <div className="rounded-2xl border border-moss/20 bg-moss/8 p-3">
               <h4 className="mb-1 text-sm font-bold text-moss">Kaart</h4>
               <p>

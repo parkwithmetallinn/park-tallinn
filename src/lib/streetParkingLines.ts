@@ -393,10 +393,20 @@ export function prepareStreetParking(raw: RawCollection): StreetParkingCollectio
 
 export function streetFeatureToSpot(f: StreetParkingFeature): ParkingSpot {
   const { lat, lng } = lineMidpoint(f.geometry.coordinates)
-  const p = f.properties
+  const p = f.properties as StreetParkingFeature['properties'] & {
+    source?: string
+    lastVerified?: string
+    cityId?: 'tallinn' | 'parnu'
+    freeNow?: boolean
+    freeUntil?: string | null
+    freeReason?: string
+    exemptions?: Array<'ev_m1' | 'motorcycle' | 'disabled'>
+    verifyOnSite?: boolean
+    parnuZone?: 'kesklinn' | 'rand' | null
+  }
   const isFree = p.verified_free || p.rules === 'free' || p.layer === 'free_street'
-  const isClock = p.rules === 'clock'
-  return normalizeSpot({
+  const isClock = p.rules === 'clock' || p.layer === 'timed'
+  const spot = normalizeSpot({
     id: p.id,
     name: p.name,
     featureType: 'on-street-line',
@@ -421,7 +431,21 @@ export function streetFeatureToSpot(f: StreetParkingFeature): ParkingSpot {
     kind: 'street',
     landmark: true,
     line: lineToLatLng(f.geometry.coordinates),
+    source: p.source,
+    lastVerified: p.lastVerified,
+    cityId: p.cityId,
+    freeNow: p.freeNow,
+    freeUntil: p.freeUntil,
+    freeReason: p.freeReason,
+    exemptions: p.exemptions,
+    verifyOnSite: p.verifyOnSite,
+    parnuZone: p.parnuZone,
   })
+  if (p.badge === 'FREE' || p.badge === 'KELL' || p.badge === 'EV') {
+    spot.badge = p.badge
+    spot.zone_code = p.badge
+  }
+  return spot
 }
 
 export function streetCollectionToSpots(fc: StreetParkingCollection): ParkingSpot[] {
