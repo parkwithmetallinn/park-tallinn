@@ -145,8 +145,11 @@ export interface DistrictZone {
   }
 }
 
-/** `other` = grey / private / unclassified; layer keys match operator chips. */
-export type FilterId = 'all' | ParkingLayerKey | 'other'
+/**
+ * Top filter chips (5-pill):
+ * free_street | timed | paid (all operators) | other (unclassified)
+ */
+export type FilterId = 'all' | 'free_street' | 'timed' | 'paid' | 'other'
 
 /** Legacy UI type labels (report form / older filters) */
 export type SpotType = NonNullable<ParkingSpot['type']>
