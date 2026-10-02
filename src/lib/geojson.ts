@@ -167,18 +167,38 @@ function inferKind(spot: ParkingSpotSeed, featureType: ParkingFeatureType): NonN
 
 /** Normalize any seed / legacy record into the full Estonia parking schema. */
 export function normalizeSpot(spot: ParkingSpotSeed): ParkingSpot {
-  const layer = inferLayer(spot)
+  let layer = inferLayer(spot)
+  let free_minutes = inferFreeMinutes(spot, layer)
+  let price_per_hour = inferPrice(spot, layer)
+
+  // Strict categories: free + time window → Kellaga (never unlimited Tasuta)
+  if (
+    (layer === 'free_street' || spot.type === 'free') &&
+    free_minutes > 0 &&
+    price_per_hour <= 0
+  ) {
+    layer = 'timed'
+  }
+
   const featureType = inferFeatureType(spot, layer)
   const operator = inferOperator(spot, layer)
   const zone_code = inferZoneCode(spot, layer)
-  const free_minutes = inferFreeMinutes(spot, layer)
-  const price_per_hour = inferPrice(spot, layer)
-  const type = spot.type ?? inferLegacyType(layer)
+  // Re-resolve minutes/price after possible layer demotion
+  free_minutes = inferFreeMinutes({ ...spot, layer, free_minutes }, layer)
+  price_per_hour = inferPrice({ ...spot, layer, price_per_hour }, layer)
+  const type =
+    layer === 'timed'
+      ? 'timed'
+      : layer === 'free_street'
+        ? 'free'
+        : (spot.type ?? inferLegacyType(layer))
   const kind = inferKind(spot, featureType)
   const badgeRaw = spot.badge?.trim().toUpperCase()
   const badge =
     badgeRaw === 'FREE' || badgeRaw === 'KELL' || badgeRaw === 'EV'
-      ? badgeRaw
+      ? layer === 'timed' && badgeRaw === 'FREE'
+        ? 'KELL'
+        : badgeRaw
       : mapLabelForLayer(layer, zone_code)
 
   return {

@@ -3,8 +3,10 @@ import { mapLabelForLayer } from './mapLabels'
 import {
   emptyPurgeStats,
   getParkingExclusionReason,
+  isClockLimitedParking,
   isPaidFeeTag,
   isUnclassifiedParking,
+  isUnlimitedFreeParking,
   isVerifiedFreeParking,
   PARKING_COLOR_FREE,
   PARKING_COLOR_PAID,
@@ -213,14 +215,27 @@ function classifyRules(p: Record<string, unknown>): {
     rules: p.rules,
   })
 
-  // Curated schema fallback — only trust rules=free when verified
+  const curatedFreeMins = Number(p.free_minutes ?? 0)
+
+  // Curated schema fallback — only trust rules=free when verified + unlimited
   const curatedRules = str(p.rules).toLowerCase()
   if (curatedRules === 'free' || curatedRules === 'clock' || curatedRules === 'paid') {
     if (curatedRules === 'free' && verified_free) {
+      // Any clock window (free_minutes / maxstay) → Kellaga, not Tasuta
+      if (curatedFreeMins > 0 || maxMins > 0 || maxstay) {
+        return {
+          rules: 'clock',
+          layer: 'timed',
+          free_minutes: curatedFreeMins || maxMins || 15,
+          price_per_hour: 0,
+          color: STREET_COLOR.timed,
+          verified_free: false,
+        }
+      }
       return {
         rules: 'free',
         layer: 'free_street',
-        free_minutes: Number(p.free_minutes ?? 0),
+        free_minutes: 0,
         price_per_hour: 0,
         color: STREET_COLOR.free,
         verified_free: true,
@@ -230,7 +245,7 @@ function classifyRules(p: Record<string, unknown>): {
       return {
         rules: 'clock',
         layer: 'timed',
-        free_minutes: Number(p.free_minutes ?? (maxMins || 15)),
+        free_minutes: curatedFreeMins || maxMins || 15,
         price_per_hour: Number(p.price_per_hour ?? 0),
         color: STREET_COLOR.timed,
         verified_free: false,
@@ -259,12 +274,12 @@ function classifyRules(p: Record<string, unknown>): {
     }
   }
 
-  // Verified free + maxstay → clock filter (blue), not unlimited Tasuta green
-  if (verified_free && (maxMins > 0 || maxstay)) {
+  // Verified free + time window → Kellaga (blue), never unlimited Tasuta green
+  if (verified_free && (maxMins > 0 || maxstay || curatedFreeMins > 0)) {
     return {
       rules: 'clock',
       layer: 'timed',
-      free_minutes: maxMins || Number(p.free_minutes ?? 15),
+      free_minutes: curatedFreeMins || maxMins || 15,
       price_per_hour: 0,
       color: STREET_COLOR.timed,
       verified_free: false,
@@ -417,10 +432,10 @@ export function streetFeatureToSpot(f: StreetParkingFeature): ParkingSpot {
     free_minutes: p.free_minutes,
     price_per_hour: p.price_per_hour,
     badge: p.badge,
-    timeLimit: isFree
-      ? 'Tasuta tänav'
-      : isClock
-        ? `${p.free_minutes || 15} min · kellaga`
+    timeLimit: isClock
+      ? `Parkimiskellaga tasuta: ${p.free_minutes || 15} min`
+      : isFree
+        ? 'Tasuta · piiramatu · kellata'
         : p.rules === 'unknown'
           ? `Määramata · ${p.zone_code}`
           : `Tasuline · ${p.zone_code}`,
@@ -486,14 +501,37 @@ function isPaidStreetFeature(p: StreetParkingProps): boolean {
 
 export function filterStreetCollection(
   fc: StreetParkingCollection,
-  layers: ParkingLayerKey[] | 'all' | 'verified_free' | 'unclassified' | 'paid',
+  layers:
+    | ParkingLayerKey[]
+    | 'all'
+    | 'verified_free'
+    | 'clock'
+    | 'unclassified'
+    | 'paid',
 ): StreetParkingCollection {
   if (layers === 'all') return fc
   if (layers === 'verified_free') {
     return {
       type: 'FeatureCollection',
-      features: fc.features.filter(
-        (f) => f.properties.verified_free || f.properties.layer === 'free_street',
+      features: fc.features.filter((f) =>
+        isUnlimitedFreeParking({
+          layer: f.properties.layer,
+          free_minutes: f.properties.free_minutes,
+          price_per_hour: f.properties.price_per_hour,
+          verified_free: f.properties.verified_free,
+        }),
+      ),
+    }
+  }
+  if (layers === 'clock') {
+    return {
+      type: 'FeatureCollection',
+      features: fc.features.filter((f) =>
+        isClockLimitedParking({
+          layer: f.properties.layer,
+          free_minutes: f.properties.free_minutes,
+          price_per_hour: f.properties.price_per_hour,
+        }),
       ),
     }
   }

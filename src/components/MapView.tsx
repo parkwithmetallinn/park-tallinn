@@ -81,6 +81,10 @@ import {
 } from '../map/streetLineTheme'
 import { NAV_PITCH } from '../map/theme'
 import { ZOOM } from '../map/zoom'
+import {
+  isClockLimitedParking,
+  isUnlimitedFreeParking,
+} from '../lib/parkingClassification'
 import type { FilterId, ParkingLayerKey, ParkingSpot } from '../types'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
@@ -179,15 +183,15 @@ export type MapViewHandle = {
 
 /**
  * Map top filter chip → layer filter mode.
- * "Tasuta" uses verified_free so green features match the filter 1:1
- * (layer=free_street OR verified_free property on polygon/street features).
+ * "Tasuta" → unlimited free only (verified_free / free_street, no clock).
+ * "Kellaga" → clock-limited free (timed layer + free_minutes windows).
  */
 function filterToLayers(
   filter: FilterId,
-): ParkingLayerKey[] | 'all' | 'verified_free' | 'unclassified' | 'paid' {
+): ParkingLayerKey[] | 'all' | 'verified_free' | 'clock' | 'unclassified' | 'paid' {
   if (filter === 'all') return 'all'
   if (filter === 'free_street') return 'verified_free'
-  if (filter === 'timed') return ['timed']
+  if (filter === 'timed') return 'clock'
   if (filter === 'paid') return 'paid'
   if (filter === 'other') return 'unclassified'
   return 'all'
@@ -506,21 +510,22 @@ export const MapView = forwardRef<
         layers === 'all'
           ? result.spots
           : layers === 'verified_free'
-            ? result.spots.filter(
-                (s) => s.layer === 'free_street' || s.zone_code === 'FREE' || s.type === 'free',
-              )
-            : layers === 'unclassified'
-              ? result.spots.filter((s) => s.layer === 'municipal')
-              : layers === 'paid'
-                ? result.spots.filter(
-                    (s) =>
-                      s.layer !== 'free_street' &&
-                      s.layer !== 'timed' &&
-                      s.layer !== 'ev',
-                  )
-                : Array.isArray(layers)
-                  ? result.spots.filter((s) => layers.includes(s.layer))
-                  : result.spots
+            ? result.spots.filter((s) => isUnlimitedFreeParking(s))
+            : layers === 'clock'
+              ? result.spots.filter((s) => isClockLimitedParking(s))
+              : layers === 'unclassified'
+                ? result.spots.filter((s) => s.layer === 'municipal')
+                : layers === 'paid'
+                  ? result.spots.filter(
+                      (s) =>
+                        s.layer !== 'free_street' &&
+                        s.layer !== 'timed' &&
+                        s.layer !== 'ev' &&
+                        !isClockLimitedParking(s),
+                    )
+                  : Array.isArray(layers)
+                    ? result.spots.filter((s) => layers.includes(s.layer))
+                    : result.spots
 
       const empty = { type: 'FeatureCollection' as const, features: [] }
       let geo =
@@ -571,7 +576,14 @@ export const MapView = forwardRef<
             PARKING_PROVIDERS.map((p) => [p, p === 'free_street']),
           ) as Partial<Record<ParkingLayerKey, boolean>>,
         )
-      } else {
+      } else if (layers === 'clock') {
+        setParkingLayerVisibility(
+          map,
+          Object.fromEntries(
+            PARKING_PROVIDERS.map((p) => [p, p === 'timed']),
+          ) as Partial<Record<ParkingLayerKey, boolean>>,
+        )
+      } else if (Array.isArray(layers)) {
         setParkingLayerVisibility(
           map,
           Object.fromEntries(
@@ -964,12 +976,19 @@ export const MapView = forwardRef<
         Object.fromEntries(PARKING_PROVIDERS.map((p) => [p, true])),
       )
     } else if (layers === 'verified_free') {
-      // Tasuta: show only free_street pin layers; polygon/street GeoJSON
-      // are filtered separately via verified_free.
+      // Tasuta: unlimited free pins only; GeoJSON filtered via verified_free.
       setParkingLayerVisibility(
         map,
         Object.fromEntries(
           PARKING_PROVIDERS.map((p) => [p, p === 'free_street']),
+        ) as Partial<Record<ParkingLayerKey, boolean>>,
+      )
+    } else if (layers === 'clock') {
+      // Kellaga: clock-limited pins; GeoJSON filtered via 'clock'.
+      setParkingLayerVisibility(
+        map,
+        Object.fromEntries(
+          PARKING_PROVIDERS.map((p) => [p, p === 'timed']),
         ) as Partial<Record<ParkingLayerKey, boolean>>,
       )
     } else if (layers === 'unclassified') {
@@ -996,7 +1015,7 @@ export const MapView = forwardRef<
           PARKING_PROVIDERS.map((p) => [p, paidPins.has(p)]),
         ) as Partial<Record<ParkingLayerKey, boolean>>,
       )
-    } else {
+    } else if (Array.isArray(layers)) {
       const vis = Object.fromEntries(
         PARKING_PROVIDERS.map((p) => [p, layers.includes(p)]),
       ) as Partial<Record<ParkingLayerKey, boolean>>

@@ -1,11 +1,63 @@
 /**
  * Strict free-parking classification shared by polygon + roadside layers.
- * Green is reserved for verified free public parking only.
+ * Green ("Tasuta") is reserved for unlimited free public parking only —
+ * no time limit, no parking clock. Clock-limited free stays → "Kellaga".
  */
 
 export const PARKING_COLOR_FREE = '#22C55E'
 /** Unclassified / ZONE / private / unknown — not free public parking. */
 export const PARKING_COLOR_UNKNOWN = '#A0AEC0'
+
+/** Spot-like fields used by Tasuta / Kellaga filter helpers. */
+export type FreeClockFields = {
+  layer?: string
+  type?: string
+  free_minutes?: number
+  price_per_hour?: number
+  verified_free?: boolean
+  timeLimit?: string
+  zone_code?: string
+}
+
+/**
+ * Unlimited free public parking — the only features that belong in "Tasuta".
+ * Must be free (€0), have no free-minute window, and not be on the timed layer.
+ */
+export function isUnlimitedFreeParking(p: FreeClockFields): boolean {
+  const layer = String(p.layer || '')
+  const mins = Number(p.free_minutes ?? 0)
+  const price = Number(p.price_per_hour ?? 0)
+  if (mins > 0) return false
+  if (price > 0) return false
+  if (layer === 'timed') return false
+  if (p.type === 'timed') return false
+  if (layer === 'free_street') return true
+  if (p.verified_free) return true
+  if (p.type === 'free' && layer !== 'municipal') return true
+  return false
+}
+
+/**
+ * Time-limited / parking-clock free parking — "Kellaga" filter.
+ * Includes layer=timed and any €0 spot with a fixed free window (15/60/120…).
+ * Paid hourly zones with a short grace period stay under "Tasuline".
+ */
+export function isClockLimitedParking(p: FreeClockFields): boolean {
+  const layer = String(p.layer || '')
+  const mins = Number(p.free_minutes ?? 0)
+  const price = Number(p.price_per_hour ?? 0)
+  if (layer === 'timed' || p.type === 'timed') return true
+  // Free (or effectively free) with an explicit clock window
+  if (mins > 0 && price <= 0) return true
+  return false
+}
+
+/** Detail-sheet headline for clock-limited free parking. */
+export function clockFreeHeadline(freeMinutes: number): string {
+  const mins = Math.max(0, Math.round(freeMinutes))
+  if (mins > 0) return `Parkimiskellaga tasuta: ${mins} min`
+  return 'Parkimiskellaga tasuta'
+}
 
 const KNOWN_OPERATOR_LAYERS = new Set([
   'europark',

@@ -22,7 +22,12 @@ import {
 import type { ParkingSpot } from '../types'
 import { formatFreeUntil } from '../lib/freeRules'
 import { navLinks, openAppleMaps } from '../lib/geocode'
-import { isUnclassifiedParking } from '../lib/parkingClassification'
+import {
+  clockFreeHeadline,
+  isClockLimitedParking,
+  isUnclassifiedParking,
+  isUnlimitedFreeParking,
+} from '../lib/parkingClassification'
 import { PARKING_LAYER_META } from '../map/parkingLayers'
 import { streetLineColor } from '../map/streetLineTheme'
 import { InfoSidePanelShell } from './InfoSidePanel'
@@ -33,22 +38,36 @@ function blockNav(e: MouseEvent | FormEvent) {
 }
 
 function priceSummary(spot: ParkingSpot): { headline: string; detail: string } {
-  const free = spot.free_minutes > 0 ? `${spot.free_minutes} min tasuta` : null
-  if (spot.price_per_hour <= 0 && !free) {
-    return { headline: 'Tasuta', detail: spot.timeLimit || 'Piiramatu' }
-  }
-  if (free && spot.price_per_hour > 0) {
+  // Kellaga: explicit clock-limited free window
+  if (isClockLimitedParking(spot)) {
     return {
-      headline: free,
+      headline: clockFreeHeadline(spot.free_minutes),
+      detail: spot.timeLimit || 'Parkimiskell kohustuslik',
+    }
+  }
+  // Tasuta: unlimited free, no clock
+  if (isUnlimitedFreeParking(spot) || (spot.price_per_hour <= 0 && spot.free_minutes <= 0 && spot.layer === 'free_street')) {
+    return {
+      headline: 'Tasuta',
+      detail: spot.timeLimit || 'Piiramatu · kellata',
+    }
+  }
+  // Paid zone with a short free grace (still Tasuline)
+  if (spot.free_minutes > 0 && spot.price_per_hour > 0) {
+    return {
+      headline: `${spot.free_minutes} min tasuta`,
       detail: `edasi ${spot.price_per_hour.toFixed(2)} €/h`,
     }
   }
-  if (free) {
-    return { headline: free, detail: spot.timeLimit || 'Kellaga' }
+  if (spot.price_per_hour > 0) {
+    return {
+      headline: `${spot.price_per_hour.toFixed(2)} €/h`,
+      detail: spot.timeLimit || spot.operator,
+    }
   }
   return {
-    headline: `${spot.price_per_hour.toFixed(2)} €/h`,
-    detail: spot.timeLimit || spot.operator,
+    headline: spot.timeLimit || 'Määramata',
+    detail: spot.operator || 'Kontrolli silti',
   }
 }
 

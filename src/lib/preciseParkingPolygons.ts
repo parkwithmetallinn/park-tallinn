@@ -11,8 +11,10 @@ import { normalizeSpot } from './geojson'
 import { mapLabelForLayer } from './mapLabels'
 import {
   getParkingExclusionReason,
+  isClockLimitedParking,
   isPaidFeeTag,
   isUnclassifiedParking,
+  isUnlimitedFreeParking,
   isVerifiedFreeParking,
   PARKING_COLOR_FREE,
   PARKING_COLOR_UNKNOWN,
@@ -351,14 +353,24 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
     if (layer === 'free_street' && !verified_free) {
       layer = 'municipal'
     }
-    // Promote verified free onto free_street unless clocked (maxstay)
-    if (verified_free && layer === 'municipal') {
-      layer = maxstay ? 'timed' : 'free_street'
-    }
 
     const priceFromCurated = p.price_per_hour
     const freeFromCurated = p.free_minutes
-    const feeIsFree = verified_free && !maxstay
+    const maxstayMins = parseMaxstayMinutes(maxstay)
+    const curatedFreeMins =
+      typeof freeFromCurated === 'number' ? freeFromCurated : 0
+    const hasClockWindow = Boolean(maxstay) || maxstayMins > 0 || curatedFreeMins > 0
+
+    // Promote verified free onto free_street unless clocked (maxstay / free_minutes)
+    if (verified_free && (layer === 'municipal' || layer === 'free_street')) {
+      layer = hasClockWindow ? 'timed' : 'free_street'
+    }
+    // Curated free_street with a clock window → Kellaga
+    if (layer === 'free_street' && hasClockWindow) {
+      layer = 'timed'
+    }
+
+    const feeIsFree = verified_free && !hasClockWindow
     const feeIsPaid = isPaidFeeTag(fee, charge)
     let price_per_hour =
       typeof priceFromCurated === 'number' ? priceFromCurated : parsePricePerHour(charge, fee)
@@ -379,13 +391,12 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
     if (price_per_hour <= 0 && !verified_free && layer === 'municipal' && !feeIsPaid) {
       price_per_hour = 0
     }
-    const maxstayMins = parseMaxstayMinutes(maxstay)
     const free_minutes =
-      typeof freeFromCurated === 'number'
-        ? freeFromCurated
-        : verified_free
-          ? maxstayMins
-          : 0
+      layer === 'timed'
+        ? curatedFreeMins || maxstayMins || 15
+        : layer === 'free_street'
+          ? 0
+          : curatedFreeMins || (verified_free ? maxstayMins : 0)
 
     const zone_code =
       zone ||
@@ -485,10 +496,10 @@ export function preciseFeatureToSpot(f: PreciseParkingFeature): ParkingSpot {
     price_per_hour: p.price_per_hour,
     badge: p.badge,
     timeLimit:
-      p.free_minutes > 0
-        ? `${p.free_minutes} min · ${p.zone_code}`
+      p.layer === 'timed' || (p.free_minutes > 0 && p.price_per_hour <= 0)
+        ? `Parkimiskellaga tasuta: ${p.free_minutes || 15} min`
         : p.verified_free || p.layer === 'free_street'
-          ? `Tasuta · ${p.zone_code}`
+          ? `Tasuta · piiramatu`
           : p.price_per_hour > 0
             ? `Tasuline · ${p.zone_code}`
             : `Määramata · ${p.zone_code}`,
@@ -559,14 +570,37 @@ function isPaidParkingFeature(p: {
 
 export function filterPreciseCollection(
   fc: PreciseParkingCollection,
-  layers: ParkingLayerKey[] | 'all' | 'verified_free' | 'unclassified' | 'paid',
+  layers:
+    | ParkingLayerKey[]
+    | 'all'
+    | 'verified_free'
+    | 'clock'
+    | 'unclassified'
+    | 'paid',
 ): PreciseParkingCollection {
   if (layers === 'all') return fc
   if (layers === 'verified_free') {
     return {
       type: 'FeatureCollection',
-      features: fc.features.filter(
-        (f) => f.properties.verified_free || f.properties.layer === 'free_street',
+      features: fc.features.filter((f) =>
+        isUnlimitedFreeParking({
+          layer: f.properties.layer,
+          free_minutes: f.properties.free_minutes,
+          price_per_hour: f.properties.price_per_hour,
+          verified_free: f.properties.verified_free,
+        }),
+      ),
+    }
+  }
+  if (layers === 'clock') {
+    return {
+      type: 'FeatureCollection',
+      features: fc.features.filter((f) =>
+        isClockLimitedParking({
+          layer: f.properties.layer,
+          free_minutes: f.properties.free_minutes,
+          price_per_hour: f.properties.price_per_hour,
+        }),
       ),
     }
   }

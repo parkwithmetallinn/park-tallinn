@@ -48,7 +48,12 @@ import {
   ZONE_RATE_LIST,
 } from './data/zones'
 import { distanceMeters, formatDistance } from './lib/geo'
-import { isUnclassifiedParking, PARKING_COLOR_UNKNOWN } from './lib/parkingClassification'
+import {
+  isClockLimitedParking,
+  isUnclassifiedParking,
+  isUnlimitedFreeParking,
+  PARKING_COLOR_UNKNOWN,
+} from './lib/parkingClassification'
 import {
   fetchRoute,
   formatDuration,
@@ -343,10 +348,12 @@ export default function App() {
 
   const visibleSpots = useMemo(() => {
     if (filter === 'free_street') {
-      return allSpots.filter((s) => s.layer === 'free_street')
+      // Tasuta: unlimited free only — no clock / free_minutes window
+      return allSpots.filter((s) => isUnlimitedFreeParking(s))
     }
     if (filter === 'timed') {
-      return allSpots.filter((s) => s.layer === 'timed')
+      // Kellaga: all clock-limited free parking
+      return allSpots.filter((s) => isClockLimitedParking(s))
     }
     if (filter === 'paid') {
       // All paid operators + municipal paid zones under one "Tasuline" pill
@@ -361,6 +368,7 @@ export default function App() {
         'municipal',
       ])
       return allSpots.filter((s) => {
+        if (isUnlimitedFreeParking(s) || isClockLimitedParking(s)) return false
         if (
           isUnclassifiedParking({
             layer: s.layer,
