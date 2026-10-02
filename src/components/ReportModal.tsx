@@ -1,7 +1,6 @@
 import { Flag, MapPinPlus, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { enqueueParkingRequest, type ParkingRequestType } from '../lib/parkingRequests'
-import { TYPE_LABELS } from '../lib/parking'
 import type { ParkingSpot, SpotType } from '../types'
 
 export type ReportModalContext = {
@@ -13,8 +12,27 @@ export type ReportModalContext = {
   target?: ParkingSpot | null
 }
 
+/** Propose-new type options — no Pargi ja Reisi; matches map filter language. */
+const TYPE_OPTIONS = [
+  { value: 'free', label: '100% tasuta' },
+  { value: 'timed', label: 'Kellaga / ajaga' },
+  { value: 'paid', label: 'Tasuline' },
+  { value: 'other', label: 'Muud / Era' },
+] as const
+
 const fieldClass =
   'w-full rounded-xl border-0 bg-slate-100/80 px-3 py-2.5 text-[15px] font-medium text-[#1C1C1E] outline-none transition focus:ring-2 focus:ring-[#007AFF]/35'
+
+/** Glass select — strip native OS chrome, custom chevron. */
+const selectClass =
+  'w-full cursor-pointer appearance-none rounded-xl border-0 bg-slate-100/80 bg-[length:14px_14px] bg-[right_12px_center] bg-no-repeat py-2.5 pr-10 pl-3 text-[15px] font-medium text-[#1C1C1E] outline-none transition focus:ring-2 focus:ring-[#007AFF]/35 ' +
+  "bg-[url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2214%22 height=%2214%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%238E8E93%22 stroke-width=%222.4%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpolyline points=%226 9 12 15 18 9%22/%3E%3C/svg%3E')]"
+
+function mapProposedType(raw: string): SpotType {
+  if (raw === 'timed') return 'timed'
+  if (raw === 'paid' || raw === 'other') return 'paid'
+  return 'free'
+}
 
 export function ReportModal({
   context,
@@ -32,7 +50,7 @@ export function ReportModal({
     e.preventDefault()
     if (submitting) return
     const fd = new FormData(e.currentTarget)
-    const note = String(fd.get('note') || '').trim()
+    let note = String(fd.get('note') || '').trim()
 
     setSubmitting(true)
     try {
@@ -40,6 +58,10 @@ export function ReportModal({
         const name = String(fd.get('name') || '').trim()
         const address = String(fd.get('address') || '').trim()
         if (!name) return
+        const rawType = String(fd.get('type') || 'free')
+        if (rawType === 'other' && !note.toLowerCase().includes('muud')) {
+          note = note ? `Muud / Era. ${note}` : 'Muud / Era'
+        }
         enqueueParkingRequest({
           type: 'PROPOSE_NEW',
           lat: context.lat,
@@ -48,7 +70,7 @@ export function ReportModal({
           name,
           address: address || undefined,
           proposedKind: (String(fd.get('kind') || 'street') as 'street' | 'lot'),
-          proposedType: (String(fd.get('type') || 'free') as SpotType),
+          proposedType: mapProposedType(rawType),
           timeLimit: String(fd.get('limit') || '').trim() || undefined,
         })
         onSubmitted?.(
@@ -172,21 +194,29 @@ export function ReportModal({
                   <label className="mb-1.5 block text-[12px] font-semibold text-[#8E8E93]">
                     Tüüp
                   </label>
-                  <select name="type" defaultValue="free" className={fieldClass}>
-                    {(Object.keys(TYPE_LABELS) as SpotType[])
-                      .filter((t) => t !== 'paid')
-                      .map((t) => (
-                        <option key={t} value={t}>
-                          {TYPE_LABELS[t]}
-                        </option>
-                      ))}
+                  <select
+                    name="type"
+                    defaultValue="free"
+                    className={selectClass}
+                    aria-label="Parkimise tüüp"
+                  >
+                    {TYPE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
                   <label className="mb-1.5 block text-[12px] font-semibold text-[#8E8E93]">
                     Koht
                   </label>
-                  <select name="kind" defaultValue="street" className={fieldClass}>
+                  <select
+                    name="kind"
+                    defaultValue="street"
+                    className={selectClass}
+                    aria-label="Koha liik"
+                  >
                     <option value="street">Tänavaäär</option>
                     <option value="lot">Avalik parkla</option>
                   </select>
@@ -231,7 +261,8 @@ export function ReportModal({
                 <select
                   name="reason"
                   defaultValue="nonexistent"
-                  className={fieldClass}
+                  className={selectClass}
+                  aria-label="Vea põhjus"
                 >
                   <option value="nonexistent">Kohta pole / vale asukoht</option>
                   <option value="blocked">Blokeeritud / suletud</option>
