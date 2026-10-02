@@ -846,7 +846,11 @@ export function MapView({
     const zoom = flyZoom ?? Math.max(map.getZoom(), ZOOM.detailMin + 0.4)
     const pitch = pitch3dRef.current ? NAV_PITCH : 0
 
-    const padding = panelCameraPadding(infoPanelOpenRef.current)
+    // Search flies open an info panel ~720ms later — pad now so the pin
+    // lands in the free map area instead of under the forthcoming sheet.
+    const padding = panelCameraPadding(
+      infoPanelOpenRef.current || flyModeRef.current === 'fly',
+    )
     if (flyModeRef.current === 'fly') {
       map.flyTo({
         center,
