@@ -454,9 +454,39 @@ export function streetCollectionToSpots(fc: StreetParkingCollection): ParkingSpo
 }
 
 /** Filter a street FeatureCollection by app layer keys (top filters). */
+const PAID_STREET_LAYERS = new Set<ParkingLayerKey>([
+  'europark',
+  'snabb',
+  'citypark',
+  'uhisteenused',
+  'parkit',
+  'park_ride',
+  'loading',
+])
+
+function isPaidStreetFeature(p: StreetParkingProps): boolean {
+  if (p.verified_free || p.layer === 'free_street' || p.layer === 'timed') return false
+  if (
+    isUnclassifiedParking({
+      layer: p.layer,
+      verified_free: p.verified_free,
+      price_per_hour: p.price_per_hour,
+      zone_code: p.zone_code,
+      operator: p.operator,
+      color: p.color,
+    })
+  ) {
+    return false
+  }
+  if (PAID_STREET_LAYERS.has(p.layer)) return true
+  if (p.layer === 'municipal' && p.price_per_hour > 0) return true
+  if (p.rules === 'paid') return true
+  return false
+}
+
 export function filterStreetCollection(
   fc: StreetParkingCollection,
-  layers: ParkingLayerKey[] | 'all' | 'verified_free' | 'unclassified',
+  layers: ParkingLayerKey[] | 'all' | 'verified_free' | 'unclassified' | 'paid',
 ): StreetParkingCollection {
   if (layers === 'all') return fc
   if (layers === 'verified_free') {
@@ -480,6 +510,12 @@ export function filterStreetCollection(
           color: f.properties.color,
         }),
       ),
+    }
+  }
+  if (layers === 'paid') {
+    return {
+      type: 'FeatureCollection',
+      features: fc.features.filter((f) => isPaidStreetFeature(f.properties)),
     }
   }
   return {

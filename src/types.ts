@@ -145,8 +145,14 @@ export interface DistrictZone {
   }
 }
 
-/** `other` = grey / private / unclassified parking (no clear operator pricing). */
-export type FilterId = 'all' | ParkingLayerKey | 'other'
+/**
+ * Top filter chips:
+ * - free_street = verified free
+ * - timed = disc / clock
+ * - paid = all paid operators + paid municipal
+ * - other = grey / private / unclassified
+ */
+export type FilterId = 'all' | 'free_street' | 'timed' | 'paid' | 'other'
 
 /** Legacy UI type labels (report form / older filters) */
 export type SpotType = NonNullable<ParkingSpot['type']>

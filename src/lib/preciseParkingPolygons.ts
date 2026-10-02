@@ -532,9 +532,34 @@ export function preciseCollectionToSpots(fc: PreciseParkingCollection): ParkingS
 }
 
 /** Filter lot polygons by app layer keys (top filters). */
+const PAID_LAYERS = new Set<ParkingLayerKey>([
+  'europark',
+  'snabb',
+  'citypark',
+  'uhisteenused',
+  'parkit',
+  'park_ride',
+  'loading',
+])
+
+function isPaidParkingFeature(p: {
+  layer: ParkingLayerKey
+  verified_free?: boolean
+  price_per_hour?: number
+  zone_code?: string
+  operator?: string
+  color?: string
+}): boolean {
+  if (p.verified_free || p.layer === 'free_street' || p.layer === 'timed') return false
+  if (isUnclassifiedParking(p)) return false
+  if (PAID_LAYERS.has(p.layer)) return true
+  if (p.layer === 'municipal' && (p.price_per_hour ?? 0) > 0) return true
+  return false
+}
+
 export function filterPreciseCollection(
   fc: PreciseParkingCollection,
-  layers: ParkingLayerKey[] | 'all' | 'verified_free' | 'unclassified',
+  layers: ParkingLayerKey[] | 'all' | 'verified_free' | 'unclassified' | 'paid',
 ): PreciseParkingCollection {
   if (layers === 'all') return fc
   if (layers === 'verified_free') {
@@ -550,6 +575,21 @@ export function filterPreciseCollection(
       type: 'FeatureCollection',
       features: fc.features.filter((f) =>
         isUnclassifiedParking({
+          layer: f.properties.layer,
+          verified_free: f.properties.verified_free,
+          price_per_hour: f.properties.price_per_hour,
+          zone_code: f.properties.zone_code,
+          operator: f.properties.operator,
+          color: f.properties.color,
+        }),
+      ),
+    }
+  }
+  if (layers === 'paid') {
+    return {
+      type: 'FeatureCollection',
+      features: fc.features.filter((f) =>
+        isPaidParkingFeature({
           layer: f.properties.layer,
           verified_free: f.properties.verified_free,
           price_per_hour: f.properties.price_per_hour,
