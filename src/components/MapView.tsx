@@ -15,7 +15,6 @@ import {
   useRef,
   useState,
 } from 'react'
-import { distanceMeters } from '../lib/geo'
 import { spotsToMapGeoJSON } from '../lib/geojson'
 import { queryParkingInViewport } from '../lib/parkingRepository'
 import {
@@ -126,14 +125,6 @@ function makeSearchPinEl(onClick: () => void) {
   return wrap
 }
 
-function makeRouteEndEl() {
-  const el = document.createElement('div')
-  el.className = 'route-end-pin'
-  el.setAttribute('aria-hidden', 'true')
-  el.innerHTML = `<span class="route-end-pin-dot"></span>`
-  return el
-}
-
 function prefersReducedMotion() {
   return (
     typeof window !== 'undefined' &&
@@ -170,12 +161,19 @@ function delay(ms: number, signal?: { cancelled: boolean }): Promise<void> {
   })
 }
 
-/** Imperative camera API for the route intro (avoids fighting flyTarget). */
+/** Imperative camera API for the auto-route intro (avoids fighting flyTarget). */
 export type MapViewHandle = {
-  playRouteIntro: (
-    destination: [number, number],
-    coords: [number, number][],
-  ) => Promise<void>
+  /**
+   * Fly to destination → pause → wait for route → fitBounds.
+   * Opens the info sheet via onBeforeFitBounds at the start of step 2.
+   */
+  playRouteIntro: (args: {
+    destination: [number, number]
+    waitForRoute: Promise<RouteResult | null>
+    routeWaitMs?: number
+    onBeforeFitBounds?: (result: RouteResult) => void
+    onFailed?: () => void
+  }) => Promise<'fitted' | 'near' | 'failed' | 'cancelled'>
   cancelRouteIntro: () => void
 }
 
@@ -394,9 +392,9 @@ export const MapView = forwardRef<
   const mapRef = useRef<MapLibreMapType | null>(null)
   const userMarkerRef = useRef<Marker | null>(null)
   const searchMarkerRef = useRef<Marker | null>(null)
-  const routeEndMarkerRef = useRef<Marker | null>(null)
   const routeAnimatingRef = useRef(false)
   const routeIntroCancelRef = useRef({ cancelled: false })
+  const routeDrawRafRef = useRef(0)
   const onNavigateRef = useRef(onNavigate)
   const onBackgroundClickRef = useRef(onBackgroundClick)
   const onSearchPinClickRef = useRef(onSearchPinClick)
@@ -1097,51 +1095,76 @@ export const MapView = forwardRef<
     if (!map || !ready) return
     const source = map.getSource(ROUTE_SOURCE) as GeoJSONSource | undefined
     if (!source) return
+
+    if (routeDrawRafRef.current) {
+      cancelAnimationFrame(routeDrawRafRef.current)
+      routeDrawRafRef.current = 0
+    }
+
     if (!route || !navigating) {
       source.setData({ type: 'FeatureCollection', features: [] })
-      if (routeEndMarkerRef.current) {
-        routeEndMarkerRef.current.remove()
-        routeEndMarkerRef.current = null
-      }
       return
     }
-    const lngLat = routeCoordsToLngLat(route.coords)
-    source.setData({
-      type: 'FeatureCollection',
-      features: [
-        {
-          type: 'Feature',
-          properties: {},
-          geometry: { type: 'LineString', coordinates: lngLat },
-        },
-      ],
-    })
-    const end = route.coords[route.coords.length - 1]
-    if (end) {
-      if (!routeEndMarkerRef.current) {
-        routeEndMarkerRef.current = new Marker({
-          element: makeRouteEndEl(),
-          anchor: 'bottom',
-        })
-          .setLngLat([end[1], end[0]])
-          .addTo(map)
-      } else {
-        routeEndMarkerRef.current.setLngLat([end[1], end[0]])
-      }
+
+    const full = routeCoordsToLngLat(route.coords)
+    const setSlice = (coords: [number, number][]) => {
+      source.setData({
+        type: 'FeatureCollection',
+        features:
+          coords.length >= 2
+            ? [
+                {
+                  type: 'Feature',
+                  properties: {},
+                  geometry: { type: 'LineString', coordinates: coords },
+                },
+              ]
+            : [],
+      })
     }
+
     try {
-      // Keep route above basemap, under parking fills so spots stay clickable
       const beforeId = [
         PRECISE_FILL_LAYER,
         PARKING_LOTS_FILL_LAYER,
         PARKING_LINES_LAYER,
       ].find((id) => map.getLayer(id))
       if (beforeId) {
-        map.moveLayer('nav-route-outline', beforeId)
-        map.moveLayer('nav-route-line', beforeId)
+        if (map.getLayer('nav-route-glow')) map.moveLayer('nav-route-glow', beforeId)
+        if (map.getLayer('nav-route-outline')) {
+          map.moveLayer('nav-route-outline', beforeId)
+        }
+        if (map.getLayer('nav-route-line')) map.moveLayer('nav-route-line', beforeId)
       }
     } catch {
       /* ok */
+    }
+
+    if (prefersReducedMotion() || full.length < 2) {
+      setSlice(full)
+      return
+    }
+
+    const duration = 1400
+    const started = performance.now()
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - started) / duration)
+      const eased = 1 - (1 - t) ** 3
+      const n = Math.max(2, Math.floor(1 + eased * (full.length - 1)))
+      setSlice(full.slice(0, n) as [number, number][])
+      if (t < 1) {
+        routeDrawRafRef.current = requestAnimationFrame(tick)
+      } else {
+        routeDrawRafRef.current = 0
+      }
+    }
+    routeDrawRafRef.current = requestAnimationFrame(tick)
+
+    return () => {
+      if (routeDrawRafRef.current) {
+        cancelAnimationFrame(routeDrawRafRef.current)
+        routeDrawRafRef.current = 0
+      }
     }
   }, [route, navigating, ready])
 
@@ -1160,14 +1183,16 @@ export const MapView = forwardRef<
           }
         }
       },
-      async playRouteIntro(
-        destination: [number, number],
-        coords: [number, number][],
-      ) {
+      async playRouteIntro({
+        destination,
+        waitForRoute,
+        routeWaitMs = 3000,
+        onBeforeFitBounds,
+        onFailed,
+      }) {
         const map = mapRef.current
-        if (!map) return
+        if (!map) return 'failed'
 
-        // Cancel any in-flight intro
         routeIntroCancelRef.current.cancelled = true
         const signal = { cancelled: false }
         routeIntroCancelRef.current = signal
@@ -1193,78 +1218,102 @@ export const MapView = forwardRef<
           routeAnimatingRef.current = false
         }
 
-        try {
-          const destCenter: [number, number] = [destination[1], destination[0]]
-          const reduced = prefersReducedMotion()
-          const start = coords[0]
-          const near =
-            start != null &&
-            distanceMeters(start[0], start[1], destination[0], destination[1]) <
-              30
+        const destCenter: [number, number] = [destination[1], destination[0]]
+        const easeOutCubic = (t: number) => 1 - (1 - t) ** 3
 
+        const fitPaddingForPanel = () => {
           const panelOpen = infoPanelOpenRef.current
           const desktop =
             typeof window !== 'undefined' &&
             window.matchMedia('(min-width: 640px)').matches
-          const fitPadding = {
+          const h =
+            typeof window !== 'undefined' ? window.innerHeight : 800
+          return {
             top: 150,
-            bottom: panelOpen && !desktop ? 180 : 120,
-            left: panelOpen && desktop ? 380 : 80,
-            right: 80,
+            bottom: panelOpen && !desktop ? Math.round(h * 0.4) : 120,
+            left: panelOpen && desktop ? 380 : 70,
+            right: 70,
           }
+        }
 
-          if (near || reduced) {
-            if (near) {
-              map.easeTo({
+        try {
+          const reduced = prefersReducedMotion()
+
+          if (reduced) {
+            const result = await Promise.race([
+              waitForRoute,
+              delay(routeWaitMs).then(() => null),
+            ])
+            if (signal.cancelled) return 'cancelled'
+            if (!result || result.coords.length < 2) {
+              onFailed?.()
+              map.jumpTo({
                 center: destCenter,
                 zoom: 17,
                 pitch: pitch3dRef.current ? NAV_PITCH : 0,
-                duration: reduced ? 0 : 900,
-                essential: true,
               })
-              if (!reduced) await waitMoveEnd(map, 1200)
-            } else {
-              const bounds = new LngLatBounds()
-              for (const [lat, lng] of coords) bounds.extend([lng, lat])
-              map.fitBounds(bounds, {
-                padding: fitPadding,
-                maxZoom: 16,
-                pitch: 0,
-                bearing: 0,
-                animate: false,
-                essential: true,
-              })
+              return 'failed'
             }
-            return
+            onBeforeFitBounds?.(result)
+            const bounds = new LngLatBounds()
+            for (const [lat, lng] of result.coords) bounds.extend([lng, lat])
+            map.fitBounds(bounds, {
+              padding: fitPaddingForPanel(),
+              maxZoom: 16,
+              pitch: 0,
+              bearing: 0,
+              animate: false,
+              essential: true,
+            })
+            return 'fitted'
           }
 
-          // Step 1 — zoom into destination
+          // Step 1 — zoom into destination (parallel with route fetch in App)
           map.flyTo({
             center: destCenter,
             zoom: 17,
             pitch: pitch3dRef.current ? NAV_PITCH : 0,
-            duration: 1400,
+            duration: 1500,
             essential: true,
+            easing: easeOutCubic,
           })
-          await waitMoveEnd(map, 2000)
-          if (signal.cancelled) return
+          await waitMoveEnd(map, 2200)
+          if (signal.cancelled) return 'cancelled'
 
-          // Brief pause so the user can read the destination
-          await delay(600, signal)
-          if (signal.cancelled) return
+          await delay(700, signal)
+          if (signal.cancelled) return 'cancelled'
 
-          // Step 2 — zoom out to the full route
+          // Wait for route (max routeWaitMs) then fitBounds
+          const result = await Promise.race([
+            waitForRoute,
+            delay(routeWaitMs, signal).then(() => null),
+          ])
+          if (signal.cancelled) return 'cancelled'
+
+          if (!result || result.coords.length < 2) {
+            onFailed?.()
+            return 'failed'
+          }
+
+          // Step 2 — reveal sheet + zoom out to full route (draw starts via route prop)
+          onBeforeFitBounds?.(result)
+          // Let React commit infoPanelOpen before measuring padding
+          await delay(40, signal)
+          if (signal.cancelled) return 'cancelled'
+
           const bounds = new LngLatBounds()
-          for (const [lat, lng] of coords) bounds.extend([lng, lat])
+          for (const [lat, lng] of result.coords) bounds.extend([lng, lat])
           map.fitBounds(bounds, {
-            padding: fitPadding,
+            padding: fitPaddingForPanel(),
             maxZoom: 16,
-            duration: 1800,
+            duration: 2000,
             pitch: 0,
             bearing: 0,
             essential: true,
+            easing: easeOutCubic,
           })
-          await waitMoveEnd(map, 2400)
+          await waitMoveEnd(map, 2600)
+          return signal.cancelled ? 'cancelled' : 'fitted'
         } finally {
           finish()
         }

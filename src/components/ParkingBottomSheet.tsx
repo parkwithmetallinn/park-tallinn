@@ -1,4 +1,4 @@
-import { Flag, Loader2, MapPin, Navigation, RefreshCw, Square, X } from 'lucide-react'
+import { Flag, MapPin, Navigation, RefreshCw, Square, X } from 'lucide-react'
 import {
   useCallback,
   useEffect,
@@ -68,8 +68,6 @@ export function ParkingBottomSheet({
   onCheckStatus,
   onExtendMinutes,
   onReportInvalid,
-  onStartRoute,
-  routeLoading,
 }: {
   spot: ParkingSpot
   distanceLabel?: string | null
@@ -87,8 +85,6 @@ export function ParkingBottomSheet({
   onExtendMinutes?: (minutes: number) => void
   /** Crowdsource: queue REPORT_INVALID (does not mutate GeoJSON). */
   onReportInvalid?: () => void
-  onStartRoute?: () => void
-  routeLoading?: boolean
 }) {
   const links = navLinks(spot.lat, spot.lng)
   const color =
@@ -370,25 +366,6 @@ export function ParkingBottomSheet({
         </div>
 
         <div className="mb-2.5 space-y-1.5">
-          {onStartRoute ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                blockNav(e)
-                onStartRoute()
-              }}
-              disabled={routeLoading}
-              aria-label="Marsruut"
-              className="tap-scale flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#007AFF] px-3 py-2.5 text-[14px] font-semibold text-white disabled:opacity-55"
-            >
-              {routeLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Navigation className="h-4 w-4" strokeWidth={2.5} />
-              )}
-              Marsruut
-            </button>
-          ) : null}
           <p className={`text-[10px] font-semibold tracking-wide uppercase ${muted}`}>
             Navigeeri
           </p>

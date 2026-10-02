@@ -995,46 +995,96 @@ export function ensureParkingOverlaySources(
   if (!map.getSource(ROUTE_SOURCE)) {
     map.addSource(ROUTE_SOURCE, {
       type: 'geojson',
+      lineMetrics: true,
       data: { type: 'FeatureCollection', features: [] },
     })
-    // Contour under the blue route — theme-aware via applyOverlayThemePaints
+  }
+  const routeMain = mode === 'dark' ? '#0A84FF' : '#007AFF'
+  const routeOutline = mode === 'dark' ? '#0B1220' : '#FFFFFF'
+  const routeWidthMain = [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    10,
+    7,
+    14,
+    5.5,
+    17,
+    4,
+  ] as never
+  const routeWidthOutline = [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    10,
+    12,
+    14,
+    9,
+    17,
+    7,
+  ] as never
+  const routeWidthGlow = [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    10,
+    22,
+    14,
+    16,
+    17,
+    12,
+  ] as never
+  if (!map.getLayer('nav-route-glow')) {
+    map.addLayer({
+      id: 'nav-route-glow',
+      type: 'line',
+      source: ROUTE_SOURCE,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': routeMain,
+        'line-width': routeWidthGlow,
+        'line-opacity': 0.35,
+        'line-blur': 8,
+      },
+    })
+  } else {
+    map.setPaintProperty('nav-route-glow', 'line-color', routeMain)
+    map.setPaintProperty('nav-route-glow', 'line-width', routeWidthGlow)
+    map.setPaintProperty('nav-route-glow', 'line-opacity', 0.35)
+    map.setPaintProperty('nav-route-glow', 'line-blur', 8)
+  }
+  if (!map.getLayer('nav-route-outline')) {
     map.addLayer({
       id: 'nav-route-outline',
       type: 'line',
       source: ROUTE_SOURCE,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': mode === 'dark' ? '#0B1220' : '#FFFFFF',
-        'line-width': 9,
-        'line-opacity': 0.9,
+        'line-color': routeOutline,
+        'line-width': routeWidthOutline,
+        'line-opacity': 0.95,
       },
     })
+  } else {
+    map.setPaintProperty('nav-route-outline', 'line-color', routeOutline)
+    map.setPaintProperty('nav-route-outline', 'line-width', routeWidthOutline)
+    map.setPaintProperty('nav-route-outline', 'line-opacity', 0.95)
+  }
+  if (!map.getLayer('nav-route-line')) {
     map.addLayer({
       id: 'nav-route-line',
       type: 'line',
       source: ROUTE_SOURCE,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': '#007AFF',
-        'line-width': 5,
+        'line-color': routeMain,
+        'line-width': routeWidthMain,
         'line-opacity': 1,
       },
     })
   } else {
-    // Refresh paints on style reload / theme swap
-    if (map.getLayer('nav-route-outline')) {
-      map.setPaintProperty(
-        'nav-route-outline',
-        'line-color',
-        mode === 'dark' ? '#0B1220' : '#FFFFFF',
-      )
-      map.setPaintProperty('nav-route-outline', 'line-width', 9)
-      map.setPaintProperty('nav-route-outline', 'line-opacity', 0.9)
-    }
-    if (map.getLayer('nav-route-line')) {
-      map.setPaintProperty('nav-route-line', 'line-color', '#007AFF')
-      map.setPaintProperty('nav-route-line', 'line-width', 5)
-    }
+    map.setPaintProperty('nav-route-line', 'line-color', routeMain)
+    map.setPaintProperty('nav-route-line', 'line-width', routeWidthMain)
   }
 
   syncLodZoomLimits(map)

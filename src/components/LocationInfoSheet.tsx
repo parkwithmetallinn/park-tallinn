@@ -1,4 +1,4 @@
-import { Loader2, MapPin, Navigation, X } from 'lucide-react'
+import { MapPin, Navigation, X } from 'lucide-react'
 import {
   formatCoords,
   navLinks,
@@ -12,16 +12,12 @@ export function LocationInfoSheet({
   dark,
   onClose,
   onClear,
-  onStartRoute,
-  routeLoading,
 }: {
   location: SearchLocation
   dark?: boolean
   onClose: () => void
   /** Clears the search pin and resets search UI */
   onClear: () => void
-  onStartRoute?: () => void
-  routeLoading?: boolean
 }) {
   const links = navLinks(location.lat, location.lng)
   const coords = formatCoords(location.lat, location.lng)
@@ -58,23 +54,6 @@ export function LocationInfoSheet({
               <X className="h-4 w-4" />
             </button>
           </div>
-
-          {onStartRoute ? (
-            <button
-              type="button"
-              onClick={onStartRoute}
-              disabled={routeLoading}
-              aria-label="Marsruut"
-              className="tap-scale mb-2.5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#007AFF] px-3 py-2.5 text-[14px] font-semibold text-white disabled:opacity-55"
-            >
-              {routeLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Navigation className="h-4 w-4" strokeWidth={2.5} />
-              )}
-              Marsruut
-            </button>
-          ) : null}
 
           <p className={`mb-1.5 text-[10px] font-semibold tracking-wide uppercase ${muted}`}>
             Navigeeri
