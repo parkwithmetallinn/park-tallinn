@@ -50,9 +50,6 @@ export const DISTRICT_DEBUG_LABEL_LAYER = 'district-debug-refs-label'
 /** Fallback if a feature is missing its per-district color property. */
 const DISTRICT_COLOR_FALLBACK = '#64748B'
 
-/** Dark-mode district stroke — light gray-blue, readable on #12161c land. */
-const DISTRICT_LINE_DARK = '#8fa3ba'
-const DISTRICT_FILL_DARK = '#8fa3ba'
 const LABEL_HALO_LIGHT = '#FFFFFF'
 const LABEL_HALO_DARK = '#0b0e12'
 const CASING_LIGHT = '#FFFFFF'
