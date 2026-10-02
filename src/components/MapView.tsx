@@ -89,6 +89,20 @@ import {
   isUnclassifiedParking,
   isUnlimitedFreeParking,
 } from '../lib/parkingClassification'
+import {
+  ensureEvChargerLayers,
+  EV_CHARGERS_CIRCLE_LAYER,
+  EV_CHARGERS_HIT_LAYER,
+  EV_CHARGERS_SOURCE,
+  EV_CHARGERS_SYMBOL_LAYER,
+  evFeatureToSpot,
+  filterEvCollection,
+  loadEvChargers,
+  setEvChargerData,
+  setEvChargerVisibility,
+  type EvChargerCollection,
+  type EvChargerFeature,
+} from '../lib/evChargers'
 import type { FilterId, ParkingLayerKey, ParkingSpot } from '../types'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
@@ -100,6 +114,7 @@ const SELECT_SOURCES = [
   PARKING_VIEWPORT_SOURCE,
   PRECISE_PARKING_SOURCE,
   STREET_PARKING_SOURCE,
+  EV_CHARGERS_SOURCE,
 ] as const
 
 const PRECISE_HIT_LAYERS = [
@@ -112,6 +127,12 @@ const PRECISE_HIT_LAYERS = [
 ] as const
 
 const STREET_HIT_LAYERS = [STREET_PARKING_LINE_LAYER, STREET_PARKING_HIT_LAYER] as const
+
+const EV_HIT_LAYERS = [
+  EV_CHARGERS_HIT_LAYER,
+  EV_CHARGERS_CIRCLE_LAYER,
+  EV_CHARGERS_SYMBOL_LAYER,
+] as const
 
 function makeUserEl() {
   const wrap = document.createElement('div')
@@ -237,15 +258,24 @@ export type MapViewHandle = {
  * Map top filter chip → layer filter mode.
  * "Tasuta" → unlimited free only (verified_free / free_street, no clock).
  * "Kellaga" → clock-limited free (timed layer + free_minutes windows).
+ * "Elektriautolaadijad" → hide parking geometry; EV source shown separately.
  */
 function filterToLayers(
   filter: FilterId,
-): ParkingLayerKey[] | 'all' | 'verified_free' | 'clock' | 'unclassified' | 'paid' {
+):
+  | ParkingLayerKey[]
+  | 'all'
+  | 'verified_free'
+  | 'clock'
+  | 'unclassified'
+  | 'paid'
+  | 'ev' {
   if (filter === 'all') return 'all'
   if (filter === 'free_street') return 'verified_free'
   if (filter === 'timed') return 'clock'
   if (filter === 'paid') return 'paid'
   if (filter === 'other') return 'unclassified'
+  if (filter === 'ev') return 'ev'
   return 'all'
 }
 
@@ -286,6 +316,18 @@ function applyDualLayerFilter(
     setCityDistrictOverlays(map, 'parnu', {
       showPaidZones: filter === 'all' || filter === 'paid',
     })
+  }
+
+  // EV-only filter: clear parking geometry so cyan chargers stand alone
+  if (layers === 'ev') {
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    ;(map.getSource(PRECISE_PARKING_SOURCE) as GeoJSONSource | undefined)?.setData(
+      empty,
+    )
+    ;(map.getSource(STREET_PARKING_SOURCE) as GeoJSONSource | undefined)?.setData(
+      empty,
+    )
+    return
   }
 
   const polys: PreciseParkingCollection | null = preciseFc
@@ -446,6 +488,8 @@ export const MapView = forwardRef<
     walkRoute?: RouteResult | null
     navigating: boolean
     onNavigate: (spot: ParkingSpot) => void
+    /** EV charger marker tap — open glass preview (not parking detail). */
+    onEvChargerSelect?: (feature: EvChargerFeature) => void
     /** Empty map tap — close sheets / search popup. */
     onBackgroundClick?: () => void
     onZoomChange?: (zoom: number, mode: 'district' | 'cluster' | 'street') => void
@@ -487,6 +531,7 @@ export const MapView = forwardRef<
     walkRoute = null,
     navigating,
     onNavigate,
+    onEvChargerSelect,
     onBackgroundClick,
     onZoomChange,
     onViewportStats,
@@ -513,6 +558,7 @@ export const MapView = forwardRef<
   const onNearestPillClickRef = useRef(onNearestPillClick)
   const nearestPillsFitKeyRef = useRef('')
   const onNavigateRef = useRef(onNavigate)
+  const onEvChargerSelectRef = useRef(onEvChargerSelect)
   const onBackgroundClickRef = useRef(onBackgroundClick)
   const onSearchPinClickRef = useRef(onSearchPinClick)
   const onPreciseSpotsLoadedRef = useRef(onPreciseSpotsLoaded)
@@ -522,6 +568,7 @@ export const MapView = forwardRef<
   const streetFcRef = useRef<StreetParkingCollection | null>(null)
   /** Raw street FC before spatial dedupe (dedupe runs in applyDualLayerFilter). */
   const streetRawFcRef = useRef<StreetParkingCollection | null>(null)
+  const evFcRef = useRef<EvChargerCollection | null>(null)
   const filterRef = useRef(filter)
   const selectedIdRef = useRef(selectedId)
   const pitch3dRef = useRef(pitch3d)
@@ -538,6 +585,7 @@ export const MapView = forwardRef<
   const [ready, setReady] = useState(false)
 
   onNavigateRef.current = onNavigate
+  onEvChargerSelectRef.current = onEvChargerSelect
   onBackgroundClickRef.current = onBackgroundClick
   onSearchPinClickRef.current = onSearchPinClick
   onNearestPillClickRef.current = onNearestPillClick
@@ -585,6 +633,7 @@ export const MapView = forwardRef<
 
     let setupDone = false
     const parkingHitLayers = [
+      ...EV_HIT_LAYERS,
       ...PRECISE_HIT_LAYERS,
       ...STREET_HIT_LAYERS,
       PARKING_LOTS_FILL_LAYER,
@@ -633,44 +682,46 @@ export const MapView = forwardRef<
 
       const layers = filterToLayers(filterRef.current)
       const visibleSpots =
-        layers === 'all'
-          ? result.spots
-          : layers === 'verified_free'
-            ? result.spots.filter((s) => isUnlimitedFreeParking(s))
-            : layers === 'clock'
-              ? result.spots.filter((s) => isClockLimitedParking(s))
-              : layers === 'unclassified'
-                ? result.spots.filter((s) => s.layer === 'municipal')
-                : layers === 'paid'
-                  ? result.spots.filter(
-                      (s) =>
-                        s.layer !== 'free_street' &&
-                        s.layer !== 'timed' &&
-                        s.layer !== 'ev' &&
-                        !isClockLimitedParking(s) &&
-                        !isUnclassifiedParking({
-                          layer: s.layer,
-                          price_per_hour: s.price_per_hour,
-                          zone_code: s.zone_code,
-                          operator: s.operator,
-                          verified_free: s.layer === 'free_street',
-                          type: s.type,
-                        }) &&
-                        (s.price_per_hour > 0 ||
-                          [
-                            'europark',
-                            'snabb',
-                            'citypark',
-                            'uhisteenused',
-                            'parkit',
-                            'park_ride',
-                            'loading',
-                            'municipal',
-                          ].includes(s.layer)),
-                    )
-                  : Array.isArray(layers)
-                    ? result.spots.filter((s) => layers.includes(s.layer))
-                    : result.spots
+        layers === 'ev'
+          ? []
+          : layers === 'all'
+            ? result.spots
+            : layers === 'verified_free'
+              ? result.spots.filter((s) => isUnlimitedFreeParking(s))
+              : layers === 'clock'
+                ? result.spots.filter((s) => isClockLimitedParking(s))
+                : layers === 'unclassified'
+                  ? result.spots.filter((s) => s.layer === 'municipal')
+                  : layers === 'paid'
+                    ? result.spots.filter(
+                        (s) =>
+                          s.layer !== 'free_street' &&
+                          s.layer !== 'timed' &&
+                          s.layer !== 'ev' &&
+                          !isClockLimitedParking(s) &&
+                          !isUnclassifiedParking({
+                            layer: s.layer,
+                            price_per_hour: s.price_per_hour,
+                            zone_code: s.zone_code,
+                            operator: s.operator,
+                            verified_free: s.layer === 'free_street',
+                            type: s.type,
+                          }) &&
+                          (s.price_per_hour > 0 ||
+                            [
+                              'europark',
+                              'snabb',
+                              'citypark',
+                              'uhisteenused',
+                              'parkit',
+                              'park_ride',
+                              'loading',
+                              'municipal',
+                            ].includes(s.layer)),
+                      )
+                    : Array.isArray(layers)
+                      ? result.spots.filter((s) => layers.includes(s.layer))
+                      : result.spots
 
       const empty = { type: 'FeatureCollection' as const, features: [] }
       let geo =
@@ -799,11 +850,28 @@ export const MapView = forwardRef<
 
     const onStyleLoad = () => {
       ensureParkingOverlaySources(map, themeRef.current)
+      ensureEvChargerLayers(map)
       appliedThemeRef.current = themeRef.current
 
       if (!setupDone) {
         setupDone = true
         bindHover()
+        // Public EV chargers (private access already stripped in prepare)
+        void loadEvChargers().then((fc) => {
+          if (!mapRef.current) return
+          evFcRef.current = fc
+          const show =
+            filterRef.current === 'all' || filterRef.current === 'ev'
+          setEvChargerData(
+            mapRef.current,
+            filterEvCollection(fc, show ? filterRef.current === 'ev' ? 'ev' : 'all' : 'hide'),
+          )
+          setEvChargerVisibility(mapRef.current, show)
+          for (const f of fc.features) {
+            const spot = evFeatureToSpot(f)
+            if (!parkingIndex.getById(spot.id)) parkingIndex.insert(spot)
+          }
+        })
         // District hover → feature-state (does not affect parking hit targets)
         const districtLayers = [DISTRICT_FILL_LAYER, DISTRICT_SUBZONE_FILL_LAYER]
         let hoveredDistrict: string | number | null = null
@@ -951,6 +1019,33 @@ export const MapView = forwardRef<
       ]
       const layers = parkingHitLayers.filter((id) => map.getLayer(id))
       const hits = layers.length ? map.queryRenderedFeatures(box, { layers }) : []
+
+      // EV charger cyan markers — glass preview (not parking detail)
+      const evHit = hits.find((f) =>
+        (EV_HIT_LAYERS as readonly string[]).includes(f.layer?.id ?? ''),
+      )
+      if (evHit?.properties?.id) {
+        const id = String(evHit.properties.id)
+        const fromFc = evFcRef.current?.features.find((f) => f.properties.id === id)
+        if (fromFc) {
+          const [lng, lat] = fromFc.geometry.coordinates
+          map.easeTo({
+            center: [lng, lat],
+            zoom: Math.max(map.getZoom(), 15.5),
+            pitch: pitch3dRef.current ? NAV_PITCH : 0,
+            duration: 700,
+            essential: true,
+          })
+          const spot = evFeatureToSpot(fromFc)
+          if (!parkingIndex.getById(spot.id)) parkingIndex.insert(spot)
+          if (onEvChargerSelectRef.current) {
+            onEvChargerSelectRef.current(fromFc)
+          } else {
+            onNavigateRef.current(spot)
+          }
+          return
+        }
+      }
 
       // Prefer precise parking polygons — fit bounds then open sheet
       const preciseHit = hits.find((f) =>
@@ -1145,6 +1240,14 @@ export const MapView = forwardRef<
         map,
         Object.fromEntries(PARKING_PROVIDERS.map((p) => [p, true])),
       )
+    } else if (layers === 'ev') {
+      // Elektriautolaadijad — hide parking pins; EV source owns the map
+      setParkingLayerVisibility(
+        map,
+        Object.fromEntries(
+          PARKING_PROVIDERS.map((p) => [p, false]),
+        ) as Partial<Record<ParkingLayerKey, boolean>>,
+      )
     } else if (layers === 'verified_free') {
       // Tasuta: unlimited free pins only; GeoJSON filtered via verified_free.
       setParkingLayerVisibility(
@@ -1200,6 +1303,15 @@ export const MapView = forwardRef<
       suppressedRef.current,
       cityIdRef.current,
     )
+    // EV chargers: show under Kõik + Elektriautolaadijad
+    if (evFcRef.current) {
+      const show = filter === 'all' || filter === 'ev'
+      setEvChargerData(
+        map,
+        filterEvCollection(evFcRef.current, show ? (filter === 'ev' ? 'ev' : 'all') : 'hide'),
+      )
+      setEvChargerVisibility(map, show)
+    }
     applySelectionHighlight(map, selectedIdRef.current)
     ;(map as MapLibreMapType & { __refreshViewport?: () => void }).__refreshViewport?.()
   }, [filter, ready, suppressedFeatureIds])

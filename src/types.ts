@@ -146,10 +146,16 @@ export interface DistrictZone {
 }
 
 /**
- * Top filter chips (5-pill):
- * free_street | timed | paid (all operators) | other (unclassified)
+ * Top filter chips:
+ * free_street | timed | paid | other | ev (Elektriautolaadijad)
  */
-export type FilterId = 'all' | 'free_street' | 'timed' | 'paid' | 'other'
+export type FilterId =
+  | 'all'
+  | 'free_street'
+  | 'timed'
+  | 'paid'
+  | 'other'
+  | 'ev'
 
 /** Legacy UI type labels (report form / older filters) */
 export type SpotType = NonNullable<ParkingSpot['type']>

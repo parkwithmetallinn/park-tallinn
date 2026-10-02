@@ -56,8 +56,8 @@ export const PARKING_LAYER_META: Record<
   },
   ev: {
     id: 'parking-ev',
-    label: 'Elektrilaadija',
-    color: '#14B8A6',
+    label: 'Elektriautolaadijad',
+    color: '#00F0FF',
     circleRadius: 7.5,
   },
   inva: {

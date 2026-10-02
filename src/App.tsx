@@ -100,6 +100,8 @@ import {
   toggleTheme,
   type ThemeMode,
 } from './lib/theme'
+import { EV_COLOR_CYAN, type EvChargerFeature } from './lib/evChargers'
+import { EvChargerSheet } from './components/EvChargerSheet'
 import type { FilterId, ParkingSpot } from './types'
 
 const TIME_EXTEND_OPTIONS = [
@@ -109,12 +111,13 @@ const TIME_EXTEND_OPTIONS = [
   { minutes: 120, label: '+2h' },
 ] as const
 
-/** Compact 5-pill parking filters — paid operators merged under Tasuline */
+/** Top filter pills — EV chargers unified under Elektriautolaadijad */
 const FILTERS: { id: FilterId; label: string; color?: string }[] = [
   { id: 'all', label: 'Kõik' },
   { id: 'free_street', label: 'Tasuta', color: PARKING_COLOR_FREE },
   { id: 'timed', label: 'Kellaga', color: PARKING_COLOR_TIMED },
   { id: 'paid', label: 'Tasuline', color: PARKING_COLOR_PAID },
+  { id: 'ev', label: 'Elektriautolaadijad', color: EV_COLOR_CYAN },
   { id: 'other', label: 'Muud / Era', color: PARKING_COLOR_UNKNOWN },
 ]
 
@@ -153,6 +156,8 @@ export default function App() {
   const searchSheetTimer = useRef<number | null>(null)
   const [customSpots, setCustomSpots] = useState<ParkingSpot[]>([])
   const [selected, setSelected] = useState<ParkingSpot | null>(null)
+  const [selectedEvCharger, setSelectedEvCharger] =
+    useState<EvChargerFeature | null>(null)
   const [searchLocation, setSearchLocation] = useState<SearchLocation | null>(null)
   const [searchSheetOpen, setSearchSheetOpen] = useState(false)
   /** Step 1 after address search — pick among nearest parking options */
@@ -396,6 +401,10 @@ export default function App() {
   ])
 
   const visibleSpots = useMemo(() => {
+    if (filter === 'ev') {
+      // Elektriautolaadijad — map uses dedicated EV GeoJSON; no parking pins
+      return []
+    }
     if (filter === 'free_street') {
       // Tasuta: unlimited free only — no clock / free_minutes window
       return allSpots.filter((s) => isUnlimitedFreeParking(s))
@@ -560,16 +569,27 @@ export default function App() {
       setSearchSheetOpen(false)
       setNearestPickerOpen(false)
       setFromNearestPicker(false)
+      setSelectedEvCharger(null)
       setSelected(spot)
     },
     [clearRoute],
   )
+
+  const openEvCharger = useCallback((feature: EvChargerFeature) => {
+    clearRoute()
+    setSearchSheetOpen(false)
+    setNearestPickerOpen(false)
+    setFromNearestPicker(false)
+    setSelected(null)
+    setSelectedEvCharger(feature)
+  }, [clearRoute])
 
   const closeSheet = useCallback(() => setSelected(null), [])
 
   const dismissMapOverlays = useCallback(() => {
     clearRoute()
     setSelected(null)
+    setSelectedEvCharger(null)
     setSearchSheetOpen(false)
     setNearestPickerOpen(false)
     setSelectedPreviewId(null)
@@ -1204,6 +1224,7 @@ export default function App() {
             walkRoute={routeData?.walk ?? null}
             navigating={Boolean(routeData)}
             onNavigate={openSheet}
+            onEvChargerSelect={openEvCharger}
             onBackgroundClick={dismissMapOverlays}
             onZoomChange={() => {}}
             onPreciseSpotsLoaded={setPreciseSpots}
@@ -1213,6 +1234,7 @@ export default function App() {
             fullSpotIds={fullSpotIds}
             infoPanelOpen={Boolean(
               selected ||
+                selectedEvCharger ||
                 (searchSheetOpen && searchLocation) ||
                 nearestPickerOpen,
             )}
@@ -1397,6 +1419,7 @@ export default function App() {
       <div
         className={`absolute right-3 z-50 flex flex-col gap-2.5 sm:right-4 ${
           selected ||
+          selectedEvCharger ||
           (searchSheetOpen && searchLocation) ||
           nearestPickerOpen
             ? 'bottom-[max(42vh,calc(env(safe-area-inset-bottom)+11rem))] sm:bottom-[max(6.5rem,env(safe-area-inset-bottom))]'
@@ -1629,6 +1652,14 @@ export default function App() {
         </div>
       ) : null}
 
+      {selectedEvCharger && !selected ? (
+        <EvChargerSheet
+          feature={selectedEvCharger}
+          dark={dark}
+          onClose={() => setSelectedEvCharger(null)}
+        />
+      ) : null}
+
       {selected ? (
         <ParkingBottomSheet
           spot={selected}
@@ -1685,7 +1716,7 @@ export default function App() {
         />
       ) : null}
 
-      {nearestPickerOpen && searchLocation && !selected ? (
+      {nearestPickerOpen && searchLocation && !selected && !selectedEvCharger ? (
         <NearestParkingPanel
           targetName={searchLocation.name || searchLocation.label}
           options={nearestOptions}
@@ -1701,7 +1732,11 @@ export default function App() {
         />
       ) : null}
 
-      {searchSheetOpen && searchLocation && !selected && !nearestPickerOpen ? (
+      {searchSheetOpen &&
+      searchLocation &&
+      !selected &&
+      !selectedEvCharger &&
+      !nearestPickerOpen ? (
         <LocationInfoSheet
           location={searchLocation}
           dark={dark}
