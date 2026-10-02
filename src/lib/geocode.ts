@@ -22,10 +22,13 @@ export type SearchLocation = {
   kind?: string
 }
 
+/** Estonia-wide Nominatim bias (west,south,east,north) — not hard-bounded. */
+export const ESTONIA_VIEWBOX = '21.5,57.5,28.3,59.75'
+
 export async function searchAddress(
   query: string,
   signal?: AbortSignal,
-  viewbox = '24.55,59.35,25.00,59.55',
+  viewbox = ESTONIA_VIEWBOX,
 ): Promise<GeocodeResult[]> {
   const q = query.trim()
   if (q.length < 3) return []
@@ -34,7 +37,7 @@ export async function searchAddress(
     q,
     format: 'json',
     addressdetails: '0',
-    limit: '6',
+    limit: '8',
     countrycodes: 'ee',
     viewbox,
     bounded: '0',

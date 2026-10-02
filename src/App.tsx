@@ -19,6 +19,11 @@ import { LocationInfoSheet } from './components/LocationInfoSheet'
 import { ParkingBottomSheet } from './components/ParkingBottomSheet'
 import { OfflineBanner } from './components/OfflineBanner'
 import { ReportModal, type ReportModalContext } from './components/ReportModal'
+import {
+  SearchDropdown,
+  splitPlaceLabel,
+  type SearchSuggestion,
+} from './components/SearchDropdown'
 import { Toast } from './components/Toast'
 import { MapChromeSkeleton } from './components/ui/Skeleton'
 import {
@@ -29,7 +34,7 @@ import { parkingQueryKeys, queryClient } from './lib/queryClient'
 import { prefetchParkingLayers } from './lib/parkingDataCache'
 import {
   CITIES,
-  CITY_LIST,
+  cityFromCoords,
   getInitialCity,
   persistCity,
   type CityId,
@@ -50,6 +55,7 @@ import {
   type RouteResult,
 } from './lib/routing'
 import {
+  ESTONIA_VIEWBOX,
   geocodeToSearchLocation,
   searchAddress,
   type GeocodeResult,
@@ -103,7 +109,6 @@ export default function App() {
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme())
   const dark = theme === 'dark'
   const [cityId, setCityId] = useState<CityId>(() => getInitialCity())
-  const city = CITIES[cityId]
   const [filter, setFilter] = useState<FilterId>('all')
   const [query, setQuery] = useState('')
   const [geoResults, setGeoResults] = useState<GeocodeResult[]>([])
@@ -197,7 +202,7 @@ export default function App() {
     return () => navigator.geolocation.clearWatch(id)
   }, [])
 
-  // Nominatim geocoding (debounced)
+  // Nominatim geocoding — Estonia-wide (no city toggle)
   useEffect(() => {
     const q = query.trim()
     if (q.length < 3) {
@@ -213,7 +218,7 @@ export default function App() {
     geoAbort.current = ac
     const t = window.setTimeout(async () => {
       try {
-        const results = await searchAddress(q, ac.signal, city.viewbox)
+        const results = await searchAddress(q, ac.signal, ESTONIA_VIEWBOX)
         if (!ac.signal.aborted) setGeoResults(results)
       } catch (e) {
         if ((e as Error).name === 'AbortError') return
@@ -227,7 +232,7 @@ export default function App() {
       window.clearTimeout(t)
       ac.abort()
     }
-  }, [query, city.viewbox])
+  }, [query])
 
   const clearRoute = useCallback(() => {
     routeRunId.current += 1
@@ -240,27 +245,17 @@ export default function App() {
     setRouteSummaryReady(false)
   }, [])
 
-  const switchCity = useCallback(
-    (next: CityId) => {
+  /** Soft-switch parking layer when a destination falls in another city. */
+  const ensureCityForCoords = useCallback(
+    (lat: number, lng: number) => {
+      const next = cityFromCoords(lat, lng)
       if (next === cityId) return
-      clearRoute()
       setCityId(next)
       persistCity(next)
-      setSelected(null)
-      setSearchSheetOpen(false)
-      setSearchLocation(null)
       setPreciseSpots([])
       setStreetSpots([])
-      setFilter('all')
-      const cfg = CITIES[next]
-      const center: [number, number] = [cfg.center[0], cfg.center[1]]
-      if (!hasGps) setUserLocation(center)
-      setFlyMode('fly')
-      setFlyTarget(center)
-      setFlyZoom(cfg.zoom)
-      setFlyKey((k) => k + 1)
     },
-    [cityId, hasGps, clearRoute],
+    [cityId],
   )
 
   const allSpots = useMemo(() => {
@@ -345,6 +340,7 @@ export default function App() {
       return allSpots.filter((s) => s.layer === 'timed')
     }
     if (filter === 'paid') {
+      // All paid operators + municipal paid zones under one "Tasuline" pill
       const paidLayers = new Set([
         'europark',
         'snabb',
@@ -353,6 +349,7 @@ export default function App() {
         'parkit',
         'park_ride',
         'loading',
+        'municipal',
       ])
       return allSpots.filter((s) => {
         if (
@@ -369,8 +366,12 @@ export default function App() {
         if (s.layer === 'free_street' || s.layer === 'timed' || s.layer === 'ev') {
           return false
         }
-        if (paidLayers.has(s.layer)) return true
-        return s.layer === 'municipal' && s.price_per_hour > 0
+        if (paidLayers.has(s.layer)) {
+          // Municipal only when priced (or has a paid zone code)
+          if (s.layer === 'municipal') return s.price_per_hour > 0
+          return true
+        }
+        return s.price_per_hour > 0
       })
     }
     if (filter === 'other') {
@@ -386,6 +387,67 @@ export default function App() {
     }
     return allSpots
   }, [allSpots, filter])
+
+  /** Live search suggestions: parking name hits + geocode places. */
+  const searchSuggestions = useMemo((): SearchSuggestion[] => {
+    const q = query.trim().toLowerCase()
+    if (q.length < 3) return []
+
+    const parkingHits: SearchSuggestion[] = allSpots
+      .filter((s) => {
+        const name = s.name.toLowerCase()
+        const zone = s.zone_code.toLowerCase()
+        const addr = (s.address || '').toLowerCase()
+        return name.includes(q) || zone.includes(q) || addr.includes(q)
+      })
+      .map((s) => {
+        const distanceM = distanceMeters(
+          userLocation[0],
+          userLocation[1],
+          s.lat,
+          s.lng,
+        )
+        return {
+          kind: 'parking' as const,
+          id: s.id,
+          name: s.name,
+          subtitle: [s.zone_code, s.operator, s.address]
+            .filter(Boolean)
+            .filter((v, i, a) => a.indexOf(v) === i)
+            .slice(0, 2)
+            .join(' · '),
+          lat: s.lat,
+          lng: s.lng,
+          distanceM,
+          spot: s,
+        }
+      })
+      .sort((a, b) => a.distanceM - b.distanceM)
+      .slice(0, 4)
+
+    const places: SearchSuggestion[] = geoResults.map((r) => {
+      const { name, subtitle } = splitPlaceLabel(r.label)
+      const distanceM = distanceMeters(
+        userLocation[0],
+        userLocation[1],
+        r.lat,
+        r.lng,
+      )
+      return {
+        kind: 'place' as const,
+        id: r.id,
+        name,
+        subtitle,
+        lat: r.lat,
+        lng: r.lng,
+        distanceM,
+        result: r,
+      }
+    })
+
+    // Prefer nearby parking matches first, then address places
+    return [...parkingHits, ...places].slice(0, 10)
+  }, [query, allSpots, geoResults, userLocation])
 
   // Deep-link: /?spot=<id> opens the parking sheet (no map click needed)
   const deepLinkApplied = useRef(false)
@@ -465,8 +527,10 @@ export default function App() {
     setFlyKey((k) => k + 1)
   }
 
-  const flyToGeocode = (r: GeocodeResult) => {
-    const loc = geocodeToSearchLocation(r)
+  const flyToDestination = (
+    loc: SearchLocation,
+    opts?: { preferSpot?: ParkingSpot | null },
+  ) => {
     if (searchSheetTimer.current) {
       window.clearTimeout(searchSheetTimer.current)
       searchSheetTimer.current = null
@@ -481,6 +545,8 @@ export default function App() {
     setRouteLoading(false)
     setRouteSummaryReady(false)
 
+    ensureCityForCoords(loc.lat, loc.lng)
+
     setSearchSheetOpen(false)
     setSelected(null)
     setSearchLocation(loc)
@@ -490,7 +556,7 @@ export default function App() {
 
     // Destination Interceptor — nearest roadside / lot parking within 400 m
     const nearby = parkingIndex.queryNearbyParking(loc.lat, loc.lng, 400)
-    const destSpot = nearby?.spot ?? null
+    const destSpot = opts?.preferSpot ?? nearby?.spot ?? null
     const destination: [number, number] = destSpot
       ? [destSpot.lat, destSpot.lng]
       : [loc.lat, loc.lng]
@@ -596,6 +662,24 @@ export default function App() {
       })
   }
 
+  const selectSearchSuggestion = (item: SearchSuggestion) => {
+    if (item.kind === 'parking') {
+      flyToDestination(
+        {
+          id: item.spot.id,
+          name: item.spot.name,
+          label: item.spot.address || item.spot.name,
+          lat: item.spot.lat,
+          lng: item.spot.lng,
+          kind: 'parking',
+        },
+        { preferSpot: item.spot },
+      )
+      return
+    }
+    flyToDestination(geocodeToSearchLocation(item.result))
+  }
+
   const openProposeNew = () => {
     setReportContext({
       mode: 'PROPOSE_NEW',
@@ -690,8 +774,8 @@ export default function App() {
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Otsi aadressi või kohta"
-                  className={`w-full rounded-2xl border-0 bg-transparent py-3 pr-10 pl-10 text-[16px] outline-none ${text} placeholder:text-[#8E8E93]`}
+                  placeholder="Otsi aadressi või kohta Eestis"
+                  className={`w-full rounded-2xl border-0 bg-transparent py-3 pr-10 pl-10 text-[16px] font-sans outline-none ${text} placeholder:text-[#8E8E93]`}
                   autoComplete="off"
                   enterKeyHint="search"
                 />
@@ -701,8 +785,9 @@ export default function App() {
                     onClick={() => {
                       setQuery('')
                       setGeoResults([])
+                      setGeoError(null)
                     }}
-                    className={`absolute top-1/2 right-2 -translate-y-1/2 rounded-full p-1.5 ${muted} bg-black/5`}
+                    className={`absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer rounded-full p-1.5 ${muted} bg-black/5`}
                     aria-label="Tühjenda"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -712,7 +797,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setInfoOpen(true)}
-                className={`rounded-full p-2.5 ${chip}`}
+                className={`cursor-pointer rounded-full p-2.5 ${chip}`}
                 title="Reeglid"
               >
                 <CircleHelp className="h-5 w-5" />
@@ -726,7 +811,7 @@ export default function App() {
                     return next
                   })
                 }}
-                className={`rounded-full p-2.5 ${chip}`}
+                className={`cursor-pointer rounded-full p-2.5 ${chip}`}
                 title={dark ? 'Hele režiim' : 'Tume režiim'}
                 aria-label={dark ? 'Lülita hele režiim' : 'Lülita tume režiim'}
               >
@@ -734,54 +819,19 @@ export default function App() {
               </button>
             </div>
 
-            <div className="flex gap-1 border-t border-black/6 px-2 py-1.5">
-              {CITY_LIST.map((c) => {
-                const active = c.id === cityId
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => switchCity(c.id)}
-                    className={`tap-scale flex-1 rounded-xl px-2 py-1.5 text-[12px] font-bold transition ${
-                      active
-                        ? dark
-                          ? 'bg-white/15 text-white'
-                          : 'bg-[#1C1C1E] text-white'
-                        : muted
-                    }`}
-                    aria-pressed={active}
-                  >
-                    {c.label}
-                  </button>
-                )
-              })}
-            </div>
-
-            {(geoLoading || geoResults.length > 0 || geoError) && query.trim().length >= 3 ? (
-              <div className="max-h-52 overflow-y-auto border-t border-black/6 px-1 py-1">
-                {geoLoading ? (
-                  <p className={`px-3 py-2.5 text-[13px] ${muted}`}>Otsin…</p>
-                ) : null}
-                {geoError ? (
-                  <p className="px-3 py-2.5 text-[13px] text-[#FF3B30]">{geoError}</p>
-                ) : null}
-                {geoResults.map((r) => (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => flyToGeocode(r)}
-                    className={`flex w-full items-start gap-2.5 rounded-xl px-3 py-2.5 text-left transition hover:bg-black/4 ${text}`}
-                  >
-                    <Search className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#007AFF]" />
-                    <span className="text-[14px] leading-snug font-medium">{r.label}</span>
-                  </button>
-                ))}
-                {!geoLoading && !geoError && geoResults.length === 0 ? (
-                  <p className={`px-3 py-2.5 text-[13px] ${muted}`}>Tulemusi ei leitud</p>
-                ) : null}
-              </div>
-            ) : null}
           </div>
+
+          {query.trim().length >= 3 ? (
+            <div className="relative z-40">
+              <SearchDropdown
+                loading={geoLoading && searchSuggestions.length === 0}
+                error={geoError}
+                suggestions={searchSuggestions}
+                dark={dark}
+                onSelect={selectSearchSuggestion}
+              />
+            </div>
+          ) : null}
 
           <div className="no-scrollbar flex gap-2 overflow-x-auto px-0.5 py-0.5">
             {FILTERS.map((f) => {
@@ -792,7 +842,7 @@ export default function App() {
                   type="button"
                   data-filter={f.id}
                   onClick={() => setFilter(f.id)}
-                  className={`tap-scale shrink-0 rounded-full px-4 py-2 text-[13px] font-semibold shadow-sm ${
+                  className={`tap-scale shrink-0 cursor-pointer rounded-full px-3.5 py-2 text-[13px] font-semibold shadow-sm sm:px-4 ${
                     active ? chipActive : `${panel} ${chip}`
                   }`}
                 >
@@ -814,7 +864,7 @@ export default function App() {
         <div
           data-testid="route-summary"
           className="pointer-events-none absolute inset-x-0 z-30 flex justify-center px-3"
-          style={{ top: 'calc(env(safe-area-inset-top) + 7.5rem)' }}
+          style={{ top: 'calc(env(safe-area-inset-top) + 6.25rem)' }}
         >
           <div
             className={`pointer-events-auto flex w-full max-w-xs animate-fade-in items-center gap-3 px-3 py-2.5 ${panel}`}

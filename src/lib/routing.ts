@@ -66,6 +66,13 @@ export function formatDuration(seconds: number): string {
   return m === 0 ? `${h} h` : `${h} h ${m} min`
 }
 
+/** Rough urban drive ETA for search suggestion meta (no OSRM round-trip). */
+export function estimateDriveMinutes(meters: number): number {
+  const km = Math.max(0, meters) / 1000
+  // ~32 km/h city average → minutes
+  return Math.max(1, Math.round((km / 32) * 60))
+}
+
 /** Convert RouteResult [lat,lng][] → GeoJSON LineString [lng,lat][]. */
 export function routeCoordsToLngLat(coords: [number, number][]): LonLat[] {
   return coords.map(([lat, lng]) => [lng, lat])

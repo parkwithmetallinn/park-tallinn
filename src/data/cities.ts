@@ -62,3 +62,10 @@ export function persistCity(id: CityId) {
     /* ignore */
   }
 }
+
+/** Infer active parking layer from a destination (no manual city toggle). */
+export function cityFromCoords(lat: number, lng: number): CityId {
+  // Pärnu metro approx.
+  if (lat >= 58.3 && lat <= 58.5 && lng >= 24.35 && lng <= 24.7) return 'parnu'
+  return 'tallinn'
+}
