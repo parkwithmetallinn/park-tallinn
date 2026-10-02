@@ -1,4 +1,5 @@
 import { normalizeSpot } from './geojson'
+import { mapLabelForLayer } from './mapLabels'
 import {
   emptyPurgeStats,
   getParkingExclusionReason,
@@ -368,7 +369,7 @@ export function prepareStreetParking(raw: RawCollection): StreetParkingCollectio
         layer,
         free_minutes,
         price_per_hour,
-        badge: zone_code.length <= 8 ? zone_code : zone_code.slice(0, 8),
+        badge: mapLabelForLayer(layer, zone_code),
         address: address || street,
         desc: [
           rules === 'free' ? 'Tasuta tänavaparkimine' : null,

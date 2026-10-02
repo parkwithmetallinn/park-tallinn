@@ -7,6 +7,7 @@ import type {
   ParkingSpot,
   ParkingSpotSeed,
 } from '../types'
+import { mapLabelForLayer } from './mapLabels'
 
 function freeMinutesFromBadge(badge: string, fallback = 0): number {
   if (/\b15\b/.test(badge)) return 15
@@ -174,6 +175,7 @@ export function normalizeSpot(spot: ParkingSpotSeed): ParkingSpot {
   const price_per_hour = inferPrice(spot, layer)
   const type = spot.type ?? inferLegacyType(layer)
   const kind = inferKind(spot, featureType)
+  const badge = mapLabelForLayer(layer, zone_code)
 
   return {
     ...spot,
@@ -185,6 +187,7 @@ export function normalizeSpot(spot: ParkingSpotSeed): ParkingSpot {
     price_per_hour,
     type,
     kind,
+    badge,
     provider: layer,
   }
 }

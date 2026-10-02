@@ -140,7 +140,8 @@ function syncLodZoomLimits(map: MapLibreMapType) {
   setMin(PRECISE_FILL_LAYER, ZOOM.lotMin)
   setMin(PRECISE_OUTLINE_LAYER, ZOOM.lotMin)
   setMin(PRECISE_OUTLINE_UNDERGROUND_LAYER, ZOOM.lotMin)
-  setMin(PRECISE_LABEL_LAYER, ZOOM.lotMin)
+  // Lot name badges (SB / EP / FREE…) from detail zoom to declutter dense operators
+  setMin(PRECISE_LABEL_LAYER, ZOOM.detailMin)
   setMin(PRECISE_MULTISTOREY_BADGE_LAYER, ZOOM.lotMin)
 
   setMin(STREET_PARKING_CASING_LAYER, ZOOM.streetMin)
@@ -656,19 +657,24 @@ export function ensureParkingOverlaySources(
       },
     })
 
-    // Lot name labels
+    // Lot name labels (from detail zoom; Snabb uses mapLabel "SB")
     map.addLayer({
       id: PRECISE_LABEL_LAYER,
       type: 'symbol',
       source: PRECISE_PARKING_SOURCE,
-      minzoom: ZOOM.lotMin,
+      minzoom: ZOOM.detailMin,
       layout: {
         'text-field': ['get', 'badge'],
         'text-font': ['Noto Sans Bold'],
-        'text-size': ['interpolate', ['linear'], ['zoom'], 13, 11, 17, 13],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 15, 11, 17, 13],
         'text-max-width': 8,
         'symbol-placement': 'point',
-        'symbol-sort-key': ['get', 'labelRank'],
+        // Larger lots first (area_m2); fall back to labelRank
+        'symbol-sort-key': [
+          'coalesce',
+          ['*', -1, ['get', 'area_m2']],
+          ['get', 'labelRank'],
+        ],
         'text-padding': 4,
         'text-optional': true,
         ...noOverlapSymbol,

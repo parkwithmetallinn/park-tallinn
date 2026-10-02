@@ -1,3 +1,4 @@
+import area from '@turf/area'
 import { PARKING_LAYER_META } from '../map/parkingLayers'
 import { lotFillColor } from '../map/streetLineTheme'
 import type {
@@ -7,6 +8,7 @@ import type {
   ParkingStructureType,
 } from '../types'
 import { normalizeSpot } from './geojson'
+import { mapLabelForLayer } from './mapLabels'
 import {
   getParkingExclusionReason,
   isPaidFeeTag,
@@ -50,6 +52,8 @@ export type PreciseParkingProps = {
   color: string
   /** True only for verified free public parking (matches Tasuta filter + green). */
   verified_free: boolean
+  /** Feature area m² — larger lots win label collision (symbol-sort-key). */
+  area_m2: number
   labelRank: number
   floors_label: string
   structure_label: string
@@ -397,7 +401,16 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
       (zone ? `Zone ${zone}` : '') ||
       (operator !== 'Unknown' && operator !== 'Tallinna Linn' ? `${operator} parkla` : '') ||
       structureLabel(structureType)
-    const badge = zone_code.length <= 8 ? zone_code : zone_code.slice(0, 8)
+    // Map badge from layer (Snabb → "SB"); zone_code keeps real X/SB codes for sheets.
+    const badge = mapLabelForLayer(layer, zone_code)
+    const area_m2 = Math.max(0, Math.round(area(f as never)))
+    // Larger lots first: lower labelRank wins existing collision layout.
+    const labelRank =
+      structureType === 'multi_storey'
+        ? 0
+        : structureType === 'underground'
+          ? 1
+          : Math.max(2, 1_000_000 - area_m2)
 
     // Green ONLY when layer is free_street (verified free, no private/provider).
     // Unknown ZONE / untagged municipal → muted gray — never free-green.
@@ -433,7 +446,8 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
         desc: descParts.length ? descParts.join(' · ') : undefined,
         color,
         verified_free: verified_free && layer === 'free_street',
-        labelRank: structureType === 'multi_storey' ? 0 : structureType === 'underground' ? 1 : 2,
+        area_m2,
+        labelRank,
         floors_label: structureType === 'multi_storey' ? `P+${floors}` : '',
         structure_label: structureLabel(structureType),
       },
