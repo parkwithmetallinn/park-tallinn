@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { MapPin, X } from 'lucide-react'
 import { formatDistance } from '../lib/geo'
 import {
@@ -106,20 +106,24 @@ export function NearestParkingPanel({
   targetName,
   options,
   dark,
-  hoveredId,
-  onHover,
-  onSelect,
+  selectedPreviewId,
+  onPreview,
+  onConfirm,
   onClose,
 }: {
   targetName: string
   options: NearestParkingOption[]
   dark?: boolean
-  hoveredId?: string | null
-  onHover: (id: string | null) => void
-  onSelect: (spot: ParkingSpot) => void
+  /** Active tap/click preview — no hover (mobile has none). */
+  selectedPreviewId?: string | null
+  /** Instant preview only — never opens detail or fetches routes. */
+  onPreview: (id: string) => void
+  /** Explicit confirmation — opens detail + starts navigation. */
+  onConfirm: (spot: ParkingSpot) => void
   onClose: () => void
 }) {
   const [filter, setFilter] = useState<PanelFilter>('all')
+  const cardRefs = useRef<Map<string, HTMLLIElement>>(new Map())
   const muted = dark ? 'text-[#98989D]' : 'text-[#8E8E93]'
   const soft = dark ? 'text-[#EBEBF5]/80' : 'text-[#636366]'
   const chip = dark ? 'bg-white/10' : 'bg-[#F2F2F7]'
@@ -141,6 +145,23 @@ export function NearestParkingPanel({
     }
     return list
   }, [options, filter])
+
+  // Keep list card in view when preview comes from a map pill tap
+  useEffect(() => {
+    if (!selectedPreviewId) return
+    const el = cardRefs.current.get(selectedPreviewId)
+    if (!el) return
+    el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [selectedPreviewId])
+
+  const previewSpot = useMemo(() => {
+    if (!selectedPreviewId) return null
+    return (
+      filtered.find((o) => o.spot.id === selectedPreviewId)?.spot ??
+      options.find((o) => o.spot.id === selectedPreviewId)?.spot ??
+      null
+    )
+  }, [selectedPreviewId, filtered, options])
 
   return (
     <InfoSidePanelShell
@@ -212,62 +233,103 @@ export function NearestParkingPanel({
           ) : (
             <ul className="space-y-1.5" role="listbox" aria-label="Lähimad parklad">
               {filtered.map(({ spot, distanceM }) => {
-                const active = hoveredId === spot.id
+                const active = selectedPreviewId === spot.id
                 const badge = parkingPriceBadge(spot)
                 const walk = walkMinutes(distanceM)
                 return (
-                  <li key={spot.id}>
-                    <button
-                      type="button"
+                  <li
+                    key={spot.id}
+                    ref={(node) => {
+                      if (node) cardRefs.current.set(spot.id, node)
+                      else cardRefs.current.delete(spot.id)
+                    }}
+                  >
+                    <div
                       role="option"
                       aria-selected={active}
+                      tabIndex={0}
                       data-testid={`nearest-parking-card-${spot.id}`}
-                      onMouseEnter={() => onHover(spot.id)}
-                      onMouseLeave={() => onHover(null)}
-                      onFocus={() => onHover(spot.id)}
-                      onBlur={() => onHover(null)}
-                      onClick={() => onSelect(spot)}
-                      className={`tap-scale flex w-full items-start gap-2.5 rounded-xl border px-3 py-2.5 text-left transition active:scale-[0.99] ${
+                      onClick={() => onPreview(spot.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          onPreview(spot.id)
+                        }
+                      }}
+                      className={`tap-scale w-full cursor-pointer rounded-xl border px-3 py-2.5 text-left transition active:scale-[0.99] ${
                         active
                           ? dark
                             ? 'border-[#0A84FF]/70 bg-[#0A84FF]/18 shadow-[0_0_0_1px_rgba(10,132,255,0.35)]'
                             : 'border-[#007AFF]/60 bg-[#007AFF]/10 shadow-[0_0_0_1px_rgba(0,122,255,0.25)]'
                           : dark
-                            ? 'border-white/10 bg-white/5 hover:bg-white/10'
-                            : 'border-black/6 bg-white/55 hover:bg-white/90'
+                            ? 'border-white/10 bg-white/5'
+                            : 'border-black/6 bg-white/55'
                       }`}
                     >
-                      <span
-                        className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: categoryPaintColor(spot) }}
-                        aria-hidden
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-start justify-between gap-2">
-                          <span className={`truncate text-[13px] font-bold ${ink}`}>
-                            {spot.name || spot.zone_code || 'Parkla'}
+                      <div className="flex items-start gap-2.5">
+                        <span
+                          className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: categoryPaintColor(spot) }}
+                          aria-hidden
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-start justify-between gap-2">
+                            <span
+                              className={`truncate text-[13px] font-bold ${ink}`}
+                            >
+                              {spot.name || spot.zone_code || 'Parkla'}
+                            </span>
+                            <span
+                              className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${badgeTone(spot, dark)}`}
+                            >
+                              {badge}
+                            </span>
                           </span>
                           <span
-                            className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${badgeTone(spot, dark)}`}
+                            className={`mt-0.5 block text-[11px] font-medium ${muted}`}
                           >
-                            {badge}
+                            {formatDistance(distanceM)}
+                            {' · '}
+                            {walk} min kõndi
+                            {spot.zone_code && spot.zone_code !== 'ZONE'
+                              ? ` · ${spot.zone_code}`
+                              : ''}
                           </span>
                         </span>
-                        <span className={`mt-0.5 block text-[11px] font-medium ${muted}`}>
-                          {formatDistance(distanceM)}
-                          {' · '}
-                          {walk} min kõndi
-                          {spot.zone_code && spot.zone_code !== 'ZONE'
-                            ? ` · ${spot.zone_code}`
-                            : ''}
-                        </span>
-                      </span>
-                    </button>
+                      </div>
+
+                      {active ? (
+                        <button
+                          type="button"
+                          data-testid="confirm-parking-selection"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onConfirm(spot)
+                          }}
+                          className="tap-scale mt-2.5 w-full rounded-xl bg-[#007AFF] px-3 py-2.5 text-[13px] font-bold text-white shadow-[0_4px_14px_rgba(0,122,255,0.35)] transition active:scale-[0.98] active:bg-[#0066D6]"
+                        >
+                          Vali see parkla
+                        </button>
+                      ) : null}
+                    </div>
                   </li>
                 )
               })}
             </ul>
           )}
+
+          {/* Sticky confirm when preview is outside current filter list */}
+          {previewSpot &&
+          !filtered.some((o) => o.spot.id === previewSpot.id) ? (
+            <button
+              type="button"
+              data-testid="confirm-parking-selection"
+              onClick={() => onConfirm(previewSpot)}
+              className="tap-scale mt-3 w-full rounded-xl bg-[#007AFF] px-3 py-2.5 text-[13px] font-bold text-white shadow-[0_4px_14px_rgba(0,122,255,0.35)] transition active:scale-[0.98]"
+            >
+              Vali see parkla
+            </button>
+          ) : null}
         </div>
       )}
     </InfoSidePanelShell>

@@ -160,7 +160,10 @@ export default function App() {
   const [nearestOptions, setNearestOptions] = useState<NearestParkingOption[]>(
     [],
   )
-  const [hoveredParkingId, setHoveredParkingId] = useState<string | null>(null)
+  /** Tap/click preview in nearest picker — no hover (mobile has none). */
+  const [selectedPreviewId, setSelectedPreviewId] = useState<string | null>(
+    null,
+  )
   /** Detail was opened from nearest picker — show "Tagasi nimekirja". */
   const [fromNearestPicker, setFromNearestPicker] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
@@ -569,7 +572,7 @@ export default function App() {
     setSelected(null)
     setSearchSheetOpen(false)
     setNearestPickerOpen(false)
-    setHoveredParkingId(null)
+    setSelectedPreviewId(null)
     setFromNearestPicker(false)
     setGeoResults([])
     setGeoError(null)
@@ -583,7 +586,7 @@ export default function App() {
     setSearchSheetOpen(false)
     setNearestPickerOpen(false)
     setNearestOptions([])
-    setHoveredParkingId(null)
+    setSelectedPreviewId(null)
     setFromNearestPicker(false)
     setQuery('')
     setGeoResults([])
@@ -650,7 +653,7 @@ export default function App() {
       setRouteLoading(false)
       setRouteSummaryReady(false)
       setNearestPickerOpen(false)
-      setHoveredParkingId(null)
+      setSelectedPreviewId(null)
       setSearchSheetOpen(false)
       setAlternatives([])
       setNoAlternatives(false)
@@ -823,7 +826,7 @@ export default function App() {
     setQuery(loc.name)
     setAlternatives([])
     setNoAlternatives(false)
-    setHoveredParkingId(null)
+    setSelectedPreviewId(null)
 
     // Direct confirm when user picked a parking result from search
     if (opts?.preferSpot || opts?.skipPicker) {
@@ -868,11 +871,13 @@ export default function App() {
     flyToDestination(geocodeToSearchLocation(item.result))
   }
 
-  const handleNearestHover = useCallback((id: string | null) => {
-    setHoveredParkingId(id)
+  /** Instant preview only — no detail panel, no OSRM. */
+  const handleNearestPreview = useCallback((id: string) => {
+    setSelectedPreviewId(id)
   }, [])
 
-  const handleNearestSelect = useCallback(
+  /** Explicit "Vali see parkla" — opens detail + starts route. */
+  const handleNearestConfirm = useCallback(
     (spot: ParkingSpot) => {
       if (!searchLocation) return
       setFromNearestPicker(true)
@@ -888,7 +893,7 @@ export default function App() {
     setFromNearestPicker(true)
     setNearestPickerOpen(true)
     if (nearestOptions[0]) {
-      setHoveredParkingId(nearestOptions[0].spot.id)
+      setSelectedPreviewId(nearestOptions[0].spot.id)
     }
   }, [clearRoute, nearestOptions])
 
@@ -907,9 +912,9 @@ export default function App() {
   // Prefocus the closest option when the picker opens
   useEffect(() => {
     if (!nearestPickerOpen) return
-    if (hoveredParkingId) return
-    if (nearestOptions[0]) setHoveredParkingId(nearestOptions[0].spot.id)
-  }, [nearestPickerOpen, nearestOptions, hoveredParkingId])
+    if (selectedPreviewId) return
+    if (nearestOptions[0]) setSelectedPreviewId(nearestOptions[0].spot.id)
+  }, [nearestPickerOpen, nearestOptions, selectedPreviewId])
 
   const nearestPills = useMemo(() => {
     if (!nearestPickerOpen) return []
@@ -924,17 +929,18 @@ export default function App() {
 
   const previewFocus = useMemo(() => {
     if (!nearestPickerOpen || !searchLocation) return null
-    const hit = hoveredParkingId
-      ? nearestOptions.find((o) => o.spot.id === hoveredParkingId)
+    const hit = selectedPreviewId
+      ? nearestOptions.find((o) => o.spot.id === selectedPreviewId)
       : null
     return {
       target: { lat: searchLocation.lat, lng: searchLocation.lng },
       parking: hit
         ? { lat: hit.spot.lat, lng: hit.spot.lng }
         : undefined,
+      // Fit cluster once — do not re-camera on every preview tap (keeps taps instant)
       fitAll: true,
     }
-  }, [nearestPickerOpen, searchLocation, hoveredParkingId, nearestOptions])
+  }, [nearestPickerOpen, searchLocation, selectedPreviewId, nearestOptions])
 
   /** Route camera + OSRM intro to a parking spot (alternatives flow). */
   const routeToSpot = useCallback(
@@ -1181,12 +1187,12 @@ export default function App() {
             flyMode={flyMode}
             pitch3d={pitch3d}
             selectedId={selected?.id ?? null}
-            highlightId={nearestPickerOpen ? hoveredParkingId : null}
+            highlightId={nearestPickerOpen ? selectedPreviewId : null}
             nearestPills={nearestPills}
             previewFocus={previewFocus}
             onNearestPillClick={(id) => {
-              const hit = nearestOptions.find((o) => o.spot.id === id)
-              if (hit) handleNearestSelect(hit.spot)
+              // Map pill tap = preview only (same as list card tap)
+              handleNearestPreview(id)
             }}
             searchPin={
               searchLocation
@@ -1663,12 +1669,12 @@ export default function App() {
           targetName={searchLocation.name || searchLocation.label}
           options={nearestOptions}
           dark={dark}
-          hoveredId={hoveredParkingId}
-          onHover={handleNearestHover}
-          onSelect={handleNearestSelect}
+          selectedPreviewId={selectedPreviewId}
+          onPreview={handleNearestPreview}
+          onConfirm={handleNearestConfirm}
           onClose={() => {
             setNearestPickerOpen(false)
-            setHoveredParkingId(null)
+            setSelectedPreviewId(null)
             setSearchSheetOpen(true)
           }}
         />

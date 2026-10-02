@@ -581,6 +581,35 @@ export function ensureParkingOverlaySources(
       },
     })
 
+    // Soft glow under selected lot outline (preview / detail)
+    map.addLayer({
+      id: 'parking-fill-outline-glow',
+      type: 'line',
+      source: PRECISE_PARKING_SOURCE,
+      minzoom: ZOOM.lotMin,
+      layout: {
+        visibility: 'visible',
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': '#007AFF',
+        'line-width': [
+          'case',
+          ['boolean', ['feature-state', 'selected'], false],
+          10,
+          0,
+        ] as never,
+        'line-opacity': [
+          'case',
+          ['boolean', ['feature-state', 'selected'], false],
+          0.45,
+          0,
+        ] as never,
+        'line-blur': 3.5,
+      },
+    })
+
     // Solid curb-to-curb outline (surface + multi_storey)
     map.addLayer({
       id: PRECISE_OUTLINE_LAYER,
@@ -595,7 +624,12 @@ export function ensureParkingOverlaySources(
       },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': 2,
+        'line-width': [
+          'case',
+          ['boolean', ['feature-state', 'selected'], false],
+          4.5,
+          2,
+        ] as never,
         'line-opacity': 1,
       },
     })
@@ -614,7 +648,12 @@ export function ensureParkingOverlaySources(
       },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': 2,
+        'line-width': [
+          'case',
+          ['boolean', ['feature-state', 'selected'], false],
+          4.5,
+          2,
+        ] as never,
         'line-opacity': 1,
         'line-dasharray': [1.2, 1.6],
       },
@@ -813,21 +852,21 @@ export function ensureParkingOverlaySources(
           [
             'case',
             ['boolean', ['feature-state', 'selected'], false],
-            3.5,
+            5.5,
             2.25,
           ],
           15,
           [
             'case',
             ['boolean', ['feature-state', 'selected'], false],
-            4.5,
+            7,
             3,
           ],
           18,
           [
             'case',
             ['boolean', ['feature-state', 'selected'], false],
-            9,
+            12,
             7,
           ],
         ] as never,
@@ -1343,6 +1382,7 @@ const GEOM_LAYER_IDS = [
   PARKING_LOTS_FILL_LAYER,
   PARKING_LOTS_OUTLINE_LAYER,
   PARKING_LOTS_LABEL_LAYER,
+  'parking-fill-outline-glow',
   PRECISE_FILL_LAYER,
   'parking-fill-underground-hatch',
   PRECISE_OUTLINE_LAYER,

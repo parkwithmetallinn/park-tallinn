@@ -350,7 +350,7 @@ function applySelectionHighlight(map: MapLibreMapType, selectedId: string | null
   }
 }
 
-/** Hover/focus preview highlight (nearest-parking picker). */
+/** Tap/click preview highlight (nearest-parking picker — no hover). */
 function applyHoverHighlight(map: MapLibreMapType, hoverId: string | null) {
   const prev = (map as MapLibreMapType & { __hoverId?: string | null }).__hoverId
   const selected = (map as MapLibreMapType & { __selectedId?: string | null })
@@ -415,19 +415,20 @@ export const MapView = forwardRef<
     pitch3d?: boolean
     selectedId?: string | null
     /**
-     * Nearest-parking picker hover — highlights the matching pin/polygon
-     * and frames target + parking when previewFocus is set.
+     * Nearest-parking picker preview (tap/click) — highlights matching
+     * pin/polygon + active price pill. Does not open detail or fetch routes.
      */
     highlightId?: string | null
     /** Glass price pills above nearest parking options (no numeric ranks). */
     nearestPills?: NearestMapPill[]
-    /** Frame destination + all nearest pills (and optional hover focus). */
+    /** Frame destination + all nearest pills (fit once when fitAll). */
     previewFocus?: {
       target: { lat: number; lng: number }
       parking?: { lat: number; lng: number }
       /** When true, fit all nearestPills + target (picker open). */
       fitAll?: boolean
     } | null
+    /** Map pill tap → preview selection (parent must not confirm/route). */
     onNearestPillClick?: (id: string) => void
     /** Dropped search / address pin */
     searchPin?: { lat: number; lng: number } | null
