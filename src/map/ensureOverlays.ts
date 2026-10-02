@@ -1087,15 +1087,16 @@ export function ensureParkingOverlaySources(
       type: 'geojson',
       data: { type: 'FeatureCollection', features: [] },
     })
+    // Contour under the blue route — theme-aware via applyOverlayThemePaints
     map.addLayer({
       id: 'nav-route-outline',
       type: 'line',
       source: ROUTE_SOURCE,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': '#5E5CE6',
-        'line-width': 14,
-        'line-opacity': 0.85,
+        'line-color': mode === 'dark' ? '#0B1220' : '#FFFFFF',
+        'line-width': 9,
+        'line-opacity': 0.9,
       },
     })
     map.addLayer({
@@ -1104,11 +1105,26 @@ export function ensureParkingOverlaySources(
       source: ROUTE_SOURCE,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': '#7C3AED',
-        'line-width': 8,
+        'line-color': '#007AFF',
+        'line-width': 5,
         'line-opacity': 1,
       },
     })
+  } else {
+    // Refresh paints on style reload / theme swap
+    if (map.getLayer('nav-route-outline')) {
+      map.setPaintProperty(
+        'nav-route-outline',
+        'line-color',
+        mode === 'dark' ? '#0B1220' : '#FFFFFF',
+      )
+      map.setPaintProperty('nav-route-outline', 'line-width', 9)
+      map.setPaintProperty('nav-route-outline', 'line-opacity', 0.9)
+    }
+    if (map.getLayer('nav-route-line')) {
+      map.setPaintProperty('nav-route-line', 'line-color', '#007AFF')
+      map.setPaintProperty('nav-route-line', 'line-width', 5)
+    }
   }
 
   syncLodZoomLimits(map)

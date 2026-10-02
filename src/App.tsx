@@ -13,7 +13,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActiveSessionsModal } from './components/ActiveSessionsModal'
 import { MapErrorBoundary } from './components/MapErrorBoundary'
-import { MapView } from './components/MapView'
+import { MapView, type MapViewHandle } from './components/MapView'
 import { ModalShell } from './components/ModalShell'
 import { LocationInfoSheet } from './components/LocationInfoSheet'
 import { ParkingBottomSheet } from './components/ParkingBottomSheet'
@@ -44,6 +44,11 @@ import {
   ZONE_RATE_LIST,
 } from './data/zones'
 import { distanceMeters, formatDistance } from './lib/geo'
+import {
+  fetchRoute,
+  formatDuration,
+  type RouteResult,
+} from './lib/routing'
 import {
   geocodeToSearchLocation,
   searchAddress,
@@ -125,6 +130,13 @@ export default function App() {
   const [streetSpots, setStreetSpots] = useState<ParkingSpot[]>([])
   const [mapReady, setMapReady] = useState(false)
   const geoAbort = useRef<AbortController | null>(null)
+  const mapApiRef = useRef<MapViewHandle | null>(null)
+  const routeAbort = useRef<AbortController | null>(null)
+  const [routeData, setRouteData] = useState<
+    (RouteResult & { destination: [number, number]; label: string }) | null
+  >(null)
+  const [routeLoading, setRouteLoading] = useState(false)
+  const [routeError, setRouteError] = useState<string | null>(null)
 
   const {
     carNumber,
@@ -212,9 +224,75 @@ export default function App() {
     }
   }, [query, city.viewbox])
 
+  const clearRoute = useCallback(() => {
+    routeAbort.current?.abort()
+    routeAbort.current = null
+    mapApiRef.current?.cancelRouteIntro()
+    setRouteData(null)
+    setRouteError(null)
+    setRouteLoading(false)
+  }, [])
+
+  const startRoute = useCallback(
+    async (destination: [number, number], label: string) => {
+      if (!hasGps) {
+        setToast({
+          kind: 'info',
+          title: 'GPS puudub',
+          detail:
+            'Marsruut alustatakse kaardi keskpunktist. Luba asukoht, et saada täpne marsruut.',
+        })
+      }
+
+      routeAbort.current?.abort()
+      mapApiRef.current?.cancelRouteIntro()
+      const ac = new AbortController()
+      routeAbort.current = ac
+      let timedOut = false
+      const timeout = window.setTimeout(() => {
+        timedOut = true
+        ac.abort()
+      }, 8000)
+
+      setRouteLoading(true)
+      setRouteError(null)
+
+      try {
+        const result = await fetchRoute(userLocation, destination, ac.signal)
+        if (ac.signal.aborted) return
+        setRouteData({ ...result, destination, label })
+        void mapApiRef.current?.playRouteIntro(destination, result.coords)
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') {
+          if (timedOut && routeAbort.current === ac) {
+            setRouteError('Marsruuti ei õnnestunud leida')
+            setToast({
+              kind: 'error',
+              title: 'Marsruuti ei õnnestunud leida',
+              detail: 'Teenus ei vastanud õigeks ajaks.',
+            })
+          }
+          return
+        }
+        const msg =
+          e instanceof Error ? e.message : 'Marsruuti ei õnnestunud leida'
+        setRouteError(msg)
+        setToast({ kind: 'error', title: msg })
+      } finally {
+        window.clearTimeout(timeout)
+        if (routeAbort.current === ac) {
+          setRouteLoading(false)
+          routeAbort.current = null
+        }
+      }
+    },
+    [hasGps, userLocation, setToast],
+  )
+
   const switchCity = useCallback(
     (next: CityId) => {
       if (next === cityId) return
+      clearRoute()
       setCityId(next)
       persistCity(next)
       setSelected(null)
@@ -231,7 +309,7 @@ export default function App() {
       setFlyZoom(cfg.zoom)
       setFlyKey((k) => k + 1)
     },
-    [cityId, hasGps],
+    [cityId, hasGps, clearRoute],
   )
 
   const allSpots = useMemo(() => {
@@ -344,10 +422,14 @@ export default function App() {
     parkingIndex.bulkLoad(allSpots)
   }, [allSpots])
 
-  const openSheet = useCallback((spot: ParkingSpot) => {
-    setSearchSheetOpen(false)
-    setSelected(spot)
-  }, [])
+  const openSheet = useCallback(
+    (spot: ParkingSpot) => {
+      clearRoute()
+      setSearchSheetOpen(false)
+      setSelected(spot)
+    },
+    [clearRoute],
+  )
 
   const closeSheet = useCallback(() => setSelected(null), [])
 
@@ -359,12 +441,13 @@ export default function App() {
   }, [])
 
   const clearSearchLocation = useCallback(() => {
+    clearRoute()
     setSearchLocation(null)
     setSearchSheetOpen(false)
     setQuery('')
     setGeoResults([])
     setGeoError(null)
-  }, [])
+  }, [clearRoute])
 
   const openSearchSheet = useCallback(() => {
     if (!searchLocation) return
@@ -385,6 +468,7 @@ export default function App() {
       window.clearTimeout(searchSheetTimer.current)
       searchSheetTimer.current = null
     }
+    clearRoute()
     setSearchSheetOpen(false)
     setSearchLocation(loc)
     setQuery(loc.name)
@@ -464,6 +548,7 @@ export default function App() {
       <div className="absolute inset-0">
         <MapErrorBoundary>
           <MapView
+            ref={mapApiRef}
             spots={visibleSpots}
             filter={filter}
             theme={theme}
@@ -480,8 +565,8 @@ export default function App() {
                 : null
             }
             onSearchPinClick={openSearchSheet}
-            route={null}
-            navigating={false}
+            route={routeData}
+            navigating={Boolean(routeData)}
             onNavigate={openSheet}
             onBackgroundClick={dismissMapOverlays}
             onZoomChange={() => {}}
@@ -634,6 +719,45 @@ export default function App() {
             <p className={`px-1 pt-1 text-[11px] font-medium ${muted}`}>
               Elektriauto (M1), mootorrattad ja invakaart — tasuta tasulistes tsoonides
             </p>
+          ) : null}
+
+          {routeError && !routeData ? (
+            <p
+              data-testid="route-error"
+              role="alert"
+              className={`px-3 py-2 text-[12px] font-semibold text-[#FF3B30] ${panel}`}
+            >
+              {routeError}
+            </p>
+          ) : null}
+
+          {routeData ? (
+            <div
+              data-testid="route-summary"
+              className={`flex items-center gap-3 px-3 py-2.5 ${panel}`}
+              role="status"
+              aria-live="polite"
+            >
+              <div className="min-w-0 flex-1">
+                <p className={`truncate text-[14px] font-semibold ${text}`}>
+                  {routeData.label}
+                </p>
+                <p className={`mt-0.5 text-[12px] font-medium ${muted}`}>
+                  {formatDistance(routeData.distanceMeters)}
+                  {' · '}
+                  {formatDuration(routeData.durationSeconds)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={clearRoute}
+                className={`tap-scale flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${chip} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#007AFF]`}
+                aria-label="Lõpeta marsruut"
+                title="Lõpeta marsruut"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           ) : null}
         </div>
       </div>
@@ -887,6 +1011,13 @@ export default function App() {
             void addPrepaidMinutes(mins)
           }}
           onReportInvalid={() => openReportInvalid(selected)}
+          onStartRoute={() => {
+            void startRoute(
+              [selected.lat, selected.lng],
+              selected.name || selected.address || 'Sihtkoht',
+            )
+          }}
+          routeLoading={routeLoading}
         />
       ) : null}
 
@@ -896,6 +1027,13 @@ export default function App() {
           dark={dark}
           onClose={() => setSearchSheetOpen(false)}
           onClear={clearSearchLocation}
+          onStartRoute={() => {
+            void startRoute(
+              [searchLocation.lat, searchLocation.lng],
+              searchLocation.name || searchLocation.label || 'Sihtkoht',
+            )
+          }}
+          routeLoading={routeLoading}
         />
       ) : null}
 

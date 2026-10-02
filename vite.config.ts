@@ -56,6 +56,12 @@ export default defineConfig(({ mode }) => {
             Referer: 'https://aks.geoportaal.ee/',
           },
         },
+        // OSRM public router (no API key) — avoid browser CORS
+        '/api/osrm': {
+          target: 'https://router.project-osrm.org',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/osrm/, ''),
+        },
         // n8n parking session webhook — inject Header Auth from server env
         '/api/parkimine': {
           target: n8nOrigin || 'http://127.0.0.1',

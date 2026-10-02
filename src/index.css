@@ -397,6 +397,28 @@ body {
   transform: scale(0.94);
 }
 
+.route-end-pin {
+  width: 26px;
+  height: 34px;
+  pointer-events: none;
+  filter: drop-shadow(0 4px 10px rgb(52 199 89 / 0.4));
+}
+
+.route-end-pin-dot {
+  display: block;
+  width: 26px;
+  height: 26px;
+  border-radius: 50% 50% 50% 0;
+  background: #34c759;
+  border: 3px solid #fff;
+  transform: rotate(-45deg);
+  margin-top: 2px;
+}
+
+.map-dark .route-end-pin-dot {
+  border-color: #0b0e12;
+}
+
 .marker-pin {
   display: inline-flex;
   align-items: center;

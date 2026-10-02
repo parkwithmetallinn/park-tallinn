@@ -9,6 +9,10 @@
       "destination": "https://aks.geoportaal.ee/inaks/inaadress/:path*"
     },
     {
+      "source": "/api/osrm/:path*",
+      "destination": "https://router.project-osrm.org/:path*"
+    },
+    {
       "source": "/admin",
       "destination": "/index.html"
     },

@@ -8,7 +8,14 @@ import {
   type MapLayerMouseEvent,
 } from 'maplibre-gl'
 import maplibreWorker from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
-import { useEffect, useRef, useState } from 'react'
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react'
+import { distanceMeters } from '../lib/geo'
 import { spotsToMapGeoJSON } from '../lib/geojson'
 import { queryParkingInViewport } from '../lib/parkingRepository'
 import {
@@ -44,7 +51,10 @@ import {
 } from '../lib/cityParkingCache'
 import { dedupeStreetAgainstPolygons } from '../lib/spatialDedupe'
 import { parkingIndex } from '../lib/spatialIndex'
-import type { DrivingRoute } from '../lib/routing'
+import {
+  routeCoordsToLngLat,
+  type RouteResult,
+} from '../lib/routing'
 import type { ThemeMode } from '../lib/theme'
 import type { CityId } from '../data/cities'
 import { createBasemapStyle } from '../map/createBasemapStyle'
@@ -114,6 +124,59 @@ function makeSearchPinEl(onClick: () => void) {
     onClick()
   })
   return wrap
+}
+
+function makeRouteEndEl() {
+  const el = document.createElement('div')
+  el.className = 'route-end-pin'
+  el.setAttribute('aria-hidden', 'true')
+  el.innerHTML = `<span class="route-end-pin-dot"></span>`
+  return el
+}
+
+function prefersReducedMotion() {
+  return (
+    typeof window !== 'undefined' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  )
+}
+
+function waitMoveEnd(map: MapLibreMapType, timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      window.clearTimeout(timer)
+      resolve()
+    }
+    map.once('moveend', finish)
+    const timer = window.setTimeout(finish, timeoutMs)
+  })
+}
+
+function delay(ms: number, signal?: { cancelled: boolean }): Promise<void> {
+  return new Promise((resolve) => {
+    const t = window.setTimeout(() => resolve(), ms)
+    if (signal) {
+      const iv = window.setInterval(() => {
+        if (signal.cancelled) {
+          window.clearTimeout(t)
+          window.clearInterval(iv)
+          resolve()
+        }
+      }, 40)
+    }
+  })
+}
+
+/** Imperative camera API for the route intro (avoids fighting flyTarget). */
+export type MapViewHandle = {
+  playRouteIntro: (
+    destination: [number, number],
+    coords: [number, number][],
+  ) => Promise<void>
+  cancelRouteIntro: () => void
 }
 
 /**
@@ -258,72 +321,81 @@ function panelCameraPadding(panelOpen: boolean): {
   return { top: 80, bottom, left: 16, right: 16 }
 }
 
-export function MapView({
-  spots,
-  filter,
-  theme = 'light',
-  userLocation,
-  flyTarget,
-  flyKey,
-  flyZoom,
-  flyMode = 'ease',
-  pitch3d = true,
-  selectedId = null,
-  searchPin = null,
-  onSearchPinClick,
-  route,
-  navigating,
-  onNavigate,
-  onBackgroundClick,
-  onZoomChange,
-  onViewportStats,
-  onPreciseSpotsLoaded,
-  onStreetSpotsLoaded,
-  onMapReady,
-  suppressedFeatureIds,
-  infoPanelOpen = false,
-  cityId = 'tallinn',
-}: {
-  spots: ParkingSpot[]
-  filter: FilterId
-  /** Basemap + overlay theme (light | dark). */
-  theme?: ThemeMode
-  userLocation: [number, number]
-  flyTarget: [number, number] | null
-  flyKey: number
-  flyZoom?: number
-  /** `fly` = MapLibre flyTo (search); `ease` = easeTo (recenter). */
-  flyMode?: 'fly' | 'ease'
-  /** When true, use Apple Maps–style pitched 3D; when false, flat 2D. */
-  pitch3d?: boolean
-  selectedId?: string | null
-  /** Dropped search / address pin */
-  searchPin?: { lat: number; lng: number } | null
-  onSearchPinClick?: () => void
-  route: DrivingRoute | null
-  navigating: boolean
-  onNavigate: (spot: ParkingSpot) => void
-  /** Empty map tap — close sheets / search popup. */
-  onBackgroundClick?: () => void
-  onZoomChange?: (zoom: number, mode: 'district' | 'cluster' | 'street') => void
-  onViewportStats?: (stats: { rendered: number; skipped: boolean }) => void
-  /** Precise GeoJSON lots registered into the app index. */
-  onPreciseSpotsLoaded?: (spots: ParkingSpot[]) => void
-  /** Street LineString parking from GeoJSON. */
-  onStreetSpotsLoaded?: (spots: ParkingSpot[]) => void
-  /** Fired once when basemap style is ready (for skeleton fade-out). */
-  onMapReady?: () => void
-  /** Admin-approved REPORT_INVALID suppressions (never mutates production GeoJSON). */
-  suppressedFeatureIds?: Set<string> | string[]
-  /** Left/bottom info panel open — shift camera so pin stays visible. */
-  infoPanelOpen?: boolean
-  /** Active city layer (Tallinn default — keeps existing data path). */
-  cityId?: CityId
-}) {
+export const MapView = forwardRef<
+  MapViewHandle,
+  {
+    spots: ParkingSpot[]
+    filter: FilterId
+    /** Basemap + overlay theme (light | dark). */
+    theme?: ThemeMode
+    userLocation: [number, number]
+    flyTarget: [number, number] | null
+    flyKey: number
+    flyZoom?: number
+    /** `fly` = MapLibre flyTo (search); `ease` = easeTo (recenter). */
+    flyMode?: 'fly' | 'ease'
+    /** When true, use Apple Maps–style pitched 3D; when false, flat 2D. */
+    pitch3d?: boolean
+    selectedId?: string | null
+    /** Dropped search / address pin */
+    searchPin?: { lat: number; lng: number } | null
+    onSearchPinClick?: () => void
+    route: RouteResult | null
+    navigating: boolean
+    onNavigate: (spot: ParkingSpot) => void
+    /** Empty map tap — close sheets / search popup. */
+    onBackgroundClick?: () => void
+    onZoomChange?: (zoom: number, mode: 'district' | 'cluster' | 'street') => void
+    onViewportStats?: (stats: { rendered: number; skipped: boolean }) => void
+    /** Precise GeoJSON lots registered into the app index. */
+    onPreciseSpotsLoaded?: (spots: ParkingSpot[]) => void
+    /** Street LineString parking from GeoJSON. */
+    onStreetSpotsLoaded?: (spots: ParkingSpot[]) => void
+    /** Fired once when basemap style is ready (for skeleton fade-out). */
+    onMapReady?: () => void
+    /** Admin-approved REPORT_INVALID suppressions (never mutates production GeoJSON). */
+    suppressedFeatureIds?: Set<string> | string[]
+    /** Left/bottom info panel open — shift camera so pin stays visible. */
+    infoPanelOpen?: boolean
+    /** Active city layer (Tallinn default — keeps existing data path). */
+    cityId?: CityId
+  }
+>(function MapView(
+  {
+    spots,
+    filter,
+    theme = 'light',
+    userLocation,
+    flyTarget,
+    flyKey,
+    flyZoom,
+    flyMode = 'ease',
+    pitch3d = true,
+    selectedId = null,
+    searchPin = null,
+    onSearchPinClick,
+    route,
+    navigating,
+    onNavigate,
+    onBackgroundClick,
+    onZoomChange,
+    onViewportStats,
+    onPreciseSpotsLoaded,
+    onStreetSpotsLoaded,
+    onMapReady,
+    suppressedFeatureIds,
+    infoPanelOpen = false,
+    cityId = 'tallinn',
+  },
+  ref,
+) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMapType | null>(null)
   const userMarkerRef = useRef<Marker | null>(null)
   const searchMarkerRef = useRef<Marker | null>(null)
+  const routeEndMarkerRef = useRef<Marker | null>(null)
+  const routeAnimatingRef = useRef(false)
+  const routeIntroCancelRef = useRef({ cancelled: false })
   const onNavigateRef = useRef(onNavigate)
   const onBackgroundClickRef = useRef(onBackgroundClick)
   const onSearchPinClickRef = useRef(onSearchPinClick)
@@ -539,7 +611,10 @@ export function MapView({
               {
                 type: 'Feature',
                 properties: {},
-                geometry: { type: 'LineString', coordinates: r.coordinates },
+                geometry: {
+                  type: 'LineString',
+                  coordinates: routeCoordsToLngLat(r.coords),
+                },
               },
             ],
           })
@@ -954,6 +1029,8 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready || !flyTarget) return
+    // Route intro owns the camera — ignore flyTarget/recenter until done
+    if (routeAnimatingRef.current) return
     const center: [number, number] = [flyTarget[1], flyTarget[0]]
     const zoom = flyZoom ?? Math.max(map.getZoom(), ZOOM.detailMin + 0.4)
     const pitch = pitch3dRef.current ? NAV_PITCH : 0
@@ -989,6 +1066,7 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
+    if (routeAnimatingRef.current) return
     map.easeTo({
       padding: panelCameraPadding(infoPanelOpen),
       duration: 280,
@@ -1020,25 +1098,179 @@ export function MapView({
     if (!source) return
     if (!route || !navigating) {
       source.setData({ type: 'FeatureCollection', features: [] })
+      if (routeEndMarkerRef.current) {
+        routeEndMarkerRef.current.remove()
+        routeEndMarkerRef.current = null
+      }
       return
     }
+    const lngLat = routeCoordsToLngLat(route.coords)
     source.setData({
       type: 'FeatureCollection',
       features: [
         {
           type: 'Feature',
           properties: {},
-          geometry: { type: 'LineString', coordinates: route.coordinates },
+          geometry: { type: 'LineString', coordinates: lngLat },
         },
       ],
     })
+    const end = route.coords[route.coords.length - 1]
+    if (end) {
+      if (!routeEndMarkerRef.current) {
+        routeEndMarkerRef.current = new Marker({
+          element: makeRouteEndEl(),
+          anchor: 'bottom',
+        })
+          .setLngLat([end[1], end[0]])
+          .addTo(map)
+      } else {
+        routeEndMarkerRef.current.setLngLat([end[1], end[0]])
+      }
+    }
     try {
-      map.moveLayer('nav-route-outline')
-      map.moveLayer('nav-route-line')
+      // Keep route above basemap, under parking fills so spots stay clickable
+      const beforeId = [
+        PRECISE_FILL_LAYER,
+        PARKING_LOTS_FILL_LAYER,
+        PARKING_LINES_LAYER,
+      ].find((id) => map.getLayer(id))
+      if (beforeId) {
+        map.moveLayer('nav-route-outline', beforeId)
+        map.moveLayer('nav-route-line', beforeId)
+      }
     } catch {
       /* ok */
     }
   }, [route, navigating, ready])
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      cancelRouteIntro() {
+        routeIntroCancelRef.current.cancelled = true
+        routeAnimatingRef.current = false
+        const map = mapRef.current
+        if (map) {
+          try {
+            map.stop()
+          } catch {
+            /* ok */
+          }
+        }
+      },
+      async playRouteIntro(
+        destination: [number, number],
+        coords: [number, number][],
+      ) {
+        const map = mapRef.current
+        if (!map) return
+
+        // Cancel any in-flight intro
+        routeIntroCancelRef.current.cancelled = true
+        const signal = { cancelled: false }
+        routeIntroCancelRef.current = signal
+        routeAnimatingRef.current = true
+
+        const onUserGesture = () => {
+          signal.cancelled = true
+          routeAnimatingRef.current = false
+          try {
+            map.stop()
+          } catch {
+            /* ok */
+          }
+        }
+        map.once('mousedown', onUserGesture)
+        map.once('touchstart', onUserGesture)
+        map.once('wheel', onUserGesture)
+
+        const finish = () => {
+          map.off('mousedown', onUserGesture)
+          map.off('touchstart', onUserGesture)
+          map.off('wheel', onUserGesture)
+          routeAnimatingRef.current = false
+        }
+
+        try {
+          const destCenter: [number, number] = [destination[1], destination[0]]
+          const reduced = prefersReducedMotion()
+          const start = coords[0]
+          const near =
+            start != null &&
+            distanceMeters(start[0], start[1], destination[0], destination[1]) <
+              30
+
+          const panelOpen = infoPanelOpenRef.current
+          const desktop =
+            typeof window !== 'undefined' &&
+            window.matchMedia('(min-width: 640px)').matches
+          const fitPadding = {
+            top: 150,
+            bottom: panelOpen && !desktop ? 180 : 120,
+            left: panelOpen && desktop ? 380 : 80,
+            right: 80,
+          }
+
+          if (near || reduced) {
+            if (near) {
+              map.easeTo({
+                center: destCenter,
+                zoom: 17,
+                pitch: pitch3dRef.current ? NAV_PITCH : 0,
+                duration: reduced ? 0 : 900,
+                essential: true,
+              })
+              if (!reduced) await waitMoveEnd(map, 1200)
+            } else {
+              const bounds = new LngLatBounds()
+              for (const [lat, lng] of coords) bounds.extend([lng, lat])
+              map.fitBounds(bounds, {
+                padding: fitPadding,
+                maxZoom: 16,
+                pitch: 0,
+                bearing: 0,
+                animate: false,
+                essential: true,
+              })
+            }
+            return
+          }
+
+          // Step 1 — zoom into destination
+          map.flyTo({
+            center: destCenter,
+            zoom: 17,
+            pitch: pitch3dRef.current ? NAV_PITCH : 0,
+            duration: 1400,
+            essential: true,
+          })
+          await waitMoveEnd(map, 2000)
+          if (signal.cancelled) return
+
+          // Brief pause so the user can read the destination
+          await delay(600, signal)
+          if (signal.cancelled) return
+
+          // Step 2 — zoom out to the full route
+          const bounds = new LngLatBounds()
+          for (const [lat, lng] of coords) bounds.extend([lng, lat])
+          map.fitBounds(bounds, {
+            padding: fitPadding,
+            maxZoom: 16,
+            duration: 1800,
+            pitch: 0,
+            bearing: 0,
+            essential: true,
+          })
+          await waitMoveEnd(map, 2400)
+        } finally {
+          finish()
+        }
+      },
+    }),
+    [],
+  )
 
   const [districtDebug, setDistrictDebug] = useState(false)
 
@@ -1063,4 +1295,4 @@ export function MapView({
       </button>
     </div>
   )
-}
+})
