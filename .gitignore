@@ -32,3 +32,4 @@ dist/
 # App / agent artifacts
 uploads/
 agent-tools/
+.tmp/

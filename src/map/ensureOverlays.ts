@@ -1,5 +1,6 @@
 import type { Map as MapLibreMapType } from 'maplibre-gl'
 import {
+  districtDebugRefsToGeoJSON,
   districtLabelsToGeoJSON,
   districtsToGeoJSON,
 } from '../lib/districtsGeoJSON'
@@ -37,11 +38,19 @@ import { ZOOM } from './zoom'
 const ROUTE_SOURCE = 'nav-route'
 export const DISTRICT_SOURCE = 'district-zones'
 export const DISTRICT_LABEL_SOURCE = 'district-zone-labels'
+export const DISTRICT_DEBUG_SOURCE = 'district-debug-refs'
 export const DISTRICT_FILL_LAYER = 'district-zones-fill'
 export const DISTRICT_SUBZONE_FILL_LAYER = 'district-zones-subzone-fill'
 export const DISTRICT_OUTLINE_LAYER = 'district-zones-outline'
 export const DISTRICT_SUBZONE_OUTLINE_LAYER = 'district-zones-subzone-outline'
 export const DISTRICT_LABEL_LAYER = 'district-zones-label'
+export const DISTRICT_DEBUG_CIRCLE_LAYER = 'district-debug-refs-circle'
+export const DISTRICT_DEBUG_LABEL_LAYER = 'district-debug-refs-label'
+
+/** Neutral gray-blue — must not collide with parking filter colors. */
+const DISTRICT_FILL = '#94A3B8'
+const DISTRICT_LINE = '#64748B'
+const VANALINN_LINE = '#475569'
 
 const selectedFillOpacity = [
   'case',
@@ -106,11 +115,14 @@ function syncLodZoomLimits(map: MapLibreMapType) {
     if (map.getLayer(id)) map.setLayerZoomRange(id, 0, z)
   }
 
-  setMax(DISTRICT_FILL_LAYER, ZOOM.lotMin)
-  setMax(DISTRICT_SUBZONE_FILL_LAYER, ZOOM.lotMin)
-  setMax(DISTRICT_OUTLINE_LAYER, ZOOM.lotMin)
-  setMax(DISTRICT_SUBZONE_OUTLINE_LAYER, ZOOM.lotMin)
-  setMax(DISTRICT_LABEL_LAYER, ZOOM.lotMin)
+  // Fill fades by zoom 14; lines/labels stay useful a bit longer / labels 10–13
+  setMax(DISTRICT_FILL_LAYER, 14)
+  setMax(DISTRICT_SUBZONE_FILL_LAYER, 14)
+  setMax(DISTRICT_OUTLINE_LAYER, 14)
+  setMax(DISTRICT_SUBZONE_OUTLINE_LAYER, 14)
+  if (map.getLayer(DISTRICT_LABEL_LAYER)) {
+    map.setLayerZoomRange(DISTRICT_LABEL_LAYER, 10, 13)
+  }
 
   setMin(PARKING_LOTS_FILL_LAYER, ZOOM.lotMin)
   setMin(PARKING_LOTS_OUTLINE_LAYER, ZOOM.lotMin)
@@ -163,12 +175,12 @@ function ensureUndergroundHatch(map: MapLibreMapType) {
 export function ensureParkingOverlaySources(map: MapLibreMapType) {
   ensureUndergroundHatch(map)
 
-  // ——— District badges (city macro, zoom < 13) ———
-  // Precise Tallinn GIS borders. Sub-zones are separate layers so they paint
-  // above linnaosad without fill-sort-key (unsupported in this MapLibre build).
+  // ——— Districts (Tallinn GIS → public/data/districts.geojson) ———
+  // Order: fill → district lines → Vanalinn line → labels. Neutral gray-blue only.
   if (!map.getSource(DISTRICT_SOURCE)) {
     map.addSource(DISTRICT_SOURCE, {
       type: 'geojson',
+      promoteId: 'id',
       data: districtsToGeoJSON(),
     })
   } else {
@@ -186,18 +198,34 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
     }
     src.setData?.(districtLabelsToGeoJSON())
   }
+  if (!map.getSource(DISTRICT_DEBUG_SOURCE)) {
+    map.addSource(DISTRICT_DEBUG_SOURCE, {
+      type: 'geojson',
+      data: districtDebugRefsToGeoJSON(),
+    })
+  }
 
   if (!map.getLayer(DISTRICT_FILL_LAYER)) {
     map.addLayer({
       id: DISTRICT_FILL_LAYER,
       type: 'fill',
       source: DISTRICT_SOURCE,
-      maxzoom: ZOOM.lotMin,
-      filter: ['!=', ['get', 'layerRole'], 'subzone'],
+      maxzoom: 14,
+      filter: ['==', ['get', 'role'], 'district'],
       layout: { visibility: 'visible' },
       paint: {
-        'fill-color': ['get', 'color'],
-        'fill-opacity': 0.14,
+        'fill-color': DISTRICT_FILL,
+        'fill-opacity': [
+          'case',
+          ['boolean', ['feature-state', 'hover'], false],
+          0.18,
+          [
+            'case',
+            ['boolean', ['feature-state', 'dim'], false],
+            0.03,
+            0.08,
+          ],
+        ],
       },
     })
   }
@@ -206,31 +234,47 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       id: DISTRICT_OUTLINE_LAYER,
       type: 'line',
       source: DISTRICT_SOURCE,
-      maxzoom: ZOOM.lotMin,
-      filter: ['!=', ['get', 'layerRole'], 'subzone'],
+      maxzoom: 14,
+      filter: ['==', ['get', 'role'], 'district'],
       layout: {
         visibility: 'visible',
         'line-cap': 'round',
         'line-join': 'round',
       },
       paint: {
-        'line-color': ['get', 'color'],
-        'line-width': 1.1,
-        'line-opacity': 0.32,
+        'line-color': DISTRICT_LINE,
+        'line-width': [
+          'case',
+          ['boolean', ['feature-state', 'hover'], false],
+          2.4,
+          1.7,
+        ],
+        'line-opacity': [
+          'case',
+          ['boolean', ['feature-state', 'dim'], false],
+          0.25,
+          0.75,
+        ],
       },
     })
   }
+  // Vanalinn overlay on top of district lines
   if (!map.getLayer(DISTRICT_SUBZONE_FILL_LAYER)) {
     map.addLayer({
       id: DISTRICT_SUBZONE_FILL_LAYER,
       type: 'fill',
       source: DISTRICT_SOURCE,
-      maxzoom: ZOOM.lotMin,
-      filter: ['==', ['get', 'layerRole'], 'subzone'],
+      maxzoom: 14,
+      filter: ['==', ['get', 'role'], 'subzone'],
       layout: { visibility: 'visible' },
       paint: {
-        'fill-color': ['get', 'color'],
-        'fill-opacity': 0.28,
+        'fill-color': DISTRICT_FILL,
+        'fill-opacity': [
+          'case',
+          ['boolean', ['feature-state', 'hover'], false],
+          0.16,
+          0.06,
+        ],
       },
     })
   }
@@ -239,17 +283,17 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       id: DISTRICT_SUBZONE_OUTLINE_LAYER,
       type: 'line',
       source: DISTRICT_SOURCE,
-      maxzoom: ZOOM.lotMin,
-      filter: ['==', ['get', 'layerRole'], 'subzone'],
+      maxzoom: 14,
+      filter: ['==', ['get', 'role'], 'subzone'],
       layout: {
         visibility: 'visible',
         'line-cap': 'round',
         'line-join': 'round',
       },
       paint: {
-        'line-color': ['get', 'color'],
-        'line-width': 1.6,
-        'line-opacity': 0.55,
+        'line-color': VANALINN_LINE,
+        'line-width': 2,
+        'line-opacity': 0.9,
       },
     })
   }
@@ -258,11 +302,12 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       id: DISTRICT_LABEL_LAYER,
       type: 'symbol',
       source: DISTRICT_LABEL_SOURCE,
-      maxzoom: ZOOM.lotMin,
+      minzoom: 10,
+      maxzoom: 13,
       layout: {
-        'text-field': ['get', 'name'],
+        'text-field': ['get', 'name_et'],
         'text-font': ['Noto Sans Bold'],
-        'text-size': ['interpolate', ['linear'], ['zoom'], 10, 13, 12.5, 16],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 10, 12, 12.5, 15],
         'text-max-width': 10,
         'text-letter-spacing': 0.02,
         'symbol-placement': 'point',
@@ -272,10 +317,46 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
         ...noOverlapSymbol,
       },
       paint: {
-        'text-color': ['get', 'color'],
-        'text-halo-color': 'rgba(248, 250, 252, 0.92)',
-        'text-halo-width': 2.6,
-        'text-halo-blur': 0.4,
+        'text-color': '#334155',
+        'text-halo-color': '#FFFFFF',
+        'text-halo-width': 2.4,
+        'text-halo-blur': 0.3,
+      },
+    })
+  }
+  // Temporary QA markers (hidden by default — toggled from MapView)
+  if (!map.getLayer(DISTRICT_DEBUG_CIRCLE_LAYER)) {
+    map.addLayer({
+      id: DISTRICT_DEBUG_CIRCLE_LAYER,
+      type: 'circle',
+      source: DISTRICT_DEBUG_SOURCE,
+      layout: { visibility: 'none' },
+      paint: {
+        'circle-radius': 6,
+        'circle-color': '#0F172A',
+        'circle-stroke-color': '#FFFFFF',
+        'circle-stroke-width': 2,
+      },
+    })
+  }
+  if (!map.getLayer(DISTRICT_DEBUG_LABEL_LAYER)) {
+    map.addLayer({
+      id: DISTRICT_DEBUG_LABEL_LAYER,
+      type: 'symbol',
+      source: DISTRICT_DEBUG_SOURCE,
+      layout: {
+        visibility: 'none',
+        'text-field': ['concat', ['get', 'name'], ' → ', ['get', 'expect']],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': 11,
+        'text-offset': [0, 1.2],
+        'text-anchor': 'top',
+        ...noOverlapSymbol,
+      },
+      paint: {
+        'text-color': '#0F172A',
+        'text-halo-color': '#FFFFFF',
+        'text-halo-width': 2,
       },
     })
   }
@@ -805,6 +886,37 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
 
   syncLodZoomLimits(map)
   syncCollisionProps(map)
+}
+
+/** Toggle temporary district QA reference markers. */
+export function setDistrictDebugVisible(map: MapLibreMapType, visible: boolean) {
+  const v = visible ? 'visible' : 'none'
+  for (const id of [DISTRICT_DEBUG_CIRCLE_LAYER, DISTRICT_DEBUG_LABEL_LAYER]) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', v)
+  }
+}
+
+/** Hover/active district: strengthen one feature, dim the other districts. */
+export function setDistrictHover(
+  map: MapLibreMapType,
+  featureId: string | number | null,
+) {
+  const src = DISTRICT_SOURCE
+  if (!map.getSource(src)) return
+  const feats = map.querySourceFeatures(src)
+  const ids = new Set<string | number>()
+  for (const f of feats) {
+    if (f.id != null) ids.add(f.id)
+  }
+  for (const id of ids) {
+    map.setFeatureState(
+      { source: src, id },
+      {
+        hover: featureId != null && id === featureId,
+        dim: featureId != null && id !== featureId,
+      },
+    )
+  }
 }
 
 const GEOM_LAYER_IDS = [

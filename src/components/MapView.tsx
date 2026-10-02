@@ -48,8 +48,12 @@ import { parkingIndex } from '../lib/spatialIndex'
 import type { DrivingRoute } from '../lib/routing'
 import { createBasemapStyle } from '../map/createBasemapStyle'
 import {
+  DISTRICT_FILL_LAYER,
+  DISTRICT_SUBZONE_FILL_LAYER,
   ensureParkingOverlaySources,
   ROUTE_SOURCE,
+  setDistrictDebugVisible,
+  setDistrictHover,
   setParkingLayerVisibility,
 } from '../map/ensureOverlays'
 import {
@@ -410,6 +414,25 @@ export function MapView({
       setupDone = true
       ensureParkingOverlaySources(map)
       bindHover()
+      // District hover → feature-state (does not affect parking hit targets)
+      const districtLayers = [DISTRICT_FILL_LAYER, DISTRICT_SUBZONE_FILL_LAYER]
+      let hoveredDistrict: string | number | null = null
+      const onDistrictMove = (e: MapLayerMouseEvent) => {
+        const f = e.features?.[0]
+        const id = f?.id ?? f?.properties?.id ?? null
+        if (id === hoveredDistrict) return
+        hoveredDistrict = id
+        setDistrictHover(map, id)
+      }
+      const onDistrictLeave = () => {
+        hoveredDistrict = null
+        setDistrictHover(map, null)
+      }
+      for (const layerId of districtLayers) {
+        if (!map.getLayer(layerId)) continue
+        map.on('mousemove', layerId, onDistrictMove)
+        map.on('mouseleave', layerId, onDistrictLeave)
+      }
       map.resize()
       map.setPitch(pitch3dRef.current ? NAV_PITCH : 0)
       try {
@@ -775,5 +798,26 @@ export function MapView({
     }
   }, [route, navigating, ready])
 
-  return <div ref={containerRef} className="h-full w-full maplibre-root" />
+  const [districtDebug, setDistrictDebug] = useState(false)
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!ready || !map) return
+    setDistrictDebugVisible(map, districtDebug)
+  }, [districtDebug, ready])
+
+  return (
+    <div className="relative h-full w-full">
+      <div ref={containerRef} className="h-full w-full maplibre-root" />
+      {/* Temporary QA toggle for district reference markers */}
+      <button
+        type="button"
+        onClick={() => setDistrictDebug((v) => !v)}
+        className="absolute bottom-28 left-3 z-20 rounded-md border border-slate-300 bg-white/95 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm backdrop-blur hover:bg-white"
+        title="Toggle district QA reference points"
+      >
+        {districtDebug ? 'District QA: ON' : 'District QA'}
+      </button>
+    </div>
+  )
 }

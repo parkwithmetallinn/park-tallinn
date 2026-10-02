@@ -36,7 +36,7 @@ Diagonaalseid “läbi majade” jooni ei joonistata — ainult lühikesed, teel
 ## Andmed
 
 - `public/data/estonia_parking_master.geojson` — ühtne Eesti OSM-stiilis parkimiskiht (~10.8k feature’t). Laadimisel jagatakse lot-polügoonideks ja teeäärseks (street_side / lane / LineString) kihiks (`src/lib/estoniaParkingMaster.ts`). Vanad `parking_polygons.geojson` / `street_parking.geojson` failid on asendatud.
-- `src/data/tallinn_districts.json` (+ `public/data/tallinn_districts.geojson`) — ametlikud Tallinna linnaosade piirid (Tallinn GIS) + Vanalinn/Südalinn asumid. Rannajooneni lõigatud, naaberpiirkonnad ei kattu; sildid visual-centroid punktidel (zoom &lt; 13).
+- `public/data/districts.geojson` — ametlikud Tallinna 8 linnaosa + Vanalinn (Tallinn GIS → EPSG:4326, ≤5 m simplify, mere mask, topoloogia). Ehita: `npm run build:districts`. Kontrolli: `npm run check:districts`.
 - Lotid: täide operaatori/tsooni värviga (opacity 0.35), 2px ääris; klõps avab bottom sheet’i (operaator, hind, tasuta minutid + Waze / Google / Apple).
 - Teeäär: curb-jooned (zoom ≥ 12). Roheline = tasuta, punane = tasuline, sinine = kellaga. Filtrid rakenduvad mõlemale kihile; otsingu Destination Interceptor suunab ≤400 m lähima parkla tsentroidile.
 

@@ -1,20 +1,20 @@
-import { DISTRICT_ZONES } from '../data/districts'
+/**
+ * Tallinn district overlays from public/data/districts.geojson
+ * (bundled via src/data/districts.json).
+ */
+import districtsData from '../data/districts.json'
 import type { DistrictZone } from '../types'
 
 type DistrictProps = {
   id: string
-  name: string
-  color: string
-  kind: string
-  summary: string
-  labelRank: number
-  fillSort: number
-  layerRole: string
+  name_et: string
+  role: 'district' | 'subzone'
+  labelPoint: [number, number]
 }
 
-type PolyFeat = {
+type DistrictFeature = {
   type: 'Feature'
-  id: string
+  id?: string
   properties: DistrictProps
   geometry: {
     type: 'Polygon' | 'MultiPolygon'
@@ -22,100 +22,165 @@ type PolyFeat = {
   }
 }
 
-type PointFeat = {
-  type: 'Feature'
-  id: string
-  properties: DistrictProps
-  geometry: {
-    type: 'Point'
-    coordinates: [number, number]
-  }
+type DistrictFC = {
+  type: 'FeatureCollection'
+  features: DistrictFeature[]
+  properties?: Record<string, unknown>
 }
+
+const DATA = districtsData as unknown as DistrictFC
 
 export type DistrictPolyCollection = {
   type: 'FeatureCollection'
-  features: PolyFeat[]
+  features: Array<{
+    type: 'Feature'
+    id: string
+    properties: {
+      id: string
+      name: string
+      name_et: string
+      role: string
+      labelRank: number
+    }
+    geometry: DistrictFeature['geometry']
+  }>
 }
 
 export type DistrictLabelCollection = {
   type: 'FeatureCollection'
-  features: PointFeat[]
+  features: Array<{
+    type: 'Feature'
+    id: string
+    properties: {
+      id: string
+      name: string
+      name_et: string
+      role: string
+      labelRank: number
+    }
+    geometry: { type: 'Point'; coordinates: [number, number] }
+  }>
 }
 
-function closeRing(ring: [number, number][]): [number, number][] {
-  if (!ring.length) return ring
-  const [aLng, aLat] = ring[0]
-  const [bLng, bLat] = ring[ring.length - 1]
-  if (aLng !== bLng || aLat !== bLat) return [...ring, [aLng, aLat]]
-  return ring
-}
+/** Debug markers for the 12 QA reference points. */
+export const DISTRICT_DEBUG_REFS: Array<{
+  id: string
+  name: string
+  expect: string
+  coordinates: [number, number]
+}> = [
+  { id: 'ref-town-hall', name: 'Town Hall', expect: 'Vanalinn', coordinates: [24.7454, 59.437] },
+  { id: 'ref-freedom', name: 'Freedom Sq', expect: 'Kesklinn', coordinates: [24.7439, 59.4343] },
+  { id: 'ref-viru', name: 'Viru', expect: 'Kesklinn', coordinates: [24.7536, 59.4363] },
+  { id: 'ref-kadriorg', name: 'Kadriorg', expect: 'Kesklinn', coordinates: [24.792, 59.438] },
+  { id: 'ref-kalamaja', name: 'Kalamaja', expect: 'Põhja-Tallinn', coordinates: [24.735, 59.445] },
+  { id: 'ref-kopli', name: 'Kopli', expect: 'Põhja-Tallinn', coordinates: [24.69, 59.452] },
+  { id: 'ref-oismae', name: 'Õismäe', expect: 'Haabersti', coordinates: [24.655, 59.416] },
+  { id: 'ref-kristiine', name: 'Kristiine C', expect: 'Kristiine', coordinates: [24.72, 59.426] },
+  { id: 'ref-mustamae', name: 'Mustamäe C', expect: 'Mustamäe', coordinates: [24.697, 59.407] },
+  { id: 'ref-nomme', name: 'Nõmme C', expect: 'Nõmme', coordinates: [24.67, 59.388] },
+  { id: 'ref-lasnamae', name: 'Lasnamäe C', expect: 'Lasnamäe', coordinates: [24.83, 59.435] },
+  { id: 'ref-pirita', name: 'Pirita Beach', expect: 'Pirita', coordinates: [24.828, 59.468] },
+]
 
-/** Fallback when a zone still has only legacy [lat,lng] rings. */
-function polygonFromCoords(coords: [number, number][]): PolyFeat['geometry'] {
-  const ring = closeRing(coords.map(([lat, lng]) => [lng, lat] as [number, number]))
-  return { type: 'Polygon', coordinates: [ring] }
-}
-
-function propsOf(z: DistrictZone, index: number): DistrictProps {
-  const layerRole = z.layerRole ?? (z.kind === 'paid' ? 'subzone' : 'district')
-  return {
-    id: z.id,
-    name: z.name,
-    color: z.color,
-    kind: z.kind,
-    summary: z.summary,
-    labelRank: z.labelRank ?? index,
-    fillSort: z.fillSort ?? (layerRole === 'subzone' ? 50 : 10),
-    layerRole,
-  }
-}
-
-function labelPoint(z: DistrictZone): [number, number] {
-  if (
-    typeof z.labelLng === 'number' &&
-    typeof z.labelLat === 'number' &&
-    Number.isFinite(z.labelLng) &&
-    Number.isFinite(z.labelLat)
-  ) {
-    return [z.labelLng, z.labelLat]
-  }
-  // Fallback: average of outer ring vertices
-  const lats = z.coords.map((c) => c[0])
-  const lngs = z.coords.map((c) => c[1])
-  return [
-    lngs.reduce((a, b) => a + b, 0) / Math.max(1, lngs.length),
-    lats.reduce((a, b) => a + b, 0) / Math.max(1, lats.length),
+function labelRank(role: string, name: string): number {
+  if (role === 'subzone') return 1
+  // Stable order for collision: central names prefer lower rank
+  const order = [
+    'Kesklinn',
+    'Põhja-Tallinn',
+    'Haabersti',
+    'Kristiine',
+    'Mustamäe',
+    'Nõmme',
+    'Lasnamäe',
+    'Pirita',
   ]
+  const i = order.indexOf(name)
+  return i === -1 ? 50 : 10 + i
 }
 
-/** Precise district / sub-zone polygons for city-macro LOD (zoom < 13). */
-export function districtsToGeoJSON(
-  zones: DistrictZone[] = DISTRICT_ZONES,
-): DistrictPolyCollection {
-  const features: PolyFeat[] = zones.map((z, i) => ({
-    type: 'Feature',
-    id: z.id,
-    properties: propsOf(z, i),
-    geometry: z.geometry ?? polygonFromCoords(z.coords),
-  }))
-  return { type: 'FeatureCollection', features }
+export function districtsToGeoJSON(): DistrictPolyCollection {
+  return {
+    type: 'FeatureCollection',
+    features: DATA.features.map((f) => ({
+      type: 'Feature',
+      id: f.properties.id,
+      properties: {
+        id: f.properties.id,
+        name: f.properties.name_et,
+        name_et: f.properties.name_et,
+        role: f.properties.role,
+        labelRank: labelRank(f.properties.role, f.properties.name_et),
+      },
+      geometry: f.geometry,
+    })),
+  }
 }
 
-/**
- * Explicit Point features at each zone's visual centroid / mass center.
- * Keeps labels off bounding-box centers and off water for coastal districts.
- */
-export function districtLabelsToGeoJSON(
-  zones: DistrictZone[] = DISTRICT_ZONES,
-): DistrictLabelCollection {
-  const features: PointFeat[] = zones.map((z, i) => ({
-    type: 'Feature',
-    id: `${z.id}-label`,
-    properties: propsOf(z, i),
-    geometry: {
-      type: 'Point',
-      coordinates: labelPoint(z),
-    },
-  }))
-  return { type: 'FeatureCollection', features }
+export function districtLabelsToGeoJSON(): DistrictLabelCollection {
+  return {
+    type: 'FeatureCollection',
+    features: DATA.features.map((f) => ({
+      type: 'Feature',
+      id: `${f.properties.id}-label`,
+      properties: {
+        id: f.properties.id,
+        name: f.properties.name_et,
+        name_et: f.properties.name_et,
+        role: f.properties.role,
+        labelRank: labelRank(f.properties.role, f.properties.name_et),
+      },
+      geometry: {
+        type: 'Point',
+        coordinates: f.properties.labelPoint,
+      },
+    })),
+  }
+}
+
+export function districtDebugRefsToGeoJSON() {
+  return {
+    type: 'FeatureCollection' as const,
+    features: DISTRICT_DEBUG_REFS.map((r) => ({
+      type: 'Feature' as const,
+      id: r.id,
+      properties: {
+        id: r.id,
+        name: r.name,
+        expect: r.expect,
+      },
+      geometry: {
+        type: 'Point' as const,
+        coordinates: r.coordinates,
+      },
+    })),
+  }
+}
+
+/** Legacy DistrictZone[] for generateSpots / PIP helpers. */
+export function districtsAsZones(): DistrictZone[] {
+  return DATA.features
+    .filter((f) => f.properties.role === 'district')
+    .map((f) => {
+      const ring: number[][] =
+        f.geometry.type === 'Polygon'
+          ? (f.geometry.coordinates[0] as number[][])
+          : (f.geometry.coordinates[0][0] as number[][])
+      const coords = ring.map(
+        (pt) => [pt[1], pt[0]] as [number, number],
+      )
+      return {
+        id: `d-${f.properties.id}`,
+        name: f.properties.name_et,
+        color: '#64748B',
+        kind: 'mixed' as const,
+        summary: f.properties.name_et,
+        coords,
+        layerRole: 'district' as const,
+        labelLng: f.properties.labelPoint[0],
+        labelLat: f.properties.labelPoint[1],
+        geometry: f.geometry,
+      }
+    })
 }
