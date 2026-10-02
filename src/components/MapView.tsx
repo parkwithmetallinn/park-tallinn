@@ -516,6 +516,7 @@ export function MapView({
 
     const reapplyOverlayData = () => {
       reapplyFilterVisibility()
+      setCityDistrictOverlays(map, cityIdRef.current)
       applyDualLayerFilter(
         map,
         filterRef.current,

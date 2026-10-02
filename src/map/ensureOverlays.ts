@@ -5,11 +5,11 @@ import {
   districtLabelsToGeoJSON,
   districtsToGeoJSON,
 } from '../lib/districtsGeoJSON'
-import {
-  parnuZoneLabelsToGeoJSON,
-  parnuZonesToGeoJSON,
-} from '../data/parnuZones'
 import type { CityId } from '../data/cities'
+import {
+  parnuDistrictLabelsToGeoJSON,
+  parnuOverlayPolygonsToGeoJSON,
+} from '../lib/parnuDistrictsGeoJSON'
 import {
   PRECISE_FILL_LAYER,
   PRECISE_LABEL_LAYER,
@@ -1126,7 +1126,7 @@ export function setDistrictDebugVisible(map: MapLibreMapType, visible: boolean) 
 
 /**
  * Swap district/zone polygon overlays by city.
- * Tallinn → official linnaosad; Pärnu → kesklinn/rand paid zones.
+ * Tallinn → official linnaosad; Pärnu → 10 asumid (+ paid kesklinn/rand subzones).
  */
 export function setCityDistrictOverlays(map: MapLibreMapType, cityId: CityId) {
   const polySrc = map.getSource(DISTRICT_SOURCE) as {
@@ -1136,30 +1136,135 @@ export function setCityDistrictOverlays(map: MapLibreMapType, cityId: CityId) {
     setData?: (d: unknown) => void
   } | null
   if (cityId === 'parnu') {
-    polySrc?.setData?.(parnuZonesToGeoJSON())
-    labelSrc?.setData?.(parnuZoneLabelsToGeoJSON())
+    polySrc?.setData?.(parnuOverlayPolygonsToGeoJSON())
+    labelSrc?.setData?.(parnuDistrictLabelsToGeoJSON())
     for (const id of [
       DISTRICT_FILL_LAYER,
       DISTRICT_OUTLINE_LAYER,
       DISTRICT_SUBZONE_FILL_LAYER,
       DISTRICT_SUBZONE_OUTLINE_LAYER,
+      DISTRICT_LABEL_LAYER,
     ]) {
       try {
-        if (map.getLayer(id)) map.setLayerZoomRange(id, 0, 16)
+        if (map.getLayer(id)) map.setLayerZoomRange(id, 0, 15)
       } catch {
         /* ok */
       }
+    }
+    // Strong blue/dark-blue district borders; light fills keep basemap readable
+    if (map.getLayer(DISTRICT_OUTLINE_LAYER)) {
+      map.setPaintProperty(DISTRICT_OUTLINE_LAYER, 'line-color', [
+        'coalesce',
+        ['get', 'color'],
+        '#1D4ED8',
+      ])
+      map.setPaintProperty(DISTRICT_OUTLINE_LAYER, 'line-width', [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        3.2,
+        2.2,
+      ])
+      map.setPaintProperty(DISTRICT_OUTLINE_LAYER, 'line-opacity', 0.9)
+    }
+    if (map.getLayer(DISTRICT_FILL_LAYER)) {
+      map.setPaintProperty(DISTRICT_FILL_LAYER, 'fill-opacity', [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        0.22,
+        [
+          'case',
+          ['boolean', ['feature-state', 'dim'], false],
+          0.04,
+          0.1,
+        ],
+      ])
+    }
+    if (map.getLayer(DISTRICT_LABEL_LAYER)) {
+      map.setLayoutProperty(DISTRICT_LABEL_LAYER, 'text-field', [
+        'get',
+        'name_et',
+      ])
+      map.setLayoutProperty(DISTRICT_LABEL_LAYER, 'text-size', [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        10,
+        13,
+        12.5,
+        17,
+        14,
+        19,
+      ])
+      map.setLayoutProperty(DISTRICT_LABEL_LAYER, 'text-letter-spacing', 0.06)
+      map.setPaintProperty(DISTRICT_LABEL_LAYER, 'text-color', [
+        'coalesce',
+        ['get', 'color'],
+        '#1E3A8A',
+      ])
     }
     return
   }
   polySrc?.setData?.(districtsToGeoJSON())
   labelSrc?.setData?.(districtLabelsToGeoJSON())
-  for (const id of [DISTRICT_FILL_LAYER, DISTRICT_OUTLINE_LAYER]) {
+  for (const id of [
+    DISTRICT_FILL_LAYER,
+    DISTRICT_OUTLINE_LAYER,
+    DISTRICT_LABEL_LAYER,
+  ]) {
     try {
-      if (map.getLayer(id)) map.setLayerZoomRange(id, 0, 14)
+      if (map.getLayer(id)) {
+        if (id === DISTRICT_LABEL_LAYER) map.setLayerZoomRange(id, 10, 13)
+        else map.setLayerZoomRange(id, 0, 14)
+      }
     } catch {
       /* ok */
     }
+  }
+  // Restore Tallinn district paint defaults (theme pass may refine further)
+  if (map.getLayer(DISTRICT_OUTLINE_LAYER)) {
+    map.setPaintProperty(DISTRICT_OUTLINE_LAYER, 'line-color', [
+      'coalesce',
+      ['get', 'color'],
+      DISTRICT_COLOR_FALLBACK,
+    ])
+    map.setPaintProperty(DISTRICT_OUTLINE_LAYER, 'line-width', [
+      'case',
+      ['boolean', ['feature-state', 'hover'], false],
+      2.4,
+      1.5,
+    ])
+    map.setPaintProperty(DISTRICT_OUTLINE_LAYER, 'line-opacity', [
+      'case',
+      ['boolean', ['feature-state', 'dim'], false],
+      0.25,
+      0.55,
+    ])
+  }
+  if (map.getLayer(DISTRICT_FILL_LAYER)) {
+    map.setPaintProperty(DISTRICT_FILL_LAYER, 'fill-opacity', [
+      'case',
+      ['boolean', ['feature-state', 'hover'], false],
+      0.28,
+      [
+        'case',
+        ['boolean', ['feature-state', 'dim'], false],
+        0.06,
+        0.16,
+      ],
+    ])
+  }
+  if (map.getLayer(DISTRICT_LABEL_LAYER)) {
+    map.setLayoutProperty(DISTRICT_LABEL_LAYER, 'text-field', ['get', 'name_et'])
+    map.setLayoutProperty(DISTRICT_LABEL_LAYER, 'text-size', [
+      'interpolate',
+      ['linear'],
+      ['zoom'],
+      10,
+      12,
+      12.5,
+      15,
+    ])
+    map.setLayoutProperty(DISTRICT_LABEL_LAYER, 'text-letter-spacing', 0.02)
   }
 }
 
