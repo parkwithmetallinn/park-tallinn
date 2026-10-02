@@ -16,6 +16,10 @@ import { MapErrorBoundary } from './components/MapErrorBoundary'
 import { MapView, type MapViewHandle } from './components/MapView'
 import { ModalShell } from './components/ModalShell'
 import { LocationInfoSheet } from './components/LocationInfoSheet'
+import {
+  NearestParkingPanel,
+  type NearestParkingOption,
+} from './components/NearestParkingPanel'
 import { ParkingBottomSheet } from './components/ParkingBottomSheet'
 import { OfflineBanner } from './components/OfflineBanner'
 import { ReportModal, type ReportModalContext } from './components/ReportModal'
@@ -149,6 +153,12 @@ export default function App() {
   const [selected, setSelected] = useState<ParkingSpot | null>(null)
   const [searchLocation, setSearchLocation] = useState<SearchLocation | null>(null)
   const [searchSheetOpen, setSearchSheetOpen] = useState(false)
+  /** Step 1 after address search — pick among nearest parking options */
+  const [nearestPickerOpen, setNearestPickerOpen] = useState(false)
+  const [nearestOptions, setNearestOptions] = useState<NearestParkingOption[]>(
+    [],
+  )
+  const [hoveredParkingId, setHoveredParkingId] = useState<string | null>(null)
   const [infoOpen, setInfoOpen] = useState(false)
   const [reportContext, setReportContext] = useState<ReportModalContext | null>(null)
   const [approvedOverlays, setApprovedOverlays] = useState<ParkingSpot[]>([])
@@ -552,6 +562,8 @@ export default function App() {
     clearRoute()
     setSelected(null)
     setSearchSheetOpen(false)
+    setNearestPickerOpen(false)
+    setHoveredParkingId(null)
     setGeoResults([])
     setGeoError(null)
     setIsDropdownOpen(false)
@@ -562,6 +574,9 @@ export default function App() {
     clearRoute()
     setSearchLocation(null)
     setSearchSheetOpen(false)
+    setNearestPickerOpen(false)
+    setNearestOptions([])
+    setHoveredParkingId(null)
     setQuery('')
     setGeoResults([])
     setGeoError(null)
@@ -588,17 +603,195 @@ export default function App() {
     setFlyKey((k) => k + 1)
   }
 
+  /** Collect 3–5 nearest roadside/lot spots, expanding radius if needed. */
+  const collectNearestOptions = useCallback(
+    (lat: number, lng: number): NearestParkingOption[] => {
+      const radii = [400, 700, 1100, 1800, 2500]
+      for (const r of radii) {
+        const list = parkingIndex
+          .queryNearbyParkingList(lat, lng, r, {
+            excludeIds: fullSpotIds,
+          })
+          .slice(0, 5)
+        if (list.length >= 3 || r === radii[radii.length - 1]) {
+          return list.slice(0, Math.max(list.length, 0))
+        }
+      }
+      return []
+    },
+    [fullSpotIds],
+  )
+
+  /**
+   * Step 2 — user confirmed a parking card: open detail panel + route intro
+   * (drive to lot, walk to house).
+   */
+  const confirmParkingSelection = useCallback(
+    (houseLoc: SearchLocation, destSpot: ParkingSpot | null) => {
+      if (searchSheetTimer.current) {
+        window.clearTimeout(searchSheetTimer.current)
+        searchSheetTimer.current = null
+      }
+
+      const runId = routeRunId.current + 1
+      routeRunId.current = runId
+      routeAbort.current?.abort()
+      mapApiRef.current?.cancelRouteIntro()
+      setRouteData(null)
+      setRouteError(null)
+      setRouteLoading(false)
+      setRouteSummaryReady(false)
+      setNearestPickerOpen(false)
+      setHoveredParkingId(null)
+      setSearchSheetOpen(false)
+      setAlternatives([])
+      setNoAlternatives(false)
+
+      const house: [number, number] = [houseLoc.lat, houseLoc.lng]
+      const parking: [number, number] = destSpot
+        ? [destSpot.lat, destSpot.lng]
+        : house
+      const sameAsHouse =
+        !destSpot ||
+        (Math.abs(parking[0] - house[0]) < 1e-6 &&
+          Math.abs(parking[1] - house[1]) < 1e-6)
+      const label =
+        destSpot?.name || houseLoc.name || houseLoc.label || 'Sihtkoht'
+
+      const openInfoSheet = () => {
+        if (routeRunId.current !== runId) return
+        if (destSpot) {
+          setSearchSheetOpen(false)
+          setSelected(destSpot)
+        } else {
+          setSelected(null)
+          setSearchSheetOpen(true)
+        }
+      }
+
+      const nearUser =
+        distanceMeters(
+          userLocation[0],
+          userLocation[1],
+          parking[0],
+          parking[1],
+        ) < 40
+
+      if (nearUser) {
+        setFlyMode('fly')
+        setFlyTarget(house)
+        setFlyZoom(17)
+        setFlyKey((k) => k + 1)
+        searchSheetTimer.current = window.setTimeout(() => {
+          openInfoSheet()
+          searchSheetTimer.current = null
+        }, 900)
+        return
+      }
+
+      if (!hasGps && !gpsRouteToastShown.current) {
+        gpsRouteToastShown.current = true
+        setToast({
+          kind: 'info',
+          title: 'GPS puudub',
+          detail:
+            'GPS puudub, marsruut algab kaardi keskelt. Luba asukoht täpsema marsruudi jaoks.',
+        })
+      }
+
+      const ac = new AbortController()
+      routeAbort.current = ac
+      setRouteLoading(true)
+      setRouteError(null)
+      const timeout = window.setTimeout(() => ac.abort(), 8000)
+
+      const waitForRoute = fetchRoute(userLocation, parking, ac.signal)
+        .then((result) => {
+          if (ac.signal.aborted || routeRunId.current !== runId) return null
+          return result
+        })
+        .catch((e) => {
+          if ((e as Error).name === 'AbortError') return null
+          if (routeRunId.current === runId) {
+            const msg =
+              e instanceof Error ? e.message : 'Marsruuti ei õnnestunud leida'
+            setRouteError(msg)
+            setToast({
+              kind: 'info',
+              title: 'Marsruuti ei õnnestunud leida',
+            })
+          }
+          return null
+        })
+        .finally(() => {
+          window.clearTimeout(timeout)
+          if (routeAbort.current === ac) {
+            setRouteLoading(false)
+            routeAbort.current = null
+          }
+        })
+
+      const waitForWalkRoute: Promise<RouteResult | null> = sameAsHouse
+        ? Promise.resolve(null)
+        : fetchWalkingRoute(parking, house, ac.signal)
+            .then((result) => {
+              if (ac.signal.aborted || routeRunId.current !== runId) return null
+              return result
+            })
+            .catch((e) => {
+              if ((e as Error).name === 'AbortError') return null
+              return null
+            })
+
+      void mapApiRef.current
+        ?.playRouteIntro({
+          house,
+          parking,
+          origin: userLocation,
+          waitForRoute,
+          waitForWalkRoute,
+          routeWaitMs: 3000,
+          onBeforeFitBounds: (drive, walk) => {
+            if (routeRunId.current !== runId) return
+            setRouteData({
+              drive,
+              walk,
+              parking,
+              house,
+              label,
+            })
+            openInfoSheet()
+          },
+          onFailed: () => {
+            if (routeRunId.current !== runId) return
+            setToast({
+              kind: 'info',
+              title: 'Marsruuti ei õnnestunud leida',
+            })
+            openInfoSheet()
+          },
+        })
+        .then((status) => {
+          if (routeRunId.current !== runId) return
+          if (status === 'fitted') setRouteSummaryReady(true)
+        })
+    },
+    [hasGps, userLocation, setToast],
+  )
+
+  /**
+   * Step 1 — address/place search: show Nearest Parking Options panel.
+   * Parking suggestions from the dropdown skip the picker and confirm directly.
+   */
   const flyToDestination = (
     loc: SearchLocation,
-    opts?: { preferSpot?: ParkingSpot | null },
+    opts?: { preferSpot?: ParkingSpot | null; skipPicker?: boolean },
   ) => {
     if (searchSheetTimer.current) {
       window.clearTimeout(searchSheetTimer.current)
       searchSheetTimer.current = null
     }
 
-    const runId = routeRunId.current + 1
-    routeRunId.current = runId
     routeAbort.current?.abort()
     mapApiRef.current?.cancelRouteIntro()
     setRouteData(null)
@@ -608,7 +801,6 @@ export default function App() {
 
     ensureCityForCoords(loc.lat, loc.lng)
 
-    // Close dropdown and skip the rebound Nominatim fetch from setQuery
     skipNextGeocode.current = true
     geoAbort.current?.abort()
     setGeoLoading(false)
@@ -619,145 +811,33 @@ export default function App() {
 
     setSearchSheetOpen(false)
     setSelected(null)
-    // House / address stays the fixed final destination (search pin)
     setSearchLocation(loc)
     setQuery(loc.name)
     setAlternatives([])
     setNoAlternatives(false)
+    setHoveredParkingId(null)
 
-    // Destination Interceptor — nearest roadside / lot parking within 400 m
-    const nearby = parkingIndex.queryNearbyParking(loc.lat, loc.lng, 400)
-    const destSpot = opts?.preferSpot ?? nearby?.spot ?? null
-    const house: [number, number] = [loc.lat, loc.lng]
-    // Drive to parking when found; otherwise drive to the house itself
-    const parking: [number, number] = destSpot
-      ? [destSpot.lat, destSpot.lng]
-      : house
-    const sameAsHouse =
-      !destSpot ||
-      (Math.abs(parking[0] - house[0]) < 1e-6 &&
-        Math.abs(parking[1] - house[1]) < 1e-6)
-    const label =
-      destSpot?.name || loc.name || loc.label || 'Sihtkoht'
-
-    const openInfoSheet = () => {
-      if (routeRunId.current !== runId) return
-      if (destSpot) {
-        setSearchSheetOpen(false)
-        setSelected(destSpot)
-      } else {
-        setSelected(null)
-        setSearchSheetOpen(true)
-      }
-    }
-
-    const nearUser =
-      distanceMeters(
-        userLocation[0],
-        userLocation[1],
-        parking[0],
-        parking[1],
-      ) < 40
-
-    if (nearUser) {
-      // Too close for a driving route — only zoom into the house
-      setFlyMode('fly')
-      setFlyTarget(house)
-      setFlyZoom(17)
-      setFlyKey((k) => k + 1)
-      searchSheetTimer.current = window.setTimeout(() => {
-        openInfoSheet()
-        searchSheetTimer.current = null
-      }, 1600)
+    // Direct confirm when user picked a parking result from search
+    if (opts?.preferSpot || opts?.skipPicker) {
+      confirmParkingSelection(loc, opts.preferSpot ?? null)
       return
     }
 
-    if (!hasGps && !gpsRouteToastShown.current) {
-      gpsRouteToastShown.current = true
-      setToast({
-        kind: 'info',
-        title: 'GPS puudub',
-        detail:
-          'GPS puudub, marsruut algab kaardi keskelt. Luba asukoht täpsema marsruudi jaoks.',
-      })
+    const options = collectNearestOptions(loc.lat, loc.lng)
+    setNearestOptions(options)
+    setNearestPickerOpen(true)
+
+    // Frame the searched destination (wider so nearby lots are visible)
+    setFlyMode('fly')
+    setFlyTarget([loc.lat, loc.lng])
+    setFlyZoom(options.length > 0 ? 15.2 : 16.5)
+    setFlyKey((k) => k + 1)
+
+    if (options.length === 0) {
+      // No parking nearby — fall back to location info sheet
+      setNearestPickerOpen(false)
+      setSearchSheetOpen(true)
     }
-
-    const ac = new AbortController()
-    routeAbort.current = ac
-    setRouteLoading(true)
-    setRouteError(null)
-    const timeout = window.setTimeout(() => ac.abort(), 8000)
-
-    const waitForRoute = fetchRoute(userLocation, parking, ac.signal)
-      .then((result) => {
-        if (ac.signal.aborted || routeRunId.current !== runId) return null
-        return result
-      })
-      .catch((e) => {
-        if ((e as Error).name === 'AbortError') return null
-        if (routeRunId.current === runId) {
-          const msg =
-            e instanceof Error ? e.message : 'Marsruuti ei õnnestunud leida'
-          setRouteError(msg)
-          setToast({
-            kind: 'info',
-            title: 'Marsruuti ei õnnestunud leida',
-          })
-        }
-        return null
-      })
-      .finally(() => {
-        window.clearTimeout(timeout)
-        if (routeAbort.current === ac) {
-          setRouteLoading(false)
-          routeAbort.current = null
-        }
-      })
-
-    const waitForWalkRoute: Promise<RouteResult | null> = sameAsHouse
-      ? Promise.resolve(null)
-      : fetchWalkingRoute(parking, house, ac.signal)
-          .then((result) => {
-            if (ac.signal.aborted || routeRunId.current !== runId) return null
-            return result
-          })
-          .catch((e) => {
-            if ((e as Error).name === 'AbortError') return null
-            return null
-          })
-
-    void mapApiRef.current
-      ?.playRouteIntro({
-        house,
-        parking,
-        origin: userLocation,
-        waitForRoute,
-        waitForWalkRoute,
-        routeWaitMs: 3000,
-        onBeforeFitBounds: (drive, walk) => {
-          if (routeRunId.current !== runId) return
-          setRouteData({
-            drive,
-            walk,
-            parking,
-            house,
-            label,
-          })
-          openInfoSheet()
-        },
-        onFailed: () => {
-          if (routeRunId.current !== runId) return
-          setToast({
-            kind: 'info',
-            title: 'Marsruuti ei õnnestunud leida',
-          })
-          openInfoSheet()
-        },
-      })
-      .then((status) => {
-        if (routeRunId.current !== runId) return
-        if (status === 'fitted') setRouteSummaryReady(true)
-      })
   }
 
   const selectSearchSuggestion = (item: SearchSuggestion) => {
@@ -771,12 +851,58 @@ export default function App() {
           lng: item.spot.lng,
           kind: 'parking',
         },
-        { preferSpot: item.spot },
+        { preferSpot: item.spot, skipPicker: true },
       )
       return
     }
     flyToDestination(geocodeToSearchLocation(item.result))
   }
+
+  const handleNearestHover = useCallback((id: string | null) => {
+    setHoveredParkingId(id)
+  }, [])
+
+  const handleNearestSelect = useCallback(
+    (spot: ParkingSpot) => {
+      if (!searchLocation) return
+      confirmParkingSelection(searchLocation, spot)
+    },
+    [searchLocation, confirmParkingSelection],
+  )
+
+  // Refresh nearest list when parking data finishes loading after a search
+  useEffect(() => {
+    if (!nearestPickerOpen || !searchLocation) return
+    const next = collectNearestOptions(searchLocation.lat, searchLocation.lng)
+    if (next.length === 0) return
+    setNearestOptions((prev) =>
+      prev.length >= next.length && prev[0]?.spot.id === next[0]?.spot.id
+        ? prev
+        : next,
+    )
+  }, [allSpots, nearestPickerOpen, searchLocation, collectNearestOptions])
+
+  // Prefocus the closest option when the picker opens
+  useEffect(() => {
+    if (!nearestPickerOpen) return
+    if (hoveredParkingId) return
+    if (nearestOptions[0]) setHoveredParkingId(nearestOptions[0].spot.id)
+  }, [nearestPickerOpen, nearestOptions, hoveredParkingId])
+
+  const previewFocus = useMemo(() => {
+    if (!nearestPickerOpen || !searchLocation || !hoveredParkingId) return null
+    const hit = nearestOptions.find((o) => o.spot.id === hoveredParkingId)
+    if (!hit) return null
+    return {
+      target: { lat: searchLocation.lat, lng: searchLocation.lng },
+      parking: { lat: hit.spot.lat, lng: hit.spot.lng },
+    }
+  }, [
+    nearestPickerOpen,
+    searchLocation,
+    hoveredParkingId,
+    nearestOptions,
+  ])
 
   /** Route camera + OSRM intro to a parking spot (alternatives flow). */
   const routeToSpot = useCallback(
@@ -1023,6 +1149,8 @@ export default function App() {
             flyMode={flyMode}
             pitch3d={pitch3d}
             selectedId={selected?.id ?? null}
+            highlightId={nearestPickerOpen ? hoveredParkingId : null}
+            previewFocus={previewFocus}
             searchPin={
               searchLocation
                 ? { lat: searchLocation.lat, lng: searchLocation.lng }
@@ -1041,7 +1169,9 @@ export default function App() {
             suppressedFeatureIds={suppressedIds}
             fullSpotIds={fullSpotIds}
             infoPanelOpen={Boolean(
-              selected || (searchSheetOpen && searchLocation),
+              selected ||
+                (searchSheetOpen && searchLocation) ||
+                nearestPickerOpen,
             )}
             cityId={cityId}
           />
@@ -1225,7 +1355,9 @@ export default function App() {
       {/* Floating Action Buttons — location + 3D */}
       <div
         className={`absolute right-3 z-50 flex flex-col gap-2.5 sm:right-4 ${
-          selected || (searchSheetOpen && searchLocation)
+          selected ||
+          (searchSheetOpen && searchLocation) ||
+          nearestPickerOpen
             ? 'bottom-[max(42vh,calc(env(safe-area-inset-bottom)+11rem))] sm:bottom-[max(6.5rem,env(safe-area-inset-bottom))]'
             : 'bottom-[max(6.5rem,env(safe-area-inset-bottom))]'
         }`}
@@ -1481,7 +1613,23 @@ export default function App() {
         />
       ) : null}
 
-      {searchSheetOpen && searchLocation && !selected ? (
+      {nearestPickerOpen && searchLocation && !selected ? (
+        <NearestParkingPanel
+          targetName={searchLocation.name || searchLocation.label}
+          options={nearestOptions}
+          dark={dark}
+          hoveredId={hoveredParkingId}
+          onHover={handleNearestHover}
+          onSelect={handleNearestSelect}
+          onClose={() => {
+            setNearestPickerOpen(false)
+            setHoveredParkingId(null)
+            setSearchSheetOpen(true)
+          }}
+        />
+      ) : null}
+
+      {searchSheetOpen && searchLocation && !selected && !nearestPickerOpen ? (
         <LocationInfoSheet
           location={searchLocation}
           dark={dark}

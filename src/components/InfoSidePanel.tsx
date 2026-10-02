@@ -25,7 +25,7 @@ export function InfoSidePanelShell({
 
   return (
     <div
-      className={`${sheetClassName} pointer-events-none absolute z-40 left-3 right-3 bottom-[max(1rem,env(safe-area-inset-bottom))] max-h-[45vh] sm:top-[10rem] sm:right-auto sm:bottom-auto sm:left-4 sm:w-[22rem] sm:max-w-[min(24rem,calc(100vw-2rem))] sm:max-h-[calc(100%-11rem)]`}
+      className={`${sheetClassName} pointer-events-none absolute z-40 left-3 right-3 bottom-[max(1rem,env(safe-area-inset-bottom))] max-h-[52vh] sm:top-[10rem] sm:right-auto sm:bottom-auto sm:left-4 sm:w-[22rem] sm:max-w-[min(24rem,calc(100vw-2rem))] sm:max-h-[calc(100%-11rem)]`}
       role="dialog"
       aria-modal="false"
       aria-label={title}

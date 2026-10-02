@@ -320,6 +320,33 @@ function applySelectionHighlight(map: MapLibreMapType, selectedId: string | null
   }
 }
 
+/** Hover/focus preview highlight (nearest-parking picker). */
+function applyHoverHighlight(map: MapLibreMapType, hoverId: string | null) {
+  const prev = (map as MapLibreMapType & { __hoverId?: string | null }).__hoverId
+  const selected = (map as MapLibreMapType & { __selectedId?: string | null })
+    .__selectedId
+  if (prev && prev !== selected) {
+    for (const source of SELECT_SOURCES) {
+      if (!map.getSource(source)) continue
+      try {
+        map.setFeatureState({ source, id: prev }, { selected: false })
+      } catch {
+        /* ok */
+      }
+    }
+  }
+  ;(map as MapLibreMapType & { __hoverId?: string | null }).__hoverId = hoverId
+  if (!hoverId || hoverId === selected) return
+  for (const source of SELECT_SOURCES) {
+    if (!map.getSource(source)) continue
+    try {
+      map.setFeatureState({ source, id: hoverId }, { selected: true })
+    } catch {
+      /* ok */
+    }
+  }
+}
+
 
 /** Camera padding so the focus point sits in the free map area (not under the info panel). */
 function panelCameraPadding(panelOpen: boolean): {
@@ -357,6 +384,16 @@ export const MapView = forwardRef<
     /** When true, use Apple Maps–style pitched 3D; when false, flat 2D. */
     pitch3d?: boolean
     selectedId?: string | null
+    /**
+     * Nearest-parking picker hover — highlights the matching pin/polygon
+     * and frames target + parking when previewFocus is set.
+     */
+    highlightId?: string | null
+    /** Frame destination + hovered/focused parking on the map. */
+    previewFocus?: {
+      target: { lat: number; lng: number }
+      parking: { lat: number; lng: number }
+    } | null
     /** Dropped search / address pin */
     searchPin?: { lat: number; lng: number } | null
     onSearchPinClick?: () => void
@@ -397,6 +434,8 @@ export const MapView = forwardRef<
     flyMode = 'ease',
     pitch3d = true,
     selectedId = null,
+    highlightId = null,
+    previewFocus = null,
     searchPin = null,
     onSearchPinClick,
     route,
@@ -1233,7 +1272,41 @@ export const MapView = forwardRef<
     const map = mapRef.current
     if (!map || !ready) return
     applySelectionHighlight(map, selectedId)
-  }, [selectedId, ready])
+    // Re-apply hover after selection clears feature-state on other ids
+    if (highlightId) applyHoverHighlight(map, highlightId)
+  }, [selectedId, highlightId, ready])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    applyHoverHighlight(map, highlightId)
+  }, [highlightId, ready])
+
+  /** Frame searched target + hovered parking so both stay in view. */
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready || !previewFocus || routeAnimatingRef.current) return
+    const { target, parking } = previewFocus
+    const bounds = new LngLatBounds()
+    bounds.extend([target.lng, target.lat])
+    bounds.extend([parking.lng, parking.lat])
+    // Small pad so a coincident point still zooms sensibly
+    const pad = 0.00035
+    bounds.extend([parking.lng - pad, parking.lat - pad])
+    bounds.extend([parking.lng + pad, parking.lat + pad])
+    try {
+      map.fitBounds(bounds, {
+        padding: panelCameraPadding(infoPanelOpenRef.current || true),
+        maxZoom: 16.8,
+        duration: prefersReducedMotion() ? 0 : 650,
+        pitch: 0,
+        bearing: 0,
+        essential: true,
+      })
+    } catch {
+      /* bounds may be empty */
+    }
+  }, [previewFocus, ready])
 
   useEffect(() => {
     const map = mapRef.current
