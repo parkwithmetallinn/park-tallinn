@@ -55,9 +55,9 @@ import {
   type RouteResult,
 } from './lib/routing'
 import {
-  ESTONIA_VIEWBOX,
   geocodeToSearchLocation,
   searchAddress,
+  viewboxForQuery,
   type GeocodeResult,
   type SearchLocation,
 } from './lib/geocode'
@@ -202,7 +202,8 @@ export default function App() {
     return () => navigator.geolocation.clearWatch(id)
   }, [])
 
-  // Nominatim geocoding — Estonia-wide (no city toggle)
+  // Nominatim geocoding — Estonia-wide, soft-biased to current map location
+  const searchBiasKey = `${userLocation[0].toFixed(2)},${userLocation[1].toFixed(2)}`
   useEffect(() => {
     const q = query.trim()
     if (q.length < 3) {
@@ -216,9 +217,17 @@ export default function App() {
     geoAbort.current?.abort()
     const ac = new AbortController()
     geoAbort.current = ac
+    const [biasLat, biasLng] = searchBiasKey.split(',').map(Number) as [
+      number,
+      number,
+    ]
     const t = window.setTimeout(async () => {
       try {
-        const results = await searchAddress(q, ac.signal, ESTONIA_VIEWBOX)
+        const results = await searchAddress(
+          q,
+          ac.signal,
+          viewboxForQuery(q, biasLat, biasLng),
+        )
         if (!ac.signal.aborted) setGeoResults(results)
       } catch (e) {
         if ((e as Error).name === 'AbortError') return
@@ -232,7 +241,7 @@ export default function App() {
       window.clearTimeout(t)
       ac.abort()
     }
-  }, [query])
+  }, [query, searchBiasKey])
 
   const clearRoute = useCallback(() => {
     routeRunId.current += 1
@@ -425,27 +434,29 @@ export default function App() {
       .sort((a, b) => a.distanceM - b.distanceM)
       .slice(0, 4)
 
-    const places: SearchSuggestion[] = geoResults.map((r) => {
-      const { name, subtitle } = splitPlaceLabel(r.label)
-      const distanceM = distanceMeters(
-        userLocation[0],
-        userLocation[1],
-        r.lat,
-        r.lng,
-      )
-      return {
-        kind: 'place' as const,
-        id: r.id,
-        name,
-        subtitle,
-        lat: r.lat,
-        lng: r.lng,
-        distanceM,
-        result: r,
-      }
-    })
+    const places: SearchSuggestion[] = geoResults
+      .map((r) => {
+        const { name, subtitle } = splitPlaceLabel(r.label)
+        const distanceM = distanceMeters(
+          userLocation[0],
+          userLocation[1],
+          r.lat,
+          r.lng,
+        )
+        return {
+          kind: 'place' as const,
+          id: r.id,
+          name,
+          subtitle,
+          lat: r.lat,
+          lng: r.lng,
+          distanceM,
+          result: r,
+        }
+      })
+      .sort((a, b) => a.distanceM - b.distanceM)
 
-    // Prefer nearby parking matches first, then address places
+    // Nearby parking first, then nearest places — keep Estonia-wide but ranked
     return [...parkingHits, ...places].slice(0, 10)
   }, [query, allSpots, geoResults, userLocation])
 
@@ -764,99 +775,102 @@ export default function App() {
       {/* Top floating search + filter pills (Apple HIG) */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-30 px-3 pt-[max(0.65rem,env(safe-area-inset-top))] sm:px-4">
         <div className="pointer-events-auto mx-auto max-w-lg space-y-2">
-          <div className={`relative ${panel}`}>
-            <div className="flex items-center gap-1 px-2 py-1.5">
-              <div className="relative min-w-0 flex-1">
-                <Search
-                  className={`pointer-events-none absolute top-1/2 left-3 h-[18px] w-[18px] -translate-y-1/2 ${muted}`}
-                  strokeWidth={2.2}
-                />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Otsi aadressi või kohta Eestis"
-                  className={`w-full rounded-2xl border-0 bg-transparent py-3 pr-10 pl-10 text-[16px] font-sans outline-none ${text} placeholder:text-[#8E8E93]`}
-                  autoComplete="off"
-                  enterKeyHint="search"
-                />
-                {query ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQuery('')
-                      setGeoResults([])
-                      setGeoError(null)
-                    }}
-                    className={`absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer rounded-full p-1.5 ${muted} bg-black/5`}
-                    aria-label="Tühjenda"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                ) : null}
+          <div className="relative">
+            <div className={panel}>
+              <div className="flex items-center gap-1 px-2 py-1.5">
+                <div className="relative min-w-0 flex-1">
+                  <Search
+                    className={`pointer-events-none absolute top-1/2 left-3 h-[18px] w-[18px] -translate-y-1/2 ${muted}`}
+                    strokeWidth={2.2}
+                  />
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Otsi aadressi või kohta Eestis"
+                    className={`w-full rounded-2xl border-0 bg-transparent py-3 pr-10 pl-10 text-[16px] font-sans outline-none ${text} placeholder:text-[#8E8E93]`}
+                    autoComplete="off"
+                    enterKeyHint="search"
+                  />
+                  {query ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuery('')
+                        setGeoResults([])
+                        setGeoError(null)
+                      }}
+                      className={`absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer rounded-full p-1.5 ${muted} bg-black/5`}
+                      aria-label="Tühjenda"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setInfoOpen(true)}
+                  className={`cursor-pointer rounded-full p-2.5 ${chip}`}
+                  title="Reeglid"
+                >
+                  <CircleHelp className="h-5 w-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTheme((t) => {
+                      const next = toggleTheme(t)
+                      persistTheme(next)
+                      return next
+                    })
+                  }}
+                  className={`cursor-pointer rounded-full p-2.5 ${chip}`}
+                  title={dark ? 'Hele režiim' : 'Tume režiim'}
+                  aria-label={dark ? 'Lülita hele režiim' : 'Lülita tume režiim'}
+                >
+                  {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setInfoOpen(true)}
-                className={`cursor-pointer rounded-full p-2.5 ${chip}`}
-                title="Reeglid"
-              >
-                <CircleHelp className="h-5 w-5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setTheme((t) => {
-                    const next = toggleTheme(t)
-                    persistTheme(next)
-                    return next
-                  })
-                }}
-                className={`cursor-pointer rounded-full p-2.5 ${chip}`}
-                title={dark ? 'Hele režiim' : 'Tume režiim'}
-                aria-label={dark ? 'Lülita hele režiim' : 'Lülita tume režiim'}
-              >
-                {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-              </button>
             </div>
 
+            {query.trim().length >= 3 ? (
+              <div className="absolute inset-x-0 top-[calc(100%+0.4rem)] z-50">
+                <SearchDropdown
+                  loading={geoLoading && searchSuggestions.length === 0}
+                  error={geoError}
+                  suggestions={searchSuggestions}
+                  dark={dark}
+                  onSelect={selectSearchSuggestion}
+                />
+              </div>
+            ) : null}
           </div>
 
-          {query.trim().length >= 3 ? (
-            <div className="relative z-40">
-              <SearchDropdown
-                loading={geoLoading && searchSuggestions.length === 0}
-                error={geoError}
-                suggestions={searchSuggestions}
-                dark={dark}
-                onSelect={selectSearchSuggestion}
-              />
+          {query.trim().length < 3 ? (
+            <div className="no-scrollbar flex gap-2 overflow-x-auto px-0.5 py-0.5">
+              {FILTERS.map((f) => {
+                const active = filter === f.id
+                return (
+                  <button
+                    key={f.id}
+                    type="button"
+                    data-filter={f.id}
+                    onClick={() => setFilter(f.id)}
+                    className={`tap-scale shrink-0 cursor-pointer rounded-full px-3.5 py-2 text-[13px] font-semibold shadow-sm sm:px-4 ${
+                      active ? chipActive : `${panel} ${chip}`
+                    }`}
+                  >
+                    {f.color && !active ? (
+                      <span
+                        className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle"
+                        style={{ backgroundColor: f.color }}
+                      />
+                    ) : null}
+                    {f.label}
+                  </button>
+                )
+              })}
             </div>
           ) : null}
-
-          <div className="no-scrollbar flex gap-2 overflow-x-auto px-0.5 py-0.5">
-            {FILTERS.map((f) => {
-              const active = filter === f.id
-              return (
-                <button
-                  key={f.id}
-                  type="button"
-                  data-filter={f.id}
-                  onClick={() => setFilter(f.id)}
-                  className={`tap-scale shrink-0 cursor-pointer rounded-full px-3.5 py-2 text-[13px] font-semibold shadow-sm sm:px-4 ${
-                    active ? chipActive : `${panel} ${chip}`
-                  }`}
-                >
-                  {f.color && !active ? (
-                    <span
-                      className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle"
-                      style={{ backgroundColor: f.color }}
-                    />
-                  ) : null}
-                  {f.label}
-                </button>
-              )
-            })}
-          </div>
         </div>
       </div>
 

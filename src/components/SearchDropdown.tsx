@@ -69,15 +69,15 @@ export function SearchDropdown({
   const muted = dark ? 'text-[#98989D]' : 'text-[#8E8E93]'
   const text = dark ? 'text-[#F5F5F7]' : 'text-[#1C1C1E]'
   const panel = dark
-    ? 'border-white/10 bg-[#1C1C1E]/92 shadow-[0_12px_40px_rgba(0,0,0,0.45)]'
-    : 'border-white/55 bg-white/92 shadow-[0_12px_40px_rgba(15,23,42,0.16)]'
+    ? 'border-white/10 bg-[#1C1C1E]/95 shadow-[0_12px_40px_rgba(0,0,0,0.45)]'
+    : 'border-white/60 bg-white/95 shadow-[0_12px_40px_rgba(15,23,42,0.16)]'
   const hover = dark ? 'hover:bg-white/10' : 'hover:bg-black/[0.04]'
   const divider = dark ? 'border-white/8' : 'border-black/6'
 
   if (!loading && !error && suggestions.length === 0) {
     return (
       <div
-        className={`absolute inset-x-0 top-0 z-50 overflow-hidden rounded-2xl border font-sans backdrop-blur-xl ${panel}`}
+        className={`w-full overflow-hidden rounded-2xl border font-sans backdrop-blur-xl ${panel}`}
         role="listbox"
         aria-label="Otsingutulemused"
       >
@@ -90,7 +90,7 @@ export function SearchDropdown({
 
   return (
     <div
-      className={`absolute inset-x-0 top-0 z-50 overflow-hidden rounded-2xl border font-sans backdrop-blur-xl ${panel}`}
+      className={`w-full overflow-hidden rounded-2xl border font-sans backdrop-blur-xl ${panel}`}
       role="listbox"
       aria-label="Otsingutulemused"
     >
@@ -128,7 +128,7 @@ export function SearchDropdown({
                 <span className="block text-[14px] leading-snug font-semibold break-words">
                   {item.name}
                   <span className={`font-medium ${muted}`}>
-                    {' · '}
+                    {' • '}
                     {metaLine(item.distanceM)}
                   </span>
                 </span>

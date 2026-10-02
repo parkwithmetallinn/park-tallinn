@@ -25,6 +25,45 @@ export type SearchLocation = {
 /** Estonia-wide Nominatim bias (west,south,east,north) — not hard-bounded. */
 export const ESTONIA_VIEWBOX = '21.5,57.5,28.3,59.75'
 
+/** Soft bias box around a point so nearby places rank first (still Estonia-wide). */
+export function viewboxAround(
+  lat: number,
+  lng: number,
+  padDeg = 0.45,
+): string {
+  const west = (lng - padDeg).toFixed(4)
+  const south = (lat - padDeg).toFixed(4)
+  const east = (lng + padDeg).toFixed(4)
+  const north = (lat + padDeg).toFixed(4)
+  return `${west},${south},${east},${north}`
+}
+
+/** Named Estonian cities — when the query mentions one, bias Nominatim there. */
+const CITY_QUERY_CENTERS: Array<{ re: RegExp; lat: number; lng: number }> = [
+  { re: /\bpärnu\b|\bparnu\b/i, lat: 58.3859, lng: 24.4971 },
+  { re: /\btartu\b/i, lat: 58.3776, lng: 26.729 },
+  { re: /\bnarva\b/i, lat: 59.3793, lng: 28.1791 },
+  { re: /\btallinn\b/i, lat: 59.437, lng: 24.7535 },
+  { re: /\bviljandi\b/i, lat: 58.3639, lng: 25.59 },
+  { re: /\brakvere\b/i, lat: 59.3464, lng: 26.3558 },
+  { re: /\bkuressaare\b/i, lat: 58.253, lng: 22.4919 },
+]
+
+/**
+ * Pick a Nominatim viewbox: prefer an explicit city name in the query,
+ * otherwise soft-bias around the user's current location.
+ */
+export function viewboxForQuery(
+  query: string,
+  userLat: number,
+  userLng: number,
+): string {
+  for (const c of CITY_QUERY_CENTERS) {
+    if (c.re.test(query)) return viewboxAround(c.lat, c.lng, 0.55)
+  }
+  return viewboxAround(userLat, userLng)
+}
+
 export async function searchAddress(
   query: string,
   signal?: AbortSignal,
