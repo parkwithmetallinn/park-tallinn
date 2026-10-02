@@ -84,6 +84,7 @@ export function ParkingBottomSheet({
   sessionNotice,
   dark,
   onClose,
+  onBackToList,
   onStartSession,
   onStopSession,
   onCheckStatus,
@@ -107,6 +108,8 @@ export function ParkingBottomSheet({
   sessionNotice?: { kind: 'success' | 'error' | 'info' | 'loading'; text: string } | null
   dark?: boolean
   onClose: () => void
+  /** Return to nearest-parking picker (2-step search flow). */
+  onBackToList?: () => void
   onStartSession: () => void
   onStopSession: () => void
   onCheckStatus: () => void
@@ -216,6 +219,21 @@ export function ParkingBottomSheet({
     <InfoSidePanelShell title={title} dark={dark} onClose={onClose}>
       {({ requestClose }) => (
         <>
+        {onBackToList ? (
+          <button
+            type="button"
+            data-testid="back-to-nearest-list"
+            onClick={onBackToList}
+            className={`mb-2.5 flex min-h-10 w-full cursor-pointer items-center gap-1.5 rounded-xl px-2.5 py-2 text-[13px] font-semibold transition active:scale-[0.99] ${
+              dark
+                ? 'bg-white/10 text-[#0A84FF] hover:bg-white/14'
+                : 'bg-[#007AFF]/10 text-[#007AFF] hover:bg-[#007AFF]/14'
+            }`}
+          >
+            <span aria-hidden>←</span>
+            Tagasi nimekirja
+          </button>
+        ) : null}
         <div className="mb-2.5 flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="mb-2 flex flex-wrap items-center gap-2">

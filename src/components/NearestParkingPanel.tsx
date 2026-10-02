@@ -45,6 +45,28 @@ export function parkingPriceBadge(spot: ParkingSpot): string {
   return '—'
 }
 
+/** Compact map pill label (no numbers 1/2/3 — price/type only). */
+export function parkingMapPillLabel(spot: ParkingSpot): string {
+  if (isUnlimitedFreeParking(spot)) return 'FREE'
+  if (isClockLimitedParking(spot)) {
+    const mins = Math.max(1, Math.round(spot.free_minutes || 15))
+    return `${mins} MIN`
+  }
+  if (spot.price_per_hour > 0) {
+    return `${spot.price_per_hour.toFixed(2)} €/h`
+  }
+  return 'PAID'
+}
+
+export function parkingMapPillTone(
+  spot: ParkingSpot,
+): 'free' | 'clock' | 'paid' | 'other' {
+  if (isUnlimitedFreeParking(spot)) return 'free'
+  if (isClockLimitedParking(spot)) return 'clock'
+  if (spot.price_per_hour > 0 || spot.badge === 'PAID') return 'paid'
+  return 'other'
+}
+
 function badgeTone(spot: ParkingSpot, dark?: boolean): string {
   if (isUnlimitedFreeParking(spot)) {
     return dark

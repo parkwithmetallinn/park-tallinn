@@ -140,6 +140,36 @@ function makeFullSpotEl() {
   return wrap
 }
 
+export type NearestMapPill = {
+  id: string
+  lat: number
+  lng: number
+  label: string
+  tone: 'free' | 'clock' | 'paid' | 'other'
+}
+
+function makeNearestPillEl(
+  pill: NearestMapPill,
+  active: boolean,
+  onClick?: () => void,
+) {
+  const el = document.createElement('button')
+  el.type = 'button'
+  el.className = `nearest-map-pill nearest-map-pill--${pill.tone}${
+    active ? ' nearest-map-pill--active' : ''
+  }`
+  el.setAttribute('aria-label', `Parkla ${pill.label}`)
+  el.dataset.pillId = pill.id
+  el.textContent = pill.label
+  if (onClick) {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation()
+      onClick()
+    })
+  }
+  return el
+}
+
 function prefersReducedMotion() {
   return (
     typeof window !== 'undefined' &&
@@ -389,11 +419,16 @@ export const MapView = forwardRef<
      * and frames target + parking when previewFocus is set.
      */
     highlightId?: string | null
-    /** Frame destination + hovered/focused parking on the map. */
+    /** Glass price pills above nearest parking options (no numeric ranks). */
+    nearestPills?: NearestMapPill[]
+    /** Frame destination + all nearest pills (and optional hover focus). */
     previewFocus?: {
       target: { lat: number; lng: number }
-      parking: { lat: number; lng: number }
+      parking?: { lat: number; lng: number }
+      /** When true, fit all nearestPills + target (picker open). */
+      fitAll?: boolean
     } | null
+    onNearestPillClick?: (id: string) => void
     /** Dropped search / address pin */
     searchPin?: { lat: number; lng: number } | null
     onSearchPinClick?: () => void
@@ -435,7 +470,9 @@ export const MapView = forwardRef<
     pitch3d = true,
     selectedId = null,
     highlightId = null,
+    nearestPills = [],
     previewFocus = null,
+    onNearestPillClick,
     searchPin = null,
     onSearchPinClick,
     route,
@@ -460,10 +497,13 @@ export const MapView = forwardRef<
   const userMarkerRef = useRef<Marker | null>(null)
   const searchMarkerRef = useRef<Marker | null>(null)
   const fullMarkersRef = useRef<Map<string, Marker>>(new Map())
+  const nearestPillMarkersRef = useRef<Map<string, Marker>>(new Map())
   const routeAnimatingRef = useRef(false)
   const routeIntroCancelRef = useRef({ cancelled: false })
   const routeDrawRafRef = useRef(0)
   const walkRouteRef = useRef(walkRoute)
+  const onNearestPillClickRef = useRef(onNearestPillClick)
+  const nearestPillsFitKeyRef = useRef('')
   const onNavigateRef = useRef(onNavigate)
   const onBackgroundClickRef = useRef(onBackgroundClick)
   const onSearchPinClickRef = useRef(onSearchPinClick)
@@ -492,6 +532,7 @@ export const MapView = forwardRef<
   onNavigateRef.current = onNavigate
   onBackgroundClickRef.current = onBackgroundClick
   onSearchPinClickRef.current = onSearchPinClick
+  onNearestPillClickRef.current = onNearestPillClick
   onPreciseSpotsLoadedRef.current = onPreciseSpotsLoaded
   onStreetSpotsLoadedRef.current = onStreetSpotsLoaded
   onMapReadyRef.current = onMapReady
@@ -961,6 +1002,8 @@ export const MapView = forwardRef<
       searchMarkerRef.current?.remove()
       for (const m of fullMarkersRef.current.values()) m.remove()
       fullMarkersRef.current.clear()
+      for (const m of nearestPillMarkersRef.current.values()) m.remove()
+      nearestPillMarkersRef.current.clear()
       map.off('style.load', onStyleLoad)
       map.remove()
       mapRef.current = null
@@ -1282,31 +1325,105 @@ export const MapView = forwardRef<
     applyHoverHighlight(map, highlightId)
   }, [highlightId, ready])
 
-  /** Frame searched target + hovered parking so both stay in view. */
+  /** Glass price pills for nearest-parking picker (never numbered 1/2/3). */
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    const markers = nearestPillMarkersRef.current
+    if (nearestPills.length === 0) {
+      nearestPillsFitKeyRef.current = ''
+      for (const m of markers.values()) m.remove()
+      markers.clear()
+      return
+    }
+    const nextIds = new Set(nearestPills.map((p) => p.id))
+
+    for (const [id, marker] of markers) {
+      if (!nextIds.has(id)) {
+        marker.remove()
+        markers.delete(id)
+      }
+    }
+
+    for (const pill of nearestPills) {
+      const active = highlightId === pill.id
+      const existing = markers.get(pill.id)
+      if (existing) {
+        existing.setLngLat([pill.lng, pill.lat])
+        const el = existing.getElement()
+        el.className = `nearest-map-pill nearest-map-pill--${pill.tone}${
+          active ? ' nearest-map-pill--active' : ''
+        }`
+        el.textContent = pill.label
+      } else {
+        const m = new Marker({
+          element: makeNearestPillEl(pill, active, () =>
+            onNearestPillClickRef.current?.(pill.id),
+          ),
+          anchor: 'bottom',
+          offset: [0, -6],
+        })
+          .setLngLat([pill.lng, pill.lat])
+          .addTo(map)
+        markers.set(pill.id, m)
+      }
+    }
+  }, [nearestPills, highlightId, ready])
+
+  /** Frame searched target + all nearest pills (and optional hover focus). */
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready || !previewFocus || routeAnimatingRef.current) return
-    const { target, parking } = previewFocus
+    const { target, parking, fitAll } = previewFocus
     const bounds = new LngLatBounds()
     bounds.extend([target.lng, target.lat])
-    bounds.extend([parking.lng, parking.lat])
-    // Small pad so a coincident point still zooms sensibly
-    const pad = 0.00035
-    bounds.extend([parking.lng - pad, parking.lat - pad])
-    bounds.extend([parking.lng + pad, parking.lat + pad])
-    try {
-      map.fitBounds(bounds, {
-        padding: panelCameraPadding(infoPanelOpenRef.current || true),
-        maxZoom: 16.8,
-        duration: prefersReducedMotion() ? 0 : 650,
-        pitch: 0,
-        bearing: 0,
-        essential: true,
-      })
-    } catch {
-      /* bounds may be empty */
+
+      if (fitAll && nearestPills.length > 0) {
+      for (const p of nearestPills) {
+        bounds.extend([p.lng, p.lat])
+      }
+      const key = `${target.lat},${target.lng}|${nearestPills.map((p) => p.id).join(',')}`
+      // Fit the full cluster once per picker open / option set
+      if (nearestPillsFitKeyRef.current === key) return
+      nearestPillsFitKeyRef.current = key
+      try {
+        map.fitBounds(bounds, {
+          padding: panelCameraPadding(true),
+          maxZoom: 16.2,
+          duration: prefersReducedMotion() ? 0 : 900,
+          pitch: 0,
+          bearing: 0,
+          essential: true,
+        })
+      } catch {
+        /* ok */
+      }
+      return
     }
-  }, [previewFocus, ready])
+
+    if (!fitAll) {
+      nearestPillsFitKeyRef.current = ''
+    }
+
+    if (parking) {
+      bounds.extend([parking.lng, parking.lat])
+      const pad = 0.00035
+      bounds.extend([parking.lng - pad, parking.lat - pad])
+      bounds.extend([parking.lng + pad, parking.lat + pad])
+      try {
+        map.fitBounds(bounds, {
+          padding: panelCameraPadding(infoPanelOpenRef.current || true),
+          maxZoom: 16.8,
+          duration: prefersReducedMotion() ? 0 : 650,
+          pitch: 0,
+          bearing: 0,
+          essential: true,
+        })
+      } catch {
+        /* ok */
+      }
+    }
+  }, [previewFocus, nearestPills, ready])
 
   useEffect(() => {
     const map = mapRef.current

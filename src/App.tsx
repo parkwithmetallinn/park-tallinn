@@ -18,6 +18,8 @@ import { ModalShell } from './components/ModalShell'
 import { LocationInfoSheet } from './components/LocationInfoSheet'
 import {
   NearestParkingPanel,
+  parkingMapPillLabel,
+  parkingMapPillTone,
   type NearestParkingOption,
 } from './components/NearestParkingPanel'
 import { ParkingBottomSheet } from './components/ParkingBottomSheet'
@@ -159,6 +161,8 @@ export default function App() {
     [],
   )
   const [hoveredParkingId, setHoveredParkingId] = useState<string | null>(null)
+  /** Detail was opened from nearest picker — show "Tagasi nimekirja". */
+  const [fromNearestPicker, setFromNearestPicker] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
   const [reportContext, setReportContext] = useState<ReportModalContext | null>(null)
   const [approvedOverlays, setApprovedOverlays] = useState<ParkingSpot[]>([])
@@ -551,6 +555,8 @@ export default function App() {
         clearRoute()
       }
       setSearchSheetOpen(false)
+      setNearestPickerOpen(false)
+      setFromNearestPicker(false)
       setSelected(spot)
     },
     [clearRoute],
@@ -564,6 +570,7 @@ export default function App() {
     setSearchSheetOpen(false)
     setNearestPickerOpen(false)
     setHoveredParkingId(null)
+    setFromNearestPicker(false)
     setGeoResults([])
     setGeoError(null)
     setIsDropdownOpen(false)
@@ -577,6 +584,7 @@ export default function App() {
     setNearestPickerOpen(false)
     setNearestOptions([])
     setHoveredParkingId(null)
+    setFromNearestPicker(false)
     setQuery('')
     setGeoResults([])
     setGeoError(null)
@@ -819,12 +827,14 @@ export default function App() {
 
     // Direct confirm when user picked a parking result from search
     if (opts?.preferSpot || opts?.skipPicker) {
+      setFromNearestPicker(false)
       confirmParkingSelection(loc, opts.preferSpot ?? null)
       return
     }
 
     const options = collectNearestOptions(loc.lat, loc.lng)
     setNearestOptions(options)
+    setFromNearestPicker(false)
     setNearestPickerOpen(true)
 
     // Frame the searched destination (wider so nearby lots are visible)
@@ -865,10 +875,22 @@ export default function App() {
   const handleNearestSelect = useCallback(
     (spot: ParkingSpot) => {
       if (!searchLocation) return
+      setFromNearestPicker(true)
       confirmParkingSelection(searchLocation, spot)
     },
     [searchLocation, confirmParkingSelection],
   )
+
+  const handleBackToNearestList = useCallback(() => {
+    clearRoute()
+    setSelected(null)
+    setRouteSummaryReady(false)
+    setFromNearestPicker(true)
+    setNearestPickerOpen(true)
+    if (nearestOptions[0]) {
+      setHoveredParkingId(nearestOptions[0].spot.id)
+    }
+  }, [clearRoute, nearestOptions])
 
   // Refresh nearest list when parking data finishes loading after a search
   useEffect(() => {
@@ -889,20 +911,30 @@ export default function App() {
     if (nearestOptions[0]) setHoveredParkingId(nearestOptions[0].spot.id)
   }, [nearestPickerOpen, nearestOptions, hoveredParkingId])
 
+  const nearestPills = useMemo(() => {
+    if (!nearestPickerOpen) return []
+    return nearestOptions.map(({ spot }) => ({
+      id: spot.id,
+      lat: spot.lat,
+      lng: spot.lng,
+      label: parkingMapPillLabel(spot),
+      tone: parkingMapPillTone(spot),
+    }))
+  }, [nearestPickerOpen, nearestOptions])
+
   const previewFocus = useMemo(() => {
-    if (!nearestPickerOpen || !searchLocation || !hoveredParkingId) return null
-    const hit = nearestOptions.find((o) => o.spot.id === hoveredParkingId)
-    if (!hit) return null
+    if (!nearestPickerOpen || !searchLocation) return null
+    const hit = hoveredParkingId
+      ? nearestOptions.find((o) => o.spot.id === hoveredParkingId)
+      : null
     return {
       target: { lat: searchLocation.lat, lng: searchLocation.lng },
-      parking: { lat: hit.spot.lat, lng: hit.spot.lng },
+      parking: hit
+        ? { lat: hit.spot.lat, lng: hit.spot.lng }
+        : undefined,
+      fitAll: true,
     }
-  }, [
-    nearestPickerOpen,
-    searchLocation,
-    hoveredParkingId,
-    nearestOptions,
-  ])
+  }, [nearestPickerOpen, searchLocation, hoveredParkingId, nearestOptions])
 
   /** Route camera + OSRM intro to a parking spot (alternatives flow). */
   const routeToSpot = useCallback(
@@ -1150,7 +1182,12 @@ export default function App() {
             pitch3d={pitch3d}
             selectedId={selected?.id ?? null}
             highlightId={nearestPickerOpen ? hoveredParkingId : null}
+            nearestPills={nearestPills}
             previewFocus={previewFocus}
+            onNearestPillClick={(id) => {
+              const hit = nearestOptions.find((o) => o.spot.id === id)
+              if (hit) handleNearestSelect(hit.spot)
+            }}
             searchPin={
               searchLocation
                 ? { lat: searchLocation.lat, lng: searchLocation.lng }
@@ -1183,10 +1220,10 @@ export default function App() {
 
       {/* Top floating search + filter pills (Apple HIG) */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-30 px-3 pt-[max(0.65rem,env(safe-area-inset-top))] sm:px-4">
-        <div className="pointer-events-auto mx-auto max-w-lg space-y-2">
-          <div className="relative">
+        <div className="pointer-events-auto mx-auto w-full max-w-xl space-y-2">
+          <div className="relative min-w-0">
             <div className={panel}>
-              <div className="flex items-center gap-1 px-2 py-1.5">
+              <div className="flex min-w-0 items-center gap-1 px-2 py-1.5">
                 <div className="relative min-w-0 flex-1">
                   <Search
                     className={`pointer-events-none absolute top-1/2 left-3 h-[18px] w-[18px] -translate-y-1/2 ${muted}`}
@@ -1588,7 +1625,15 @@ export default function App() {
           activeSession={activeSession}
           sessionNotice={sessionNotice}
           dark={dark}
-          onClose={closeSheet}
+          onClose={() => {
+            setFromNearestPicker(false)
+            closeSheet()
+          }}
+          onBackToList={
+            fromNearestPicker && nearestOptions.length > 0
+              ? handleBackToNearestList
+              : undefined
+          }
           onStartSession={() => {
             void beginParkingSession()
           }}
