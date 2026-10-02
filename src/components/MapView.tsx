@@ -184,12 +184,13 @@ export type MapViewHandle = {
  */
 function filterToLayers(
   filter: FilterId,
-): ParkingLayerKey[] | 'all' | 'verified_free' | 'unclassified' | 'paid' {
+): ParkingLayerKey[] | 'all' | 'verified_free' | 'unclassified' {
   if (filter === 'all') return 'all'
   if (filter === 'free_street') return 'verified_free'
-  if (filter === 'timed') return ['timed']
-  if (filter === 'paid') return 'paid'
   if (filter === 'other') return 'unclassified'
+  if ((PARKING_PROVIDERS as string[]).includes(filter)) {
+    return [filter as ParkingLayerKey]
+  }
   return 'all'
 }
 
@@ -254,13 +255,42 @@ function applyDualLayerFilter(
     }
   }
 
+  const filterEvExempt = (feats: PreciseParkingCollection['features']) =>
+    feats.filter(
+      (f) =>
+        f.properties.layer === 'ev' ||
+        (Array.isArray((f.properties as { exemptions?: string[] }).exemptions) &&
+          (f.properties as { exemptions?: string[] }).exemptions!.includes('ev_m1')),
+    )
+
   if (polys) {
     const src = map.getSource(PRECISE_PARKING_SOURCE) as GeoJSONSource | undefined
-    src?.setData(filterPreciseCollection(polys, layers) as never)
+    if (filter === 'ev') {
+      src?.setData({
+        type: 'FeatureCollection',
+        features: filterEvExempt(polys.features),
+      } as never)
+    } else {
+      src?.setData(filterPreciseCollection(polys, layers) as never)
+    }
   }
   if (streets) {
     const src = map.getSource(STREET_PARKING_SOURCE) as GeoJSONSource | undefined
-    src?.setData(filterStreetCollection(streets, layers) as never)
+    if (filter === 'ev') {
+      src?.setData({
+        type: 'FeatureCollection',
+        features: streets.features.filter(
+          (f) =>
+            f.properties.layer === 'ev' ||
+            (Array.isArray((f.properties as { exemptions?: string[] }).exemptions) &&
+              (f.properties as { exemptions?: string[] }).exemptions!.includes(
+                'ev_m1',
+              )),
+        ),
+      } as never)
+    } else {
+      src?.setData(filterStreetCollection(streets, layers) as never)
+    }
   }
 }
 
@@ -509,19 +539,15 @@ export const MapView = forwardRef<
             ? result.spots.filter(
                 (s) => s.layer === 'free_street' || s.zone_code === 'FREE' || s.type === 'free',
               )
-            : layers === 'paid' || layers === 'unclassified'
-              ? result.spots.filter((s) => {
-                  // Pin LOD uses App-filtered spots elsewhere; keep broad here
-                  if (layers === 'unclassified') return s.layer === 'municipal'
-                  return (
-                    s.layer !== 'free_street' &&
-                    s.layer !== 'timed' &&
-                    s.layer !== 'ev'
+            : layers === 'unclassified'
+              ? result.spots.filter((s) => s.layer === 'municipal')
+              : filterRef.current === 'ev'
+                ? result.spots.filter(
+                    (s) => s.layer === 'ev' || s.exemptions?.includes('ev_m1'),
                   )
-                })
-              : Array.isArray(layers)
-                ? result.spots.filter((s) => layers.includes(s.layer))
-                : result.spots
+                : Array.isArray(layers)
+                  ? result.spots.filter((s) => layers.includes(s.layer))
+                  : result.spots
 
       const empty = { type: 'FeatureCollection' as const, features: [] }
       let geo =
@@ -971,23 +997,6 @@ export const MapView = forwardRef<
         map,
         Object.fromEntries(
           PARKING_PROVIDERS.map((p) => [p, p === 'free_street']),
-        ) as Partial<Record<ParkingLayerKey, boolean>>,
-      )
-    } else if (layers === 'paid') {
-      const paidPins = new Set([
-        'europark',
-        'snabb',
-        'citypark',
-        'uhisteenused',
-        'parkit',
-        'park_ride',
-        'loading',
-        'municipal',
-      ])
-      setParkingLayerVisibility(
-        map,
-        Object.fromEntries(
-          PARKING_PROVIDERS.map((p) => [p, paidPins.has(p)]),
         ) as Partial<Record<ParkingLayerKey, boolean>>,
       )
     } else if (layers === 'unclassified') {

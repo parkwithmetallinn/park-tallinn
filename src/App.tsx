@@ -29,9 +29,7 @@ import { parkingQueryKeys, queryClient } from './lib/queryClient'
 import { prefetchParkingLayers } from './lib/parkingDataCache'
 import {
   CITIES,
-  CITY_LIST,
   getInitialCity,
-  persistCity,
   type CityId,
 } from './data/cities'
 import { MOCK_KESKLINN_SPOTS } from './data/mockKesklinn'
@@ -82,13 +80,15 @@ const TIME_EXTEND_OPTIONS = [
   { minutes: 120, label: '+2h' },
 ] as const
 
-/** Compact 5-pill parking filters */
+/** Apple HIG quick filters — keep Elektriauto; city toggle is separate */
 const FILTERS: { id: FilterId; label: string; color?: string }[] = [
   { id: 'all', label: 'Kõik' },
   { id: 'free_street', label: 'Tasuta', color: '#22C55E' },
   { id: 'timed', label: 'Kellaga', color: PARKING_LAYER_META.timed.color },
-  { id: 'paid', label: 'Tasuline', color: '#FF3B30' },
-  { id: 'other', label: 'Muud / Era', color: PARKING_COLOR_UNKNOWN },
+  { id: 'europark', label: 'EuroPark', color: PARKING_LAYER_META.europark.color },
+  { id: 'snabb', label: 'Snabb', color: PARKING_LAYER_META.snabb.color },
+  { id: 'ev', label: 'Elektriauto', color: PARKING_LAYER_META.ev.color },
+  { id: 'other', label: 'Other / Private', color: PARKING_COLOR_UNKNOWN },
 ]
 
 /** Marker click does not auto-start a route (search selection does). */
@@ -102,7 +102,7 @@ const glassDark =
 export default function App() {
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme())
   const dark = theme === 'dark'
-  const [cityId, setCityId] = useState<CityId>(() => getInitialCity())
+  const [cityId] = useState<CityId>(() => getInitialCity())
   const city = CITIES[cityId]
   const [filter, setFilter] = useState<FilterId>('all')
   const [query, setQuery] = useState('')
@@ -240,29 +240,6 @@ export default function App() {
     setRouteSummaryReady(false)
   }, [])
 
-  const switchCity = useCallback(
-    (next: CityId) => {
-      if (next === cityId) return
-      clearRoute()
-      setCityId(next)
-      persistCity(next)
-      setSelected(null)
-      setSearchSheetOpen(false)
-      setSearchLocation(null)
-      setPreciseSpots([])
-      setStreetSpots([])
-      setFilter('all')
-      const cfg = CITIES[next]
-      const center: [number, number] = [cfg.center[0], cfg.center[1]]
-      if (!hasGps) setUserLocation(center)
-      setFlyMode('fly')
-      setFlyTarget(center)
-      setFlyZoom(cfg.zoom)
-      setFlyKey((k) => k + 1)
-    },
-    [cityId, hasGps, clearRoute],
-  )
-
   const allSpots = useMemo(() => {
     const filteredPrecise = preciseSpots.filter((s) => !suppressedIds.has(s.id))
     const filteredStreet = streetSpots.filter((s) => !suppressedIds.has(s.id))
@@ -338,38 +315,10 @@ export default function App() {
   ])
 
   const visibleSpots = useMemo(() => {
-    if (filter === 'free_street') {
-      return allSpots.filter((s) => s.layer === 'free_street')
-    }
-    if (filter === 'timed') {
-      return allSpots.filter((s) => s.layer === 'timed')
-    }
-    if (filter === 'paid') {
-      const paidLayers = new Set([
-        'europark',
-        'snabb',
-        'citypark',
-        'uhisteenused',
-        'parkit',
-        'park_ride',
-        'loading',
-      ])
-      return allSpots.filter((s) => {
-        if (
-          isUnclassifiedParking({
-            layer: s.layer,
-            price_per_hour: s.price_per_hour,
-            zone_code: s.zone_code,
-            operator: s.operator,
-            verified_free: s.layer === 'free_street',
-          })
-        ) {
-          return false
-        }
-        if (s.layer === 'free_street' || s.layer === 'timed') return false
-        if (paidLayers.has(s.layer)) return true
-        return s.layer === 'municipal' && s.price_per_hour > 0
-      })
+    if (filter === 'ev') {
+      return allSpots.filter(
+        (s) => s.layer === 'ev' || s.exemptions?.includes('ev_m1'),
+      )
     }
     if (filter === 'other') {
       return allSpots.filter((s) =>
@@ -381,6 +330,12 @@ export default function App() {
           verified_free: s.layer === 'free_street',
         }),
       )
+    }
+    if (filter === 'free_street') {
+      return allSpots.filter((s) => s.layer === 'free_street')
+    }
+    if (filter !== 'all') {
+      return allSpots.filter((s) => s.layer === filter)
     }
     return allSpots
   }, [allSpots, filter])
@@ -730,29 +685,6 @@ export default function App() {
               >
                 {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </button>
-            </div>
-
-            <div className="flex gap-1 border-t border-black/6 px-2 py-1.5">
-              {CITY_LIST.map((c) => {
-                const active = c.id === cityId
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => switchCity(c.id)}
-                    className={`tap-scale flex-1 rounded-xl px-2 py-1.5 text-[12px] font-bold transition ${
-                      active
-                        ? dark
-                          ? 'bg-white/15 text-white'
-                          : 'bg-[#1C1C1E] text-white'
-                        : muted
-                    }`}
-                    aria-pressed={active}
-                  >
-                    {c.label}
-                  </button>
-                )
-              })}
             </div>
 
             {(geoLoading || geoResults.length > 0 || geoError) && query.trim().length >= 3 ? (
