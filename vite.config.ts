@@ -3,15 +3,12 @@ import react from '@vitejs/plugin-react'
 import { defineConfig, loadEnv } from 'vite'
 
 export default defineConfig(({ mode }) => {
+  // Server-only secrets (no VITE_ prefix — never exposed to the browser)
   const env = loadEnv(mode, process.cwd(), '')
-  const n8nWebhookUrl =
-    env.VITE_N8N_WEBHOOK_URL ||
-    env.VITE_PARKING_WEBHOOK_URL ||
-    env.PARKING_WEBHOOK_URL ||
-    ''
-  const n8nApiKey = env.VITE_N8N_API_KEY || env.N8N_API_KEY || ''
+  const n8nWebhookUrl = env.N8N_WEBHOOK_URL || ''
+  const n8nApiKey = env.N8N_API_KEY || ''
 
-  let n8nOrigin = 'https://mairon8n.app.n8n.cloud'
+  let n8nOrigin = ''
   let n8nPath = '/webhook/parkimine'
   try {
     if (n8nWebhookUrl) {
@@ -20,7 +17,7 @@ export default defineConfig(({ mode }) => {
       n8nPath = u.pathname || n8nPath
     }
   } catch {
-    /* keep defaults when URL is missing/invalid during setup */
+    /* keep empty when URL is missing/invalid during setup */
   }
 
   return {
@@ -59,9 +56,9 @@ export default defineConfig(({ mode }) => {
             Referer: 'https://aks.geoportaal.ee/',
           },
         },
-        // n8n parking session webhook — inject Header Auth from env
+        // n8n parking session webhook — inject Header Auth from server env
         '/api/parkimine': {
-          target: n8nOrigin,
+          target: n8nOrigin || 'http://127.0.0.1',
           changeOrigin: true,
           rewrite: () => n8nPath,
           configure: (proxy) => {

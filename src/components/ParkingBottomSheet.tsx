@@ -15,6 +15,10 @@ import {
   MISSING_ADDRESS,
   resolveSpotAddress,
 } from '../lib/resolveSpotAddress'
+import {
+  canStartParkingSession,
+  sessionStartDisabledHint,
+} from '../data/zones'
 import type { ParkingSpot } from '../types'
 import { navLinks, openAppleMaps } from '../lib/geocode'
 import { PARKING_LAYER_META } from '../map/parkingLayers'
@@ -412,19 +416,28 @@ export function ParkingBottomSheet({
               {sessionAction === 'stop' ? 'Lõpetan…' : 'Lõpeta sessioon'}
             </button>
           ) : (
-            <button
-              type="button"
-              disabled={sessionLoading || !carOk}
-              onClick={(e) => {
-                blockNav(e)
-                setTouched(true)
-                if (!carOk) return
-                onStartSession()
-              }}
-              className="tap-scale flex w-full items-center justify-center gap-2 rounded-2xl bg-[#34C759] px-4 py-3.5 text-[15px] font-semibold text-white disabled:opacity-55"
-            >
-              {sessionAction === 'start' ? 'Alustan…' : 'Alusta sessiooni'}
-            </button>
+            <div className="space-y-1.5">
+              <button
+                type="button"
+                disabled={
+                  sessionLoading || !carOk || !canStartParkingSession(spot)
+                }
+                onClick={(e) => {
+                  blockNav(e)
+                  setTouched(true)
+                  if (!carOk || !canStartParkingSession(spot)) return
+                  onStartSession()
+                }}
+                className="tap-scale flex w-full items-center justify-center gap-2 rounded-2xl bg-[#34C759] px-4 py-3.5 text-[15px] font-semibold text-white disabled:opacity-55"
+              >
+                {sessionAction === 'start' ? 'Alustan…' : 'Alusta sessiooni'}
+              </button>
+              {!canStartParkingSession(spot) ? (
+                <p className="px-1 text-[12px] font-medium text-[#8E8E93]">
+                  {sessionStartDisabledHint(spot)}
+                </p>
+              ) : null}
+            </div>
           )}
 
           {hasActive && onExtendMinutes ? (

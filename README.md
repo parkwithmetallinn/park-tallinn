@@ -5,7 +5,7 @@ Puhas 3D parkimiskaart Tallinnale (MapLibre). Tänavaäärsed tsoonid on teedega
 ## Käivitamine
 
 ```bash
-cp .env.example .env   # täida VITE_N8N_WEBHOOK_URL ja VITE_N8N_API_KEY
+cp .env.example .env   # täida N8N_WEBHOOK_URL ja N8N_API_KEY (server only)
 npm install
 npm run dev
 ```
@@ -16,10 +16,10 @@ Ava [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
 | Muutuja | Kirjeldus |
 |---------|-----------|
-| `VITE_N8N_WEBHOOK_URL` | n8n webhook URL (nt `https://…/webhook/parkimine`) |
-| `VITE_N8N_API_KEY` | Header Auth väärtus päisele `X-N8N-API-KEY` |
+| `N8N_WEBHOOK_URL` | n8n webhook URL (ainult server / Vite proxy / Vercel `api/`) |
+| `N8N_API_KEY` | Header Auth väärtus päisele `X-N8N-API-KEY` (ainult server) |
 
-Kasutatakse klientis (`src/lib/parkingSession.ts`) ning Vite / Vercel `/api/parkimine` proxy’s. Ära commit’i `.env` faili — ainult `.env.example`.
+Brauserer kutsub ainult same-origin `/api/parkimine` — `VITE_*` n8n võtmeid ei kasutata. Ära commit’i `.env` faili — ainult `.env.example`.
 
 ## Zoom LOD (tasemed)
 
@@ -50,8 +50,8 @@ Diagonaalseid “läbi majade” jooni ei joonistata — ainult lühikesed, teel
 
 ## Parkimissessioon (n8n)
 
-Bottom sheet / kellapaneel saadavad POST webhook’ile (`VITE_N8N_WEBHOOK_URL`),
-tavaliselt same-origin `/api/parkimine` proxy kaudu:
+Bottom sheet / kellapaneel saadavad POST same-origin `/api/parkimine` proxy kaudu
+(server lisab `X-N8N-API-KEY` `N8N_API_KEY` keskkonnamuutujast):
 
 ```json
 { "action": "start", "carNumber": "123ABC", "zone": "KESKLINN" }
@@ -76,7 +76,9 @@ Server toetab ainult `start` | `stop` | `status` (extend puudub). Ettemakstud mi
 - **status** ilma `carNumber`-ita (või **Kõik** nupp) — `{ activeSessions[], count }`
 - Vastused normaliseeritakse `ACTIVE` | `NOT_FOUND` | `ERROR` (`src/lib/parkingSession.ts`). `NOT_FOUND` ei ole viga.
 - App load / window focus / visibilitychange (≤1× / 15 s) kutsub `status` kui kohalik sessioon olemas: ACTIVE → sync; NOT_FOUND → kustuta + info toast; ERROR → hoia kohalikku olekut + „ühendus puudub“.
-- Header Auth: `X-N8N-API-KEY` = `VITE_N8N_API_KEY` (ei ole hardcode’itud lähtekoodis)
+- Header Auth lisab ainult proxy: `X-N8N-API-KEY` = `N8N_API_KEY` (klient päist ei saada)
+- Tasuta / kellaga / P&R kohtadel sessiooni alustamine on keelatud (`src/data/zones.ts`)
+- Tsoonihinnad: Vanalinn 6.00 · Südalinn 4.80 · Kesklinn 1.50 · Pirita 0.60 €/h (kontrolli tallinn.ee)
 
 Deep-link testimiseks (ilma kaardiklõpsuta):
 

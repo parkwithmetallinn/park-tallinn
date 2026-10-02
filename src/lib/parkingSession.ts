@@ -1,40 +1,18 @@
 /**
- * Parking session API — n8n webhook.
+ * Parking session API — same-origin `/api/parkimine` only.
  *
- * Credentials come from Vite env (see `.env.example`):
- *   VITE_N8N_WEBHOOK_URL
- *   VITE_N8N_API_KEY
+ * The browser never sees n8n credentials. The Vite / Vercel proxy reads
+ * N8N_WEBHOOK_URL + N8N_API_KEY (server env) and injects X-N8N-API-KEY.
  *
  * Body:  { action: "start"|"stop"|"status", carNumber?, zone? }
- * Prefers same-origin `/api/parkimine` (server also reads the same env vars).
- *
  * There is NO server "extend" action — prepaid time is local-only.
  */
 
-/** Direct cloud URL — last-resort fallback when the proxy is unavailable. */
-export const PARKING_WEBHOOK_URL =
-  import.meta.env.VITE_N8N_WEBHOOK_URL ||
-  import.meta.env.VITE_PARKING_WEBHOOK_URL ||
-  ''
-
-/** Header Auth value from env — never hardcode secrets in source. */
-export const PARKING_WEBHOOK_API_KEY = import.meta.env.VITE_N8N_API_KEY || ''
-
-/**
- * Headers sent on every client POST (start / stop / status).
- * The Vite/Vercel proxy also injects X-N8N-API-KEY from the same env vars.
- */
-export const PARKING_WEBHOOK_HEADERS: Record<string, string> = {
-  'X-N8N-API-KEY': PARKING_WEBHOOK_API_KEY,
-  'Content-Type': 'application/json',
-}
-
-/** Same-origin proxy — preferred path. */
+/** Same-origin proxy — the only client endpoint. */
 const PARKING_WEBHOOK_PROXY = '/api/parkimine'
 
 function webhookHeaders(): Headers {
   const headers = new Headers()
-  headers.set('X-N8N-API-KEY', PARKING_WEBHOOK_API_KEY)
   headers.set('Content-Type', 'application/json')
   return headers
 }
@@ -353,7 +331,7 @@ export function toSessionOutcome(
       kind: 'ERROR',
       message:
         response.message ||
-        'Autentimine ebaõnnestus — kontrolli X-N8N-API-KEY päist',
+        'Autentimine ebaõnnestus — kontrolli serveri N8N_API_KEY seadistust',
       httpStatus: meta.httpStatus,
       activeSessions: list,
       count,
@@ -499,7 +477,8 @@ async function postSession(
     return toSessionOutcome(
       {
         success: false,
-        message: 'Autentimine ebaõnnestus — kontrolli X-N8N-API-KEY päist',
+        message:
+          'Autentimine ebaõnnestus — kontrolli serveri N8N_API_KEY seadistust',
       },
       body.action,
       { httpStatus: res.status === 200 ? 401 : res.status },
@@ -602,8 +581,7 @@ function validateRequest(input: ParkingSessionRequest): string | null {
 }
 
 /**
- * Send a parking session action via the production n8n webhook.
- * Prefers same-origin `/api/parkimine`; falls back to the direct cloud URL.
+ * Send a parking session action via same-origin `/api/parkimine` only.
  * Returns a typed SessionOutcome (ACTIVE | NOT_FOUND | ERROR).
  */
 export async function sendParkingSession(
@@ -621,25 +599,7 @@ export async function sendParkingSession(
     zone: input.zone?.trim() || undefined,
   }
 
-  if (!PARKING_WEBHOOK_API_KEY) {
-    return {
-      kind: 'ERROR',
-      message: 'VITE_N8N_API_KEY puudub — seadista .env fail',
-    }
-  }
-
-  const viaProxy = await postSession(PARKING_WEBHOOK_PROXY, body, signal)
-  // Proxy network error → try direct URL
-  if (viaProxy.kind === 'ERROR' && /ühendus ebaõnnestus/i.test(viaProxy.message)) {
-    if (!PARKING_WEBHOOK_URL) {
-      return {
-        kind: 'ERROR',
-        message: 'VITE_N8N_WEBHOOK_URL puudub — seadista .env fail',
-      }
-    }
-    return postSession(PARKING_WEBHOOK_URL, body, signal)
-  }
-  return viaProxy
+  return postSession(PARKING_WEBHOOK_PROXY, body, signal)
 }
 
 export function startParkingSession(

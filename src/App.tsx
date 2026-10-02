@@ -29,6 +29,11 @@ import { parkingQueryKeys, queryClient } from './lib/queryClient'
 import { prefetchParkingLayers } from './lib/parkingDataCache'
 import { MOCK_KESKLINN_SPOTS } from './data/mockKesklinn'
 import { PARKING_SPOTS, TALLINN_CENTER } from './data/parking'
+import {
+  canStartParkingSession,
+  sessionStartDisabledHint,
+  ZONE_RATE_LIST,
+} from './data/zones'
 import { distanceMeters, formatDistance } from './lib/geo'
 import {
   geocodeToSearchLocation,
@@ -673,18 +678,30 @@ export default function App() {
                   {sessionAction === 'stop' ? 'Lõpetan…' : 'Lõpeta sessioon'}
                 </button>
               ) : (
-                <button
-                  type="button"
-                  disabled={sessionLoading || !selected || carNumber.trim().length < 2}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    void beginParkingSession()
-                  }}
-                  className="flex-1 rounded-xl bg-moss py-2 text-xs font-bold text-white disabled:opacity-55"
-                >
-                  {sessionAction === 'start' ? 'Alustan…' : 'Alusta sessiooni'}
-                </button>
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  <button
+                    type="button"
+                    disabled={
+                      sessionLoading ||
+                      !selected ||
+                      carNumber.trim().length < 2 ||
+                      (selected != null && !canStartParkingSession(selected))
+                    }
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      void beginParkingSession()
+                    }}
+                    className="w-full rounded-xl bg-moss py-2 text-xs font-bold text-white disabled:opacity-55"
+                  >
+                    {sessionAction === 'start' ? 'Alustan…' : 'Alusta sessiooni'}
+                  </button>
+                  {selected && !canStartParkingSession(selected) ? (
+                    <p className={`truncate text-[10px] font-semibold ${muted}`}>
+                      {sessionStartDisabledHint(selected)}
+                    </p>
+                  ) : null}
+                </div>
               )}
               <button
                 type="button"
@@ -809,6 +826,18 @@ export default function App() {
                 Avalikel tasulistel linnatänavatel kehtib esimesed 15 minutit tasuta. Pane kell
                 esiklaasile.
               </p>
+            </div>
+            <div className="rounded-2xl bg-paper-2 p-3">
+              <h4 className="mb-1 text-sm font-bold text-ink">Tsoonide hinnad</h4>
+              <p className="mb-2 text-[11px] opacity-80">
+                Kontrolli kehtivaid hindu tallinn.ee lehel.
+              </p>
+              {ZONE_RATE_LIST.map((z) => (
+                <p key={z.code}>
+                  • {z.name} ({z.code}) — {z.pricePerHour.toFixed(2)} €/h
+                  {z.freeMinutes > 0 ? ` · ${z.freeMinutes} min tasuta` : ''}
+                </p>
+              ))}
             </div>
             <div className="rounded-2xl bg-paper-2 p-3">
               <h4 className="mb-1 text-sm font-bold text-ink">Kesklinna tasuta kellaajad</h4>

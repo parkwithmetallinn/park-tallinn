@@ -34,6 +34,7 @@ import {
   saveTimerState,
   type TimerMode,
 } from '../lib/storage'
+import { canStartParkingSession } from '../data/zones'
 import type { ParkingSpot } from '../types'
 
 const SYNC_THROTTLE_MS = 15_000
@@ -391,6 +392,18 @@ export function useParkingSession(selected: ParkingSpot | null) {
     const plate = carNumber.trim()
     if (!plate) {
       showSessionFeedback('error', 'Sisesta auto number')
+      return
+    }
+    if (!canStartParkingSession(selected)) {
+      showSessionFeedback(
+        'info',
+        'Sessiooni ei alustata',
+        selected.type === 'pr' || selected.layer === 'park_ride'
+          ? 'Pargi & reisi'
+          : selected.type === 'timed' || selected.layer === 'timed'
+            ? 'Kellaga koht'
+            : 'Tasuta koht',
+      )
       return
     }
     if (activeSession) {

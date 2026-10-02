@@ -1,4 +1,5 @@
 import type { PaidZone, ParkingSpotSeed } from '../types'
+import { ZONE_RATES } from './zones'
 
 export const TALLINN_CENTER: [number, number] = [59.437, 24.7535]
 
@@ -40,8 +41,8 @@ export const PAID_ZONES: PaidZone[] = [
     ],
     note: 'Kõrgeim tariif · 15 min tasuta kellaga',
     zone_code: 'VANALINN',
-    free_minutes: 15,
-    price_per_hour: 6.0,
+    free_minutes: ZONE_RATES.VANALINN.freeMinutes,
+    price_per_hour: ZONE_RATES.VANALINN.pricePerHour,
     operator: 'Tallinna Linn',
   },
   {
@@ -67,8 +68,8 @@ export const PAID_ZONES: PaidZone[] = [
     ],
     note: 'Keskmine tariif · 15 min tasuta kellaga',
     zone_code: 'SÜDALINN',
-    free_minutes: 15,
-    price_per_hour: 4.5,
+    free_minutes: ZONE_RATES.SÜDALINN.freeMinutes,
+    price_per_hour: ZONE_RATES.SÜDALINN.pricePerHour,
     operator: 'AS Ühisteenused',
   },
   {
@@ -103,8 +104,8 @@ export const PAID_ZONES: PaidZone[] = [
     ],
     note: 'Tavaline tariif · öösel & pühapäeval tasuta',
     zone_code: 'KESKLINN',
-    free_minutes: 15,
-    price_per_hour: 2.5,
+    free_minutes: ZONE_RATES.KESKLINN.freeMinutes,
+    price_per_hour: ZONE_RATES.KESKLINN.pricePerHour,
     operator: 'Tallinna Linn',
   },
   {
@@ -131,8 +132,8 @@ export const PAID_ZONES: PaidZone[] = [
     ],
     note: 'Hooajaline tasuline tsoon ranna ääres',
     zone_code: 'PIRITA',
-    free_minutes: 0,
-    price_per_hour: 2.0,
+    free_minutes: ZONE_RATES.PIRITA.freeMinutes,
+    price_per_hour: ZONE_RATES.PIRITA.pricePerHour,
     operator: 'Tallinna Linn',
   },
 ]
