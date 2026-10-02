@@ -79,6 +79,13 @@ import {
   saveActiveSession,
   saveCarNumber,
 } from './lib/storage'
+import {
+  applyDocumentTheme,
+  getInitialTheme,
+  persistTheme,
+  toggleTheme,
+  type ThemeMode,
+} from './lib/theme'
 import { PARKING_LAYER_META } from './map/parkingLayers'
 import type { FilterId, ParkingSpot } from './types'
 
@@ -98,7 +105,8 @@ const glassDark =
   'rounded-2xl border border-white/10 bg-[#1C1C1E]/78 shadow-[0_8px_28px_rgba(0,0,0,0.4)] backdrop-blur-md'
 
 export default function App() {
-  const [dark, setDark] = useState(false)
+  const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme())
+  const dark = theme === 'dark'
   const [filter, setFilter] = useState<FilterId>('all')
   const [query, setQuery] = useState('')
   const [geoResults, setGeoResults] = useState<GeocodeResult[]>([])
@@ -976,8 +984,9 @@ export default function App() {
   }
 
   useEffect(() => {
-    document.documentElement.classList.toggle('map-dark', dark)
-  }, [dark])
+    applyDocumentTheme(theme)
+    persistTheme(theme)
+  }, [theme])
 
   const panel = dark ? glassDark : glass
   const muted = dark ? 'text-[#98989D]' : 'text-[#8E8E93]'
@@ -1003,6 +1012,7 @@ export default function App() {
           <MapView
             spots={allSpots}
             filter={filter}
+            theme={theme}
             userLocation={userLocation}
             flyTarget={flyTarget}
             flyKey={flyKey}
@@ -1074,9 +1084,10 @@ export default function App() {
               </button>
               <button
                 type="button"
-                onClick={() => setDark((d) => !d)}
+                onClick={() => setTheme((t) => toggleTheme(t))}
                 className={`rounded-full p-2.5 ${chip}`}
-                title="Hele / tume"
+                title={dark ? 'Hele režiim' : 'Tume režiim'}
+                aria-label={dark ? 'Lülita hele režiim' : 'Lülita tume režiim'}
               >
                 {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </button>

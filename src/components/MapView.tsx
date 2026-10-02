@@ -46,6 +46,7 @@ import {
 import { dedupeStreetAgainstPolygons } from '../lib/spatialDedupe'
 import { parkingIndex } from '../lib/spatialIndex'
 import type { DrivingRoute } from '../lib/routing'
+import type { ThemeMode } from '../lib/theme'
 import { createBasemapStyle } from '../map/createBasemapStyle'
 import {
   DISTRICT_FILL_LAYER,
@@ -209,6 +210,7 @@ function applySelectionHighlight(map: MapLibreMapType, selectedId: string | null
 export function MapView({
   spots,
   filter,
+  theme = 'light',
   userLocation,
   flyTarget,
   flyKey,
@@ -231,6 +233,8 @@ export function MapView({
 }: {
   spots: ParkingSpot[]
   filter: FilterId
+  /** Basemap + overlay theme (light | dark). */
+  theme?: ThemeMode
   userLocation: [number, number]
   flyTarget: [number, number] | null
   flyKey: number
@@ -277,6 +281,11 @@ export function MapView({
   const selectedIdRef = useRef(selectedId)
   const pitch3dRef = useRef(pitch3d)
   const flyModeRef = useRef(flyMode)
+  const themeRef = useRef(theme)
+  const appliedThemeRef = useRef<ThemeMode>(theme)
+  const districtDebugRef = useRef(false)
+  const routeRef = useRef(route)
+  const navigatingRef = useRef(navigating)
   const suppressedRef = useRef<Set<string>>(new Set())
   const loadGenRef = useRef(0)
   const [ready, setReady] = useState(false)
@@ -291,6 +300,9 @@ export function MapView({
   selectedIdRef.current = selectedId
   pitch3dRef.current = pitch3d
   flyModeRef.current = flyMode
+  themeRef.current = theme
+  routeRef.current = route
+  navigatingRef.current = navigating
   suppressedRef.current = new Set(
     suppressedFeatureIds instanceof Set
       ? suppressedFeatureIds
@@ -302,7 +314,7 @@ export function MapView({
 
     const map = new MapLibreMap({
       container: containerRef.current,
-      style: createBasemapStyle(),
+      style: createBasemapStyle(themeRef.current),
       center: [24.7535, 59.437],
       zoom: 14.2,
       pitch: pitch3dRef.current ? NAV_PITCH : 0,
@@ -409,140 +421,198 @@ export function MapView({
       })
     }
 
-    const finishSetup = () => {
-      if (setupDone) return
-      setupDone = true
-      ensureParkingOverlaySources(map)
-      bindHover()
-      // District hover → feature-state (does not affect parking hit targets)
-      const districtLayers = [DISTRICT_FILL_LAYER, DISTRICT_SUBZONE_FILL_LAYER]
-      let hoveredDistrict: string | number | null = null
-      const onDistrictMove = (e: MapLayerMouseEvent) => {
-        const f = e.features?.[0]
-        const id = f?.id ?? f?.properties?.id ?? null
-        if (id === hoveredDistrict) return
-        hoveredDistrict = id
-        setDistrictHover(map, id)
-      }
-      const onDistrictLeave = () => {
-        hoveredDistrict = null
-        setDistrictHover(map, null)
-      }
-      for (const layerId of districtLayers) {
-        if (!map.getLayer(layerId)) continue
-        map.on('mousemove', layerId, onDistrictMove)
-        map.on('mouseleave', layerId, onDistrictLeave)
-      }
-      map.resize()
-      map.setPitch(pitch3dRef.current ? NAV_PITCH : 0)
-      try {
-        map.setLight({
-          anchor: 'viewport',
-          color: '#ffffff',
-          intensity: 0.28,
-          position: [1.2, 210, 35],
-        })
-      } catch {
-        /* older style without light support */
-      }
-      setReady(true)
-      onMapReadyRef.current?.()
+    ;(map as MapLibreMapType & { __refreshViewport?: () => void }).__refreshViewport = () => {
       void refreshViewport(map)
-      emitZoom(map)
+    }
 
-      // Dual-layer from estonia_parking_master.geojson (cache-first).
-      // Prep purges private/underground; spatial dedupe prefers polygons.
-      const applyPoly = (fc: PreciseParkingCollection) => {
-        preciseFcRef.current = fc
-        applyDualLayerFilter(
+    const reapplyFilterVisibility = () => {
+      const layers = filterToLayers(filterRef.current)
+      if (layers === 'all') {
+        setParkingLayerVisibility(
           map,
-          filterRef.current,
-          fc,
-          streetRawFcRef.current,
-          suppressedRef.current,
+          Object.fromEntries(PARKING_PROVIDERS.map((p) => [p, true])),
         )
-        const spots = preciseCollectionToSpots({
-          type: 'FeatureCollection',
-          features: withoutSuppressed(fc.features, suppressedRef.current),
-        })
-        for (const s of spots) parkingIndex.insert(s)
-        onPreciseSpotsLoadedRef.current?.(spots)
-        applySelectionHighlight(map, selectedIdRef.current)
-        if (import.meta.env.DEV) {
-          console.info('[parking] polygon purge', getLastPolygonPurgeStats())
-        }
+      } else if (layers === 'verified_free') {
+        setParkingLayerVisibility(
+          map,
+          Object.fromEntries(
+            PARKING_PROVIDERS.map((p) => [p, p === 'free_street']),
+          ) as Partial<Record<ParkingLayerKey, boolean>>,
+        )
+      } else {
+        setParkingLayerVisibility(
+          map,
+          Object.fromEntries(
+            PARKING_PROVIDERS.map((p) => [p, layers.includes(p)]),
+          ) as Partial<Record<ParkingLayerKey, boolean>>,
+        )
       }
+    }
 
-      const applyStreet = (fc: StreetParkingCollection) => {
-        streetRawFcRef.current = fc
-        const deduped = preciseFcRef.current
-          ? dedupeStreetAgainstPolygons(
+    const reapplyOverlayData = () => {
+      reapplyFilterVisibility()
+      applyDualLayerFilter(
+        map,
+        filterRef.current,
+        preciseFcRef.current,
+        streetRawFcRef.current ?? streetFcRef.current,
+        suppressedRef.current,
+      )
+      applySelectionHighlight(map, selectedIdRef.current)
+      setDistrictDebugVisible(map, districtDebugRef.current)
+
+      const routeSrc = map.getSource(ROUTE_SOURCE) as GeoJSONSource | undefined
+      if (routeSrc) {
+        const r = routeRef.current
+        if (!r || !navigatingRef.current) {
+          routeSrc.setData({ type: 'FeatureCollection', features: [] })
+        } else {
+          routeSrc.setData({
+            type: 'FeatureCollection',
+            features: [
               {
-                type: 'FeatureCollection',
-                features: withoutSuppressed(fc.features, suppressedRef.current),
+                type: 'Feature',
+                properties: {},
+                geometry: { type: 'LineString', coordinates: r.coordinates },
               },
-              {
-                type: 'FeatureCollection',
-                features: withoutSuppressed(
-                  preciseFcRef.current.features,
-                  suppressedRef.current,
-                ),
-              },
-            )
-          : {
-              collection: {
-                type: 'FeatureCollection' as const,
-                features: withoutSuppressed(fc.features, suppressedRef.current),
-              },
-              suppressed: 0,
-              kept: fc.features.length,
-              suppressedIds: [] as string[],
-            }
-        streetFcRef.current = deduped.collection
-        applyDualLayerFilter(
-          map,
-          filterRef.current,
-          preciseFcRef.current,
-          streetRawFcRef.current,
-          suppressedRef.current,
-        )
-        const spots = streetCollectionToSpots(deduped.collection)
-        for (const s of spots) parkingIndex.insert(s)
-        onStreetSpotsLoadedRef.current?.(spots)
-        applySelectionHighlight(map, selectedIdRef.current)
-        if (import.meta.env.DEV) {
-          console.info('[parking] street purge', getLastStreetPurgeStats())
-          console.info('[parking] spatial dedupe', {
-            suppressed: deduped.suppressed,
-            kept: deduped.kept,
+            ],
           })
         }
       }
-
-      const warmPoly = getCachedPolygons()
-      const warmStreet = getCachedStreets()
-      if (warmPoly) applyPoly(warmPoly)
-      if (warmStreet) applyStreet(warmStreet)
-
-      void loadParkingPolygonsCached()
-        .then(applyPoly)
-        .catch((err) => {
-          console.warn('estonia_parking_master (lots) failed to load', err)
-        })
-
-      void loadStreetParkingCached()
-        .then(applyStreet)
-        .catch((err) => {
-          console.warn('estonia_parking_master (streets) failed to load', err)
-        })
+      void refreshViewport(map)
     }
 
-    map.once('style.load', finishSetup)
+    const onStyleLoad = () => {
+      ensureParkingOverlaySources(map, themeRef.current)
+      appliedThemeRef.current = themeRef.current
+
+      if (!setupDone) {
+        setupDone = true
+        bindHover()
+        // District hover → feature-state (does not affect parking hit targets)
+        const districtLayers = [DISTRICT_FILL_LAYER, DISTRICT_SUBZONE_FILL_LAYER]
+        let hoveredDistrict: string | number | null = null
+        const onDistrictMove = (e: MapLayerMouseEvent) => {
+          const f = e.features?.[0]
+          const id = f?.id ?? f?.properties?.id ?? null
+          if (id === hoveredDistrict) return
+          hoveredDistrict = id
+          setDistrictHover(map, id)
+        }
+        const onDistrictLeave = () => {
+          hoveredDistrict = null
+          setDistrictHover(map, null)
+        }
+        for (const layerId of districtLayers) {
+          if (!map.getLayer(layerId)) continue
+          map.on('mousemove', layerId, onDistrictMove)
+          map.on('mouseleave', layerId, onDistrictLeave)
+        }
+        map.resize()
+        map.setPitch(pitch3dRef.current ? NAV_PITCH : 0)
+        setReady(true)
+        onMapReadyRef.current?.()
+        void refreshViewport(map)
+        emitZoom(map)
+
+        // Dual-layer from estonia_parking_master.geojson (cache-first).
+        // Prep purges private/underground; spatial dedupe prefers polygons.
+        const applyPoly = (fc: PreciseParkingCollection) => {
+          preciseFcRef.current = fc
+          applyDualLayerFilter(
+            map,
+            filterRef.current,
+            fc,
+            streetRawFcRef.current,
+            suppressedRef.current,
+          )
+          const spots = preciseCollectionToSpots({
+            type: 'FeatureCollection',
+            features: withoutSuppressed(fc.features, suppressedRef.current),
+          })
+          for (const s of spots) parkingIndex.insert(s)
+          onPreciseSpotsLoadedRef.current?.(spots)
+          applySelectionHighlight(map, selectedIdRef.current)
+          if (import.meta.env.DEV) {
+            console.info('[parking] polygon purge', getLastPolygonPurgeStats())
+          }
+        }
+
+        const applyStreet = (fc: StreetParkingCollection) => {
+          streetRawFcRef.current = fc
+          const deduped = preciseFcRef.current
+            ? dedupeStreetAgainstPolygons(
+                {
+                  type: 'FeatureCollection',
+                  features: withoutSuppressed(fc.features, suppressedRef.current),
+                },
+                {
+                  type: 'FeatureCollection',
+                  features: withoutSuppressed(
+                    preciseFcRef.current.features,
+                    suppressedRef.current,
+                  ),
+                },
+              )
+            : {
+                collection: {
+                  type: 'FeatureCollection' as const,
+                  features: withoutSuppressed(fc.features, suppressedRef.current),
+                },
+                suppressed: 0,
+                kept: fc.features.length,
+                suppressedIds: [] as string[],
+              }
+          streetFcRef.current = deduped.collection
+          applyDualLayerFilter(
+            map,
+            filterRef.current,
+            preciseFcRef.current,
+            streetRawFcRef.current,
+            suppressedRef.current,
+          )
+          const spots = streetCollectionToSpots(deduped.collection)
+          for (const s of spots) parkingIndex.insert(s)
+          onStreetSpotsLoadedRef.current?.(spots)
+          applySelectionHighlight(map, selectedIdRef.current)
+          if (import.meta.env.DEV) {
+            console.info('[parking] street purge', getLastStreetPurgeStats())
+            console.info('[parking] spatial dedupe', {
+              suppressed: deduped.suppressed,
+              kept: deduped.kept,
+            })
+          }
+        }
+
+        const warmPoly = getCachedPolygons()
+        const warmStreet = getCachedStreets()
+        if (warmPoly) applyPoly(warmPoly)
+        if (warmStreet) applyStreet(warmStreet)
+
+        void loadParkingPolygonsCached()
+          .then(applyPoly)
+          .catch((err) => {
+            console.warn('estonia_parking_master (lots) failed to load', err)
+          })
+
+        void loadStreetParkingCached()
+          .then(applyStreet)
+          .catch((err) => {
+            console.warn('estonia_parking_master (streets) failed to load', err)
+          })
+        return
+      }
+
+      // Theme / style reload — restore overlays + filters + selection + camera data
+      reapplyOverlayData()
+    }
+
+    map.on('style.load', onStyleLoad)
     map.once('load', () => {
-      if (map.isStyleLoaded()) finishSetup()
+      if (map.isStyleLoaded() && !setupDone) onStyleLoad()
     })
     const readyTimer = window.setTimeout(() => {
-      if (map.isStyleLoaded()) finishSetup()
+      if (map.isStyleLoaded() && !setupDone) onStyleLoad()
     }, 2500)
 
     let moveTimer: number | undefined
@@ -634,21 +704,37 @@ export function MapView({
     const ro = new ResizeObserver(() => map.resize())
     ro.observe(containerRef.current)
 
-    ;(map as MapLibreMapType & { __refreshViewport?: () => void }).__refreshViewport = () => {
-      void refreshViewport(map)
-    }
-
     return () => {
       window.clearTimeout(readyTimer)
       window.clearTimeout(moveTimer)
       ro.disconnect()
       userMarkerRef.current?.remove()
       searchMarkerRef.current?.remove()
+      map.off('style.load', onStyleLoad)
       map.remove()
       mapRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  /** Swap basemap style on theme toggle; style.load re-adds all custom layers. */
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    if (appliedThemeRef.current === theme) return
+
+    const center = map.getCenter()
+    const zoom = map.getZoom()
+    const pitch = map.getPitch()
+    const bearing = map.getBearing()
+
+    themeRef.current = theme
+    map.setStyle(createBasemapStyle(theme))
+    // Camera is preserved by MapLibre across setStyle; jumpTo guards edge cases
+    map.once('style.load', () => {
+      map.jumpTo({ center, zoom, pitch, bearing })
+    })
+  }, [theme, ready])
 
   useEffect(() => {
     void spots
@@ -801,6 +887,7 @@ export function MapView({
   const [districtDebug, setDistrictDebug] = useState(false)
 
   useEffect(() => {
+    districtDebugRef.current = districtDebug
     const map = mapRef.current
     if (!ready || !map) return
     setDistrictDebugVisible(map, districtDebug)
@@ -813,7 +900,7 @@ export function MapView({
       <button
         type="button"
         onClick={() => setDistrictDebug((v) => !v)}
-        className="absolute bottom-28 left-3 z-20 rounded-md border border-slate-300 bg-white/95 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm backdrop-blur hover:bg-white"
+        className="district-qa-btn absolute bottom-28 left-3 z-20 rounded-md border border-slate-300 bg-white/95 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm backdrop-blur hover:bg-white"
         title="Toggle district QA reference points"
       >
         {districtDebug ? 'District QA: ON' : 'District QA'}

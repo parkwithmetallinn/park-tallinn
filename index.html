@@ -4,10 +4,25 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#F2F4F7" />
     <meta
       name="description"
       content="Tallinna tasuta ja kellaajaga parkimine — avalikud parklad, tänavaäärsed kohad, Pargi ja Reisi."
     />
+    <script>
+      try {
+        var t = localStorage.getItem('parkvibe_theme')
+        if (t !== 'light' && t !== 'dark') {
+          t = window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light'
+        }
+        document.documentElement.classList.toggle('map-dark', t === 'dark')
+        document.documentElement.style.colorScheme = t
+        var m = document.querySelector('meta[name="theme-color"]')
+        if (m) m.setAttribute('content', t === 'dark' ? '#12161c' : '#F2F4F7')
+      } catch (e) {}
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

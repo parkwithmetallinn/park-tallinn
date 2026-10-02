@@ -47,6 +47,10 @@ body {
   background: #f1f5f9;
 }
 
+.map-dark .maplibre-root {
+  background: #12161c;
+}
+
 .maplibre-root .maplibregl-canvas {
   outline: none;
 }
@@ -58,9 +62,45 @@ body {
   overflow: hidden;
 }
 
+.map-dark .maplibre-root .maplibregl-ctrl-group {
+  background: #1a1f27 !important;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.45) !important;
+}
+
+.map-dark .maplibre-root .maplibregl-ctrl-group button {
+  background-color: #1a1f27 !important;
+}
+
+.map-dark .maplibre-root .maplibregl-ctrl-group button + button {
+  border-top-color: rgb(255 255 255 / 0.08) !important;
+}
+
+.map-dark .maplibre-root .maplibregl-ctrl-group button:hover {
+  background-color: #222831 !important;
+}
+
+.map-dark .maplibre-root .maplibregl-ctrl-icon {
+  filter: invert(1) brightness(1.15);
+}
+
 .maplibre-root .maplibregl-ctrl-attrib {
   font-size: 10px;
   background: rgb(241 245 249 / 0.85) !important;
+}
+
+.map-dark .maplibre-root .maplibregl-ctrl-attrib {
+  background: rgb(18 22 28 / 0.88) !important;
+  color: #c9d1da !important;
+}
+
+.map-dark .maplibre-root .maplibregl-ctrl-attrib a {
+  color: #9db0c6 !important;
+}
+
+.map-dark .district-qa-btn {
+  border-color: rgb(255 255 255 / 0.15);
+  background: rgb(28 28 30 / 0.92);
+  color: #e5e7eb;
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -246,6 +286,20 @@ body {
   background: #0e7490;
   border: 3px solid #fff;
   box-shadow: 0 0 10px rgb(0 0 0 / 0.25);
+}
+
+.map-dark .user-dot {
+  background: #38bdf8;
+  border-color: #0b0e12;
+  box-shadow: 0 0 12px rgb(56 189 248 / 0.45);
+}
+
+.map-dark .user-pulse {
+  background: rgb(56 189 248 / 0.35);
+}
+
+.map-dark .search-pin-dot {
+  border-color: #0b0e12;
 }
 
 .search-pin {
