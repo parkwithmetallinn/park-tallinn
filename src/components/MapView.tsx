@@ -129,6 +129,14 @@ function makeSearchPinEl(onClick: () => void) {
   return wrap
 }
 
+function makeFullSpotEl() {
+  const wrap = document.createElement('div')
+  wrap.className = 'full-spot-badge'
+  wrap.setAttribute('aria-label', 'Parkla on täis')
+  wrap.textContent = 'TÄIS'
+  return wrap
+}
+
 function prefersReducedMotion() {
   return (
     typeof window !== 'undefined' &&
@@ -347,6 +355,8 @@ export const MapView = forwardRef<
     onMapReady?: () => void
     /** Admin-approved REPORT_INVALID suppressions (never mutates production GeoJSON). */
     suppressedFeatureIds?: Set<string> | string[]
+    /** Crowdsourced "lot is full" marks (60 min TTL) — grey TÄIS badges. */
+    fullSpotIds?: Set<string> | string[]
     /** Left/bottom info panel open — shift camera so pin stays visible. */
     infoPanelOpen?: boolean
     /** Active city layer (Tallinn default — keeps existing data path). */
@@ -376,6 +386,7 @@ export const MapView = forwardRef<
     onStreetSpotsLoaded,
     onMapReady,
     suppressedFeatureIds,
+    fullSpotIds,
     infoPanelOpen = false,
     cityId = 'tallinn',
   },
@@ -385,6 +396,7 @@ export const MapView = forwardRef<
   const mapRef = useRef<MapLibreMapType | null>(null)
   const userMarkerRef = useRef<Marker | null>(null)
   const searchMarkerRef = useRef<Marker | null>(null)
+  const fullMarkersRef = useRef<Map<string, Marker>>(new Map())
   const routeAnimatingRef = useRef(false)
   const routeIntroCancelRef = useRef({ cancelled: false })
   const routeDrawRafRef = useRef(0)
@@ -861,6 +873,8 @@ export const MapView = forwardRef<
       ro.disconnect()
       userMarkerRef.current?.remove()
       searchMarkerRef.current?.remove()
+      for (const m of fullMarkersRef.current.values()) m.remove()
+      fullMarkersRef.current.clear()
       map.off('style.load', onStyleLoad)
       map.remove()
       mapRef.current = null
@@ -1070,6 +1084,44 @@ export const MapView = forwardRef<
       searchMarkerRef.current.setLngLat([searchPin.lng, searchPin.lat])
     }
   }, [searchPin, ready])
+
+  /** Grey TÄIS badges for crowdsourced full lots. */
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    const ids = new Set(
+      fullSpotIds instanceof Set
+        ? fullSpotIds
+        : Array.isArray(fullSpotIds)
+          ? fullSpotIds
+          : [],
+    )
+    const byId = new Map(spots.map((s) => [s.id, s]))
+    const markers = fullMarkersRef.current
+
+    for (const [id, marker] of markers) {
+      if (!ids.has(id)) {
+        marker.remove()
+        markers.delete(id)
+      }
+    }
+    for (const id of ids) {
+      const spot = byId.get(id) ?? parkingIndex.getById(id)
+      if (!spot) continue
+      const existing = markers.get(id)
+      if (existing) {
+        existing.setLngLat([spot.lng, spot.lat])
+      } else {
+        const m = new Marker({
+          element: makeFullSpotEl(),
+          anchor: 'center',
+        })
+          .setLngLat([spot.lng, spot.lat])
+          .addTo(map)
+        markers.set(id, m)
+      }
+    }
+  }, [fullSpotIds, spots, ready])
 
   useEffect(() => {
     const map = mapRef.current

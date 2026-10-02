@@ -10,6 +10,7 @@ import {
 import type { ActiveParkingSession } from '../lib/parkingSession'
 import { formatHourlyRate, formatSessionInstant } from '../lib/parkingSession'
 import { getCachedAddress } from '../lib/addressCache'
+import type { AlternativeParking } from '../lib/alternatives'
 import { isRealAddress } from '../lib/isRealAddress'
 import {
   MISSING_ADDRESS,
@@ -30,6 +31,7 @@ import {
 } from '../lib/parkingClassification'
 import { PARKING_LAYER_META } from '../map/parkingLayers'
 import { streetLineColor } from '../map/streetLineTheme'
+import { FindParkingActions } from './FindParkingActions'
 import { InfoSidePanelShell } from './InfoSidePanel'
 
 function blockNav(e: MouseEvent | FormEvent) {
@@ -87,6 +89,13 @@ export function ParkingBottomSheet({
   onCheckStatus,
   onExtendMinutes,
   onReportInvalid,
+  alternatives = [],
+  noAlternatives = false,
+  isFull = false,
+  onFindAnother,
+  onMarkFull,
+  onWidenRadius,
+  onSelectAlternative,
 }: {
   spot: ParkingSpot
   distanceLabel?: string | null
@@ -104,6 +113,13 @@ export function ParkingBottomSheet({
   onExtendMinutes?: (minutes: number) => void
   /** Crowdsource: queue REPORT_INVALID (does not mutate GeoJSON). */
   onReportInvalid?: () => void
+  alternatives?: AlternativeParking[]
+  noAlternatives?: boolean
+  isFull?: boolean
+  onFindAnother?: () => void
+  onMarkFull?: () => void
+  onWidenRadius?: () => void
+  onSelectAlternative?: (spot: ParkingSpot) => void
 }) {
   const links = navLinks(spot.lat, spot.lng)
   const color =
@@ -217,6 +233,14 @@ export function ParkingBottomSheet({
               {hasActive ? (
                 <span className="rounded-full bg-[#34C759]/15 px-2.5 py-0.5 text-[11px] font-semibold text-[#248A3D]">
                   Aktiivne
+                </span>
+              ) : null}
+              {isFull ? (
+                <span
+                  data-testid="spot-full-badge"
+                  className="rounded-full bg-[#8E8E93]/25 px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-[#636366]"
+                >
+                  TÄIS
                 </span>
               ) : null}
             </div>
@@ -417,6 +441,21 @@ export function ParkingBottomSheet({
             </button>
           </div>
         </div>
+
+        {onFindAnother && onSelectAlternative ? (
+          <FindParkingActions
+            dark={dark}
+            primaryLabel="Leia teine parkla läheduses"
+            onFindAnother={onFindAnother}
+            onMarkFull={onMarkFull}
+            showMarkFull
+            alternatives={alternatives}
+            noResults={noAlternatives}
+            onWidenRadius={onWidenRadius}
+            onSelectAlternative={onSelectAlternative}
+            isCurrentFull={isFull}
+          />
+        ) : null}
 
         {/* Session controls — form wrapper blocks Enter/submit page reloads */}
         <form

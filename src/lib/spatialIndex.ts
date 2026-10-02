@@ -88,6 +88,7 @@ export class ParkingSpatialIndex {
   /**
    * Nearest roadside line or lot polygon within `radiusM` of a destination.
    * Used by the search Destination Interceptor.
+   * Do not change this behavior — alternatives use queryNearbyParkingList.
    */
   queryNearbyParking(
     lat: number,
@@ -112,6 +113,35 @@ export class ParkingSpatialIndex {
       }
     }
     return best ? { spot: best, distanceM: bestD } : null
+  }
+
+  /**
+   * All roadside / lot parking within `radiusM`, nearest first.
+   * Optional excludeIds skips already-selected or full spots.
+   */
+  queryNearbyParkingList(
+    lat: number,
+    lng: number,
+    radiusM = 400,
+    opts?: { excludeIds?: Iterable<string> },
+  ): Array<{ spot: ParkingSpot; distanceM: number }> {
+    const exclude = new Set(opts?.excludeIds ?? [])
+    const out: Array<{ spot: ParkingSpot; distanceM: number }> = []
+    for (const s of this.spots) {
+      if (exclude.has(s.id)) continue
+      const isRoadside =
+        s.featureType === 'on-street-line' || Boolean(s.line) || s.kind === 'street'
+      const isLot =
+        s.featureType === 'off-street-lot' ||
+        s.featureType === 'municipal-zone' ||
+        Boolean(s.polygon) ||
+        s.kind === 'lot'
+      if (!isRoadside && !isLot) continue
+      const d = distanceMeters(lat, lng, s.lat, s.lng)
+      if (d <= radiusM) out.push({ spot: s, distanceM: d })
+    }
+    out.sort((a, b) => a.distanceM - b.distanceM)
+    return out
   }
 }
 

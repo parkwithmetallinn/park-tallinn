@@ -1,10 +1,13 @@
 import { MapPin, Navigation, X } from 'lucide-react'
+import type { AlternativeParking } from '../lib/alternatives'
 import {
   formatCoords,
   navLinks,
   openAppleMaps,
   type SearchLocation,
 } from '../lib/geocode'
+import type { ParkingSpot } from '../types'
+import { FindParkingActions } from './FindParkingActions'
 import { InfoSidePanelShell } from './InfoSidePanel'
 
 export function LocationInfoSheet({
@@ -12,12 +15,22 @@ export function LocationInfoSheet({
   dark,
   onClose,
   onClear,
+  alternatives = [],
+  noAlternatives = false,
+  onFindNearest,
+  onWidenRadius,
+  onSelectAlternative,
 }: {
   location: SearchLocation
   dark?: boolean
   onClose: () => void
   /** Clears the search pin and resets search UI */
   onClear: () => void
+  alternatives?: AlternativeParking[]
+  noAlternatives?: boolean
+  onFindNearest?: () => void
+  onWidenRadius?: () => void
+  onSelectAlternative?: (spot: ParkingSpot) => void
 }) {
   const links = navLinks(location.lat, location.lng)
   const coords = formatCoords(location.lat, location.lng)
@@ -48,7 +61,7 @@ export function LocationInfoSheet({
             <button
               type="button"
               onClick={requestClose}
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition active:scale-95 ${chip} ${muted}`}
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition active:scale-95 ${chip} ${muted}`}
               aria-label="Sulge"
             >
               <X className="h-4 w-4" />
@@ -63,7 +76,7 @@ export function LocationInfoSheet({
               href={links.waze}
               target="_blank"
               rel="noreferrer"
-              className="flex flex-col items-center justify-center gap-1 rounded-xl bg-[#33CCFF] px-1.5 py-2.5 text-center transition active:scale-[0.98]"
+              className="flex min-h-11 flex-col items-center justify-center gap-1 rounded-xl bg-[#33CCFF] px-1.5 py-2.5 text-center transition active:scale-[0.98]"
             >
               <Navigation className="h-4 w-4 text-[#053B4A]" strokeWidth={2.5} />
               <span className="text-[11px] font-bold text-[#053B4A]">Waze</span>
@@ -72,7 +85,7 @@ export function LocationInfoSheet({
               href={links.google}
               target="_blank"
               rel="noreferrer"
-              className="flex flex-col items-center justify-center gap-1 rounded-xl bg-[#4285F4] px-1.5 py-2.5 text-center transition active:scale-[0.98]"
+              className="flex min-h-11 flex-col items-center justify-center gap-1 rounded-xl bg-[#4285F4] px-1.5 py-2.5 text-center transition active:scale-[0.98]"
             >
               <MapPin className="h-4 w-4 text-white" strokeWidth={2.5} />
               <span className="text-[11px] font-bold text-white">Google</span>
@@ -80,7 +93,8 @@ export function LocationInfoSheet({
             <button
               type="button"
               onClick={() => openAppleMaps(location.lat, location.lng)}
-              className="flex flex-col items-center justify-center gap-1 rounded-xl bg-[#1C1C1E] px-1.5 py-2.5 text-center transition active:scale-[0.98]"
+              className="flex min-h-11 flex-col items-center justify-center gap-1 rounded-xl bg-[#1C1C1E] px-1.5 py-2.5 text-center transition active:scale-[0.98]"
+              aria-label="Ava Apple Maps"
             >
               <MapPin className="h-4 w-4 text-white" strokeWidth={2.5} />
               <span className="text-[11px] font-bold text-white">Apple</span>
@@ -90,11 +104,24 @@ export function LocationInfoSheet({
           <button
             type="button"
             onClick={() => onClear()}
-            className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#FF3B30]/10 px-3 py-2.5 text-[12px] font-semibold text-[#D70015] transition active:scale-[0.99]"
+            className="mb-1 flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-[#FF3B30]/10 px-3 py-2.5 text-[12px] font-semibold text-[#D70015] transition active:scale-[0.99]"
+            aria-label="Tühjenda otsing"
           >
             <X className="h-3.5 w-3.5" />
             Tühjenda otsing
           </button>
+
+          {onFindNearest && onSelectAlternative ? (
+            <FindParkingActions
+              dark={dark}
+              primaryLabel="Leia lähim parkla"
+              onFindAnother={onFindNearest}
+              alternatives={alternatives}
+              noResults={noAlternatives}
+              onWidenRadius={onWidenRadius}
+              onSelectAlternative={onSelectAlternative}
+            />
+          ) : null}
         </>
       )}
     </InfoSidePanelShell>

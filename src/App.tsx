@@ -47,7 +47,13 @@ import {
   sessionStartDisabledHint,
   ZONE_RATE_LIST,
 } from './data/zones'
+import {
+  ALT_RADIUS_WIDE,
+  findAlternatives,
+  type AlternativeParking,
+} from './lib/alternatives'
 import { distanceMeters, formatDistance } from './lib/geo'
+import { loadFullSpotIds, markSpotFull } from './lib/fullSpots'
 import {
   isClockLimitedParking,
   isUnclassifiedParking,
@@ -119,6 +125,12 @@ export default function App() {
   const [geoResults, setGeoResults] = useState<GeocodeResult[]>([])
   const [geoLoading, setGeoLoading] = useState(false)
   const [geoError, setGeoError] = useState<string | null>(null)
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const skipNextGeocode = useRef(false)
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const [fullSpotIds, setFullSpotIds] = useState<Set<string>>(() => loadFullSpotIds())
+  const [alternatives, setAlternatives] = useState<AlternativeParking[]>([])
+  const [noAlternatives, setNoAlternatives] = useState(false)
   const [userLocation, setUserLocation] = useState<[number, number]>(() => {
     const id = getInitialCity()
     return CITIES[id].center
@@ -210,6 +222,15 @@ export default function App() {
   // Nominatim geocoding — Estonia-wide, soft-biased to current map location
   const searchBiasKey = `${userLocation[0].toFixed(2)},${userLocation[1].toFixed(2)}`
   useEffect(() => {
+    // After picking a suggestion we set the query to the place name —
+    // skip the rebound geocode so the dropdown stays closed.
+    if (skipNextGeocode.current) {
+      skipNextGeocode.current = false
+      setGeoResults([])
+      setGeoError(null)
+      setGeoLoading(false)
+      return
+    }
     const q = query.trim()
     if (q.length < 3) {
       setGeoResults([])
@@ -247,6 +268,15 @@ export default function App() {
       ac.abort()
     }
   }, [query, searchBiasKey])
+
+  // Prune expired "full" marks periodically
+  useEffect(() => {
+    setFullSpotIds(loadFullSpotIds())
+    const id = window.setInterval(() => {
+      setFullSpotIds(loadFullSpotIds())
+    }, 60_000)
+    return () => window.clearInterval(id)
+  }, [])
 
   const clearRoute = useCallback(() => {
     routeRunId.current += 1
@@ -522,6 +552,8 @@ export default function App() {
     setSearchSheetOpen(false)
     setGeoResults([])
     setGeoError(null)
+    setIsDropdownOpen(false)
+    setNoAlternatives(false)
   }, [clearRoute])
 
   const clearSearchLocation = useCallback(() => {
@@ -531,7 +563,15 @@ export default function App() {
     setQuery('')
     setGeoResults([])
     setGeoError(null)
+    setIsDropdownOpen(false)
+    setAlternatives([])
+    setNoAlternatives(false)
   }, [clearRoute])
+
+  const visibleIdSet = useMemo(
+    () => new Set(visibleSpots.map((s) => s.id)),
+    [visibleSpots],
+  )
 
   const openSearchSheet = useCallback(() => {
     if (!searchLocation) return
@@ -566,12 +606,21 @@ export default function App() {
 
     ensureCityForCoords(loc.lat, loc.lng)
 
+    // Close dropdown and skip the rebound Nominatim fetch from setQuery
+    skipNextGeocode.current = true
+    geoAbort.current?.abort()
+    setGeoLoading(false)
+    setGeoResults([])
+    setGeoError(null)
+    setIsDropdownOpen(false)
+    searchInputRef.current?.blur()
+
     setSearchSheetOpen(false)
     setSelected(null)
     setSearchLocation(loc)
     setQuery(loc.name)
-    setGeoResults([])
-    setGeoError(null)
+    setAlternatives([])
+    setNoAlternatives(false)
 
     // Destination Interceptor — nearest roadside / lot parking within 400 m
     const nearby = parkingIndex.queryNearbyParking(loc.lat, loc.lng, 400)
@@ -699,6 +748,168 @@ export default function App() {
     flyToDestination(geocodeToSearchLocation(item.result))
   }
 
+  /** Route camera + OSRM intro to a parking spot (alternatives flow). */
+  const routeToSpot = useCallback(
+    (spot: ParkingSpot, opts?: { toastTitle?: string }) => {
+      const runId = routeRunId.current + 1
+      routeRunId.current = runId
+      routeAbort.current?.abort()
+      mapApiRef.current?.cancelRouteIntro()
+      setRouteData(null)
+      setRouteError(null)
+      setRouteLoading(false)
+      setRouteSummaryReady(false)
+      setSearchSheetOpen(false)
+      setSelected(spot)
+      setIsDropdownOpen(false)
+
+      const destination: [number, number] = [spot.lat, spot.lng]
+      const label = spot.name
+
+      if (opts?.toastTitle) {
+        setToast({ kind: 'info', title: opts.toastTitle })
+      }
+
+      const nearUser =
+        distanceMeters(
+          userLocation[0],
+          userLocation[1],
+          destination[0],
+          destination[1],
+        ) < 40
+
+      if (nearUser) {
+        setFlyMode('fly')
+        setFlyTarget(destination)
+        setFlyZoom(17)
+        setFlyKey((k) => k + 1)
+        return
+      }
+
+      const ac = new AbortController()
+      routeAbort.current = ac
+      setRouteLoading(true)
+      const timeout = window.setTimeout(() => ac.abort(), 8000)
+      const waitForRoute = fetchRoute(userLocation, destination, ac.signal)
+        .then((result) => {
+          if (ac.signal.aborted || routeRunId.current !== runId) return null
+          return result
+        })
+        .catch((e) => {
+          if ((e as Error).name === 'AbortError') return null
+          if (routeRunId.current === runId) {
+            setToast({
+              kind: 'info',
+              title: 'Marsruuti ei õnnestunud leida',
+            })
+          }
+          return null
+        })
+        .finally(() => {
+          window.clearTimeout(timeout)
+          if (routeAbort.current === ac) {
+            setRouteLoading(false)
+            routeAbort.current = null
+          }
+        })
+
+      void mapApiRef.current
+        ?.playRouteIntro({
+          destination,
+          waitForRoute,
+          routeWaitMs: 3000,
+          onBeforeFitBounds: (result) => {
+            if (routeRunId.current !== runId) return
+            setRouteData({ ...result, destination, label })
+          },
+          onFailed: () => {
+            if (routeRunId.current !== runId) return
+            setFlyMode('fly')
+            setFlyTarget(destination)
+            setFlyZoom(16.5)
+            setFlyKey((k) => k + 1)
+          },
+        })
+        .then((status) => {
+          if (routeRunId.current !== runId) return
+          if (status === 'fitted') setRouteSummaryReady(true)
+        })
+    },
+    [userLocation, setToast],
+  )
+
+  const runFindAlternatives = useCallback(
+    (opts?: {
+      markFullId?: string
+      maxRadius?: number
+      autoGo?: boolean
+    }) => {
+      const origin = searchLocation
+        ? { lat: searchLocation.lat, lng: searchLocation.lng }
+        : selected
+          ? { lat: selected.lat, lng: selected.lng }
+          : null
+      if (!origin) return
+
+      let nextFull = fullSpotIds
+      if (opts?.markFullId) {
+        nextFull = markSpotFull(opts.markFullId)
+        setFullSpotIds(nextFull)
+      }
+
+      const exclude = new Set<string>([...nextFull])
+      if (selected) exclude.add(selected.id)
+      if (opts?.markFullId) exclude.add(opts.markFullId)
+
+      const { results } = findAlternatives({
+        origin,
+        candidates: allSpots,
+        excludeIds: exclude,
+        fullIds: nextFull,
+        matchesFilter: (s) => visibleIdSet.has(s.id),
+        maxRadius: opts?.maxRadius,
+        limit: 6,
+      })
+
+      setAlternatives(results)
+      setNoAlternatives(results.length === 0)
+
+      if (results.length > 0 && opts?.autoGo !== false) {
+        routeToSpot(results[0].spot, {
+          toastTitle: 'Leidsime lähima vaba parkla',
+        })
+      }
+    },
+    [
+      searchLocation,
+      selected,
+      fullSpotIds,
+      allSpots,
+      visibleIdSet,
+      routeToSpot,
+    ],
+  )
+
+  const handleFindAnother = useCallback(() => {
+    runFindAlternatives({ autoGo: true })
+  }, [runFindAlternatives])
+
+  const handleMarkFull = useCallback(() => {
+    if (!selected) return
+    runFindAlternatives({ markFullId: selected.id, autoGo: true })
+  }, [selected, runFindAlternatives])
+
+  const handleWidenRadius = useCallback(() => {
+    runFindAlternatives({ maxRadius: ALT_RADIUS_WIDE, autoGo: true })
+  }, [runFindAlternatives])
+
+  const handleSelectAlternative = useCallback(
+    (spot: ParkingSpot) => {
+      routeToSpot(spot, { toastTitle: 'Leidsime lähima vaba parkla' })
+    },
+    [routeToSpot],
+  )
+
   const openProposeNew = () => {
     setReportContext({
       mode: 'PROPOSE_NEW',
@@ -769,6 +980,7 @@ export default function App() {
             onStreetSpotsLoaded={setStreetSpots}
             onMapReady={() => setMapReady(true)}
             suppressedFeatureIds={suppressedIds}
+            fullSpotIds={fullSpotIds}
             infoPanelOpen={Boolean(
               selected || (searchSheetOpen && searchLocation),
             )}
@@ -792,8 +1004,24 @@ export default function App() {
                     strokeWidth={2.2}
                   />
                   <input
+                    ref={searchInputRef}
                     value={query}
-                    onChange={(e) => setQuery(e.target.value)}
+                    onChange={(e) => {
+                      skipNextGeocode.current = false
+                      const v = e.target.value
+                      setQuery(v)
+                      setIsDropdownOpen(v.trim().length >= 3)
+                    }}
+                    onFocus={() => {
+                      if (query.trim().length >= 3) setIsDropdownOpen(true)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        e.preventDefault()
+                        setIsDropdownOpen(false)
+                        searchInputRef.current?.blur()
+                      }
+                    }}
                     placeholder="Otsi aadressi või kohta Eestis"
                     className={`w-full rounded-2xl border-0 bg-transparent py-3 pr-10 pl-10 text-[16px] font-sans outline-none ${text} placeholder:text-[#8E8E93]`}
                     autoComplete="off"
@@ -803,9 +1031,11 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => {
+                        skipNextGeocode.current = false
                         setQuery('')
                         setGeoResults([])
                         setGeoError(null)
+                        setIsDropdownOpen(false)
                       }}
                       className={`absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer rounded-full p-1.5 ${muted} bg-black/5`}
                       aria-label="Tühjenda"
@@ -840,7 +1070,7 @@ export default function App() {
               </div>
             </div>
 
-            {query.trim().length >= 3 ? (
+            {isDropdownOpen && query.trim().length >= 3 ? (
               <div className="absolute inset-x-0 top-[calc(100%+0.4rem)] z-50">
                 <SearchDropdown
                   loading={geoLoading && searchSuggestions.length === 0}
@@ -853,7 +1083,7 @@ export default function App() {
             ) : null}
           </div>
 
-          {query.trim().length < 3 ? (
+          {!isDropdownOpen ? (
             <div className="no-scrollbar flex gap-2 overflow-x-auto px-0.5 py-0.5">
               {FILTERS.map((f) => {
                 const active = filter === f.id
@@ -1165,6 +1395,13 @@ export default function App() {
             void addPrepaidMinutes(mins)
           }}
           onReportInvalid={() => openReportInvalid(selected)}
+          alternatives={alternatives}
+          noAlternatives={noAlternatives}
+          isFull={fullSpotIds.has(selected.id)}
+          onFindAnother={handleFindAnother}
+          onMarkFull={handleMarkFull}
+          onWidenRadius={handleWidenRadius}
+          onSelectAlternative={handleSelectAlternative}
         />
       ) : null}
 
@@ -1174,6 +1411,11 @@ export default function App() {
           dark={dark}
           onClose={() => setSearchSheetOpen(false)}
           onClear={clearSearchLocation}
+          alternatives={alternatives}
+          noAlternatives={noAlternatives}
+          onFindNearest={handleFindAnother}
+          onWidenRadius={handleWidenRadius}
+          onSelectAlternative={handleSelectAlternative}
         />
       ) : null}
 
