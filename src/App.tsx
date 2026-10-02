@@ -1341,59 +1341,57 @@ export default function App() {
               })}
             </div>
           ) : null}
-        </div>
-      </div>
 
-      {routeSummaryReady && routeData ? (
-        <div
-          data-testid="route-summary"
-          className="pointer-events-none absolute inset-x-0 z-30 flex justify-center px-3"
-          style={{ top: 'calc(env(safe-area-inset-top) + 6.25rem)' }}
-        >
-          <div
-            className={`pointer-events-auto flex w-full max-w-sm animate-fade-in items-center gap-3 px-3 py-2.5 ${panel}`}
-            role="status"
-            aria-live="polite"
-          >
-            <div className="min-w-0 flex-1">
-              <p className={`truncate text-[13px] font-semibold ${text}`}>
-                {routeData.label}
-              </p>
-              <p className={`mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] font-medium ${muted}`}>
-                <span className="inline-flex items-center gap-1">
-                  <span
-                    className="inline-block h-1.5 w-3 rounded-full bg-[#007AFF]"
-                    aria-hidden
-                  />
-                  Sõida {formatDistance(routeData.drive.distanceMeters)}
-                  {' · '}
-                  {formatDuration(routeData.drive.durationSeconds)}
-                </span>
-                {routeData.walk ? (
+          {/* Below filters only when detail panel is closed — never overlays pills */}
+          {routeSummaryReady && routeData && !selected ? (
+            <div
+              data-testid="route-summary"
+              className={`pointer-events-auto flex w-full animate-fade-in items-center gap-3 px-3 py-2.5 ${panel}`}
+              role="status"
+              aria-live="polite"
+            >
+              <div className="min-w-0 flex-1">
+                <p className={`truncate text-[13px] font-semibold ${text}`}>
+                  {routeData.label}
+                </p>
+                <p
+                  className={`mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] font-medium ${muted}`}
+                >
                   <span className="inline-flex items-center gap-1">
                     <span
-                      className="inline-block h-1.5 w-3 rounded-full border border-dashed border-[#059669] bg-[#059669]/30"
+                      className="inline-block h-1.5 w-3 rounded-full bg-[#007AFF]"
                       aria-hidden
                     />
-                    Jalgsi {formatDistance(routeData.walk.distanceMeters)}
+                    Sõida {formatDistance(routeData.drive.distanceMeters)}
                     {' · '}
-                    {formatDuration(routeData.walk.durationSeconds)}
+                    {formatDuration(routeData.drive.durationSeconds)}
                   </span>
-                ) : null}
-              </p>
+                  {routeData.walk ? (
+                    <span className="inline-flex items-center gap-1">
+                      <span
+                        className="inline-block h-1.5 w-3 rounded-full border border-dashed border-[#059669] bg-[#059669]/30"
+                        aria-hidden
+                      />
+                      Jalgsi {formatDistance(routeData.walk.distanceMeters)}
+                      {' · '}
+                      {formatDuration(routeData.walk.durationSeconds)}
+                    </span>
+                  ) : null}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={clearRoute}
+                className={`tap-scale flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${chip} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#007AFF]`}
+                aria-label="Peida marsruut"
+                title="Peida marsruut"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={clearRoute}
-              className={`tap-scale flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${chip} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#007AFF]`}
-              aria-label="Peida marsruut"
-              title="Peida marsruut"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
+          ) : null}
         </div>
-      ) : null}
+      </div>
 
       {/* Floating Action Buttons — location + 3D */}
       <div
@@ -1451,61 +1449,72 @@ export default function App() {
       {/* Compact timer / parking session control panel */}
       {timerOpen ? (
         <div
-          className={`absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-3 z-30 w-[min(100%-5.5rem,20rem)] px-3.5 py-3 sm:left-4 ${panel}`}
+          className={`absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-3 z-30 max-h-[min(70vh,28rem)] w-[min(100%-5.5rem,20rem)] overflow-y-auto overscroll-contain px-3.5 py-3 pb-4 sm:left-4 ${panel}`}
         >
-          <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="mb-2.5 flex items-center justify-between gap-2">
             <div className="min-w-0">
               <p className={`text-xs font-bold ${text}`}>
                 {activeSession ? 'Aktiivne sessioon' : 'Parkimiskell'}
               </p>
               <p className={`truncate text-[10px] ${muted}`}>{timerLabel}</p>
             </div>
-            <span className={`font-mono text-xl font-extrabold tabular-nums ${text}`}>
+            <span className={`shrink-0 font-mono text-xl font-extrabold tabular-nums ${text}`}>
               {formatHMS(timerSeconds)}
             </span>
           </div>
           {activeSession ? (
-            <div className="mb-2 rounded-xl bg-moss/10 px-2.5 py-2 text-[11px] font-semibold text-moss">
-              {activeSession.carNumber} · {activeSession.zone}
-              {activeSession.status ? ` · ${activeSession.status}` : ''}
-              {formatHourlyRate(activeSession.hourlyRate)
-                ? ` · ${formatHourlyRate(activeSession.hourlyRate)}`
-                : ''}
-              {formatSessionInstant(activeSession.startedAt)
-                ? ` · alates ${formatSessionInstant(activeSession.startedAt)}`
-                : ''}
-              <span className="mt-1 block text-[10px] font-medium opacity-80">
+            <div className="mb-2.5 rounded-2xl bg-moss/10 p-3.5 text-[11px] font-semibold leading-snug text-moss">
+              <p>
+                {activeSession.carNumber} · {activeSession.zone}
+                {activeSession.status ? ` · ${activeSession.status}` : ''}
+              </p>
+              {(formatHourlyRate(activeSession.hourlyRate) ||
+                formatSessionInstant(activeSession.startedAt)) && (
+                <p className="mt-1 opacity-90">
+                  {[
+                    formatHourlyRate(activeSession.hourlyRate),
+                    formatSessionInstant(activeSession.startedAt)
+                      ? `alates ${formatSessionInstant(activeSession.startedAt)}`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+              )}
+              <span className="mt-1.5 block text-[10px] font-medium opacity-80">
                 {timerMode === 'elapsed' ? 'Möödunud aeg' : 'Ettemakstud / jäänud'}
               </span>
             </div>
           ) : null}
           <form
-            className="contents"
+            className="flex flex-col gap-2.5"
             onSubmit={(e) => {
               e.preventDefault()
               e.stopPropagation()
               void refreshParkingStatus()
             }}
           >
-            <label className={`mb-1 block text-[10px] font-semibold ${muted}`}>
-              Auto number
-            </label>
-            <input
-              value={carNumber}
-              onChange={(e) => handleCarNumberChange(e.target.value.toUpperCase())}
-              placeholder="nt 123ABC"
-              autoCapitalize="characters"
-              autoCorrect="off"
-              spellCheck={false}
-              disabled={sessionLoading}
-              enterKeyHint="done"
-              className={`mb-2 w-full rounded-xl border px-2.5 py-2 font-mono text-xs font-semibold tracking-wider outline-none focus:ring-2 focus:ring-moss/25 ${
-                dark
-                  ? 'border-white/10 bg-white/5 text-white'
-                  : 'border-ink/10 bg-white/80 text-ink'
-              }`}
-            />
-            <div className="mb-2 flex gap-1">
+            <div>
+              <label className={`mb-1 block text-[10px] font-semibold ${muted}`}>
+                Auto number
+              </label>
+              <input
+                value={carNumber}
+                onChange={(e) => handleCarNumberChange(e.target.value.toUpperCase())}
+                placeholder="nt 123ABC"
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
+                disabled={sessionLoading}
+                enterKeyHint="done"
+                className={`w-full rounded-xl border px-2.5 py-2 font-mono text-xs font-semibold tracking-wider outline-none focus:ring-2 focus:ring-moss/25 ${
+                  dark
+                    ? 'border-white/10 bg-white/5 text-white'
+                    : 'border-ink/10 bg-white/80 text-ink'
+                }`}
+              />
+            </div>
+            <div className="grid grid-cols-4 gap-1.5">
               {TIME_EXTEND_OPTIONS.map((opt) => (
                 <button
                   key={opt.minutes}
@@ -1516,53 +1525,53 @@ export default function App() {
                     e.stopPropagation()
                     void addPrepaidMinutes(opt.minutes)
                   }}
-                  className={`flex-1 rounded-lg py-1.5 text-[10px] font-bold ${chip} disabled:opacity-55`}
+                  className={`rounded-lg py-2 text-[10px] font-bold ${chip} disabled:opacity-55`}
                   title={`Lisa ${opt.minutes} minutit`}
                 >
                   {sessionAction === 'extend' ? '…' : opt.label}
                 </button>
               ))}
             </div>
-            <div className="flex gap-2">
-              {activeSession ? (
+            {activeSession ? (
+              <button
+                type="button"
+                disabled={sessionLoading}
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  void endParkingSession()
+                }}
+                className="w-full rounded-xl bg-clay py-2.5 text-xs font-bold text-white disabled:opacity-55"
+              >
+                {sessionAction === 'stop' ? 'Lõpetan…' : 'Lõpeta sessioon'}
+              </button>
+            ) : (
+              <div className="flex min-w-0 flex-col gap-1">
                 <button
                   type="button"
-                  disabled={sessionLoading}
+                  disabled={
+                    sessionLoading ||
+                    !selected ||
+                    carNumber.trim().length < 2 ||
+                    (selected != null && !canStartParkingSession(selected))
+                  }
                   onClick={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
-                    void endParkingSession()
+                    void beginParkingSession()
                   }}
-                  className="flex-1 rounded-xl bg-clay py-2 text-xs font-bold text-white disabled:opacity-55"
+                  className="w-full rounded-xl bg-moss py-2.5 text-xs font-bold text-white disabled:opacity-55"
                 >
-                  {sessionAction === 'stop' ? 'Lõpetan…' : 'Lõpeta sessioon'}
+                  {sessionAction === 'start' ? 'Alustan…' : 'Alusta sessiooni'}
                 </button>
-              ) : (
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <button
-                    type="button"
-                    disabled={
-                      sessionLoading ||
-                      !selected ||
-                      carNumber.trim().length < 2 ||
-                      (selected != null && !canStartParkingSession(selected))
-                    }
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      void beginParkingSession()
-                    }}
-                    className="w-full rounded-xl bg-moss py-2 text-xs font-bold text-white disabled:opacity-55"
-                  >
-                    {sessionAction === 'start' ? 'Alustan…' : 'Alusta sessiooni'}
-                  </button>
-                  {selected && !canStartParkingSession(selected) ? (
-                    <p className={`truncate text-[10px] font-semibold ${muted}`}>
-                      {sessionStartDisabledHint(selected)}
-                    </p>
-                  ) : null}
-                </div>
-              )}
+                {selected && !canStartParkingSession(selected) ? (
+                  <p className={`text-[10px] font-semibold leading-snug ${muted}`}>
+                    {sessionStartDisabledHint(selected)}
+                  </p>
+                ) : null}
+              </div>
+            )}
+            <div className="flex gap-2">
               <button
                 type="button"
                 disabled={sessionLoading}
@@ -1571,7 +1580,7 @@ export default function App() {
                   e.stopPropagation()
                   void refreshParkingStatus()
                 }}
-                className={`rounded-xl px-3 py-2 text-xs font-bold ${chip} disabled:opacity-55`}
+                className={`flex-1 rounded-xl px-3 py-2 text-xs font-bold ${chip} disabled:opacity-55`}
                 title="Ainult staatuse päring (ei peata ega alusta)"
               >
                 {sessionAction === 'status' ? '…' : 'Staatus'}
@@ -1584,7 +1593,7 @@ export default function App() {
                   e.stopPropagation()
                   void loadActiveSessionsOverview()
                 }}
-                className={`rounded-xl px-3 py-2 text-xs font-bold ${chip} disabled:opacity-55`}
+                className={`flex-1 rounded-xl px-3 py-2 text-xs font-bold ${chip} disabled:opacity-55`}
                 title="Kõik aktiivsed sessioonid"
               >
                 Kõik
@@ -1594,7 +1603,7 @@ export default function App() {
           {sessionNotice ? (
             <p
               data-testid="session-notice"
-              className={`mt-2 rounded-xl px-2.5 py-2 text-[11px] font-semibold leading-snug ${
+              className={`mt-2.5 rounded-2xl p-3.5 text-[11px] font-semibold leading-snug ${
                 sessionNotice.kind === 'success'
                   ? 'bg-moss/12 text-moss'
                   : sessionNotice.kind === 'error'
@@ -1630,6 +1639,18 @@ export default function App() {
           sessionAction={sessionAction}
           activeSession={activeSession}
           sessionNotice={sessionNotice}
+          routeSummary={
+            routeSummaryReady && routeData
+              ? {
+                  label: routeData.label,
+                  driveDistanceM: routeData.drive.distanceMeters,
+                  driveDurationS: routeData.drive.durationSeconds,
+                  walkDistanceM: routeData.walk?.distanceMeters,
+                  walkDurationS: routeData.walk?.durationSeconds,
+                }
+              : null
+          }
+          onClearRoute={routeData ? clearRoute : undefined}
           dark={dark}
           onClose={() => {
             setFromNearestPicker(false)

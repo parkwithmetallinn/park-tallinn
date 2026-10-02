@@ -25,7 +25,7 @@ export function InfoSidePanelShell({
 
   return (
     <div
-      className={`${sheetClassName} pointer-events-none absolute z-40 left-3 right-3 bottom-[max(1rem,env(safe-area-inset-bottom))] max-h-[52vh] sm:top-[10rem] sm:right-auto sm:bottom-auto sm:left-4 sm:w-[22rem] sm:max-w-[min(24rem,calc(100vw-2rem))] sm:max-h-[calc(100%-11rem)]`}
+      className={`${sheetClassName} pointer-events-none absolute z-40 left-3 right-3 bottom-[max(1rem,env(safe-area-inset-bottom))] max-h-[min(85vh,calc(100dvh-env(safe-area-inset-top)-4.5rem))] sm:top-[10rem] sm:right-auto sm:bottom-auto sm:left-4 sm:w-[22rem] sm:max-w-[min(24rem,calc(100vw-2rem))] sm:max-h-[min(85vh,calc(100dvh-11rem))]`}
       role="dialog"
       aria-modal="false"
       aria-label={title}
@@ -33,7 +33,7 @@ export function InfoSidePanelShell({
       <div
         className={`pointer-events-auto flex max-h-[inherit] flex-col overflow-hidden rounded-2xl border backdrop-blur-md ${panel}`}
       >
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3.5">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3.5 pb-8">
           {children({ requestClose })}
         </div>
       </div>

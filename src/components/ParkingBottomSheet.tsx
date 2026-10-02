@@ -11,6 +11,7 @@ import type { ActiveParkingSession } from '../lib/parkingSession'
 import { formatHourlyRate, formatSessionInstant } from '../lib/parkingSession'
 import { getCachedAddress } from '../lib/addressCache'
 import type { AlternativeParking } from '../lib/alternatives'
+import { formatDistance } from '../lib/geo'
 import { isRealAddress } from '../lib/isRealAddress'
 import {
   MISSING_ADDRESS,
@@ -30,9 +31,18 @@ import {
   isUnclassifiedParking,
   isUnlimitedFreeParking,
 } from '../lib/parkingClassification'
+import { formatDuration } from '../lib/routing'
 import { streetLineColor } from '../map/streetLineTheme'
 import { FindParkingActions } from './FindParkingActions'
 import { InfoSidePanelShell } from './InfoSidePanel'
+
+export type PanelRouteSummary = {
+  label: string
+  driveDistanceM: number
+  driveDurationS: number
+  walkDistanceM?: number
+  walkDurationS?: number
+}
 
 function blockNav(e: MouseEvent | FormEvent) {
   e.preventDefault()
@@ -82,6 +92,8 @@ export function ParkingBottomSheet({
   sessionAction,
   activeSession,
   sessionNotice,
+  routeSummary,
+  onClearRoute,
   dark,
   onClose,
   onBackToList,
@@ -106,6 +118,9 @@ export function ParkingBottomSheet({
   sessionAction?: 'start' | 'stop' | 'status' | 'extend' | null
   activeSession?: ActiveParkingSession | null
   sessionNotice?: { kind: 'success' | 'error' | 'info' | 'loading'; text: string } | null
+  /** Drive/walk summary lives in the panel — never floats over filter pills. */
+  routeSummary?: PanelRouteSummary | null
+  onClearRoute?: () => void
   dark?: boolean
   onClose: () => void
   /** Return to nearest-parking picker (2-step search flow). */
@@ -234,6 +249,58 @@ export function ParkingBottomSheet({
             Tagasi nimekirja
           </button>
         ) : null}
+
+        {routeSummary ? (
+          <div
+            data-testid="route-summary"
+            className={`mb-2.5 flex items-start gap-2 rounded-xl px-3 py-2.5 ${blockBg}`}
+            role="status"
+            aria-live="polite"
+          >
+            <div className="min-w-0 flex-1">
+              <p className={`truncate text-[12px] font-bold ${ink}`}>
+                {routeSummary.label}
+              </p>
+              <p
+                className={`mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-medium ${muted}`}
+              >
+                <span className="inline-flex items-center gap-1">
+                  <span
+                    className="inline-block h-1.5 w-3 rounded-full bg-[#007AFF]"
+                    aria-hidden
+                  />
+                  Sõida {formatDistance(routeSummary.driveDistanceM)}
+                  {' · '}
+                  {formatDuration(routeSummary.driveDurationS)}
+                </span>
+                {routeSummary.walkDistanceM != null &&
+                routeSummary.walkDurationS != null ? (
+                  <span className="inline-flex items-center gap-1">
+                    <span
+                      className="inline-block h-1.5 w-3 rounded-full border border-dashed border-[#059669] bg-[#059669]/30"
+                      aria-hidden
+                    />
+                    Jalgsi {formatDistance(routeSummary.walkDistanceM)}
+                    {' · '}
+                    {formatDuration(routeSummary.walkDurationS)}
+                  </span>
+                ) : null}
+              </p>
+            </div>
+            {onClearRoute ? (
+              <button
+                type="button"
+                onClick={onClearRoute}
+                className={`tap-scale flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${chipBg} ${muted}`}
+                aria-label="Peida marsruut"
+                title="Peida marsruut"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="mb-2.5 flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -477,7 +544,7 @@ export function ParkingBottomSheet({
 
         {/* Session controls — form wrapper blocks Enter/submit page reloads */}
         <form
-          className={`space-y-2 border-t pt-2.5 ${dark ? 'border-white/10' : 'border-black/5'}`}
+          className={`space-y-3 border-t pt-3 ${dark ? 'border-white/10' : 'border-black/5'}`}
           onSubmit={(e) => {
             blockNav(e)
             // Enter in plate field → status check only (never navigate)
@@ -486,9 +553,16 @@ export function ParkingBottomSheet({
             onCheckStatus()
           }}
         >
-          <p className={`text-[10px] font-semibold tracking-wide uppercase ${muted}`}>
-            Parkimissessioon
-          </p>
+          <div className="flex items-center justify-between gap-2">
+            <p className={`text-[10px] font-semibold tracking-wide uppercase ${muted}`}>
+              Parkimissessioon
+            </p>
+            {hasActive ? (
+              <span className="shrink-0 rounded-full bg-[#34C759]/15 px-2 py-0.5 text-[10px] font-bold text-[#248A3D]">
+                Aktiivne
+              </span>
+            ) : null}
+          </div>
           <input
             value={carNumber}
             onChange={(e) => onCarNumberChange(e.target.value.toUpperCase())}
@@ -504,9 +578,9 @@ export function ParkingBottomSheet({
           {touched && !carOk ? (
             <p className="text-[12px] font-medium text-[#FF3B30]">Sisesta kehtiv auto number</p>
           ) : (
-            <p className="text-[12px] text-[#8E8E93]">
+            <p className={`text-[12px] leading-snug ${muted}`}>
               Tsoon{' '}
-              <span className="font-semibold text-[#1C1C1E]">
+              <span className={`font-semibold ${ink}`}>
                 {activeSession?.zone ?? spot.zone_code}
               </span>
               {hasActive && activeSession?.status
@@ -518,6 +592,32 @@ export function ParkingBottomSheet({
               {hasActive && startedLabel ? ` · alates ${startedLabel}` : ''}
             </p>
           )}
+
+          {hasActive && onExtendMinutes ? (
+            <div className="grid grid-cols-4 gap-2">
+              {(
+                [
+                  { minutes: 15, label: '+15m' },
+                  { minutes: 30, label: '+30m' },
+                  { minutes: 60, label: '+1h' },
+                  { minutes: 120, label: '+2h' },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.minutes}
+                  type="button"
+                  disabled={sessionLoading}
+                  onClick={(e) => {
+                    blockNav(e)
+                    onExtendMinutes(opt.minutes)
+                  }}
+                  className="tap-scale rounded-xl bg-[#FF9F0A]/12 px-1 py-2.5 text-[12px] font-bold text-[#C93400] disabled:opacity-55"
+                >
+                  {sessionAction === 'extend' ? '…' : opt.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
 
           {hasActive ? (
             <button
@@ -550,38 +650,12 @@ export function ParkingBottomSheet({
                 {sessionAction === 'start' ? 'Alustan…' : 'Alusta sessiooni'}
               </button>
               {!canStartParkingSession(spot) ? (
-                <p className="px-1 text-[12px] font-medium text-[#8E8E93]">
+                <p className={`px-1 text-[12px] font-medium ${muted}`}>
                   {sessionStartDisabledHint(spot)}
                 </p>
               ) : null}
             </div>
           )}
-
-          {hasActive && onExtendMinutes ? (
-            <div className="grid grid-cols-4 gap-1.5">
-              {(
-                [
-                  { minutes: 15, label: '+15m' },
-                  { minutes: 30, label: '+30m' },
-                  { minutes: 60, label: '+1h' },
-                  { minutes: 120, label: '+2h' },
-                ] as const
-              ).map((opt) => (
-                <button
-                  key={opt.minutes}
-                  type="button"
-                  disabled={sessionLoading}
-                  onClick={(e) => {
-                    blockNav(e)
-                    onExtendMinutes(opt.minutes)
-                  }}
-                  className="tap-scale rounded-xl bg-[#FF9F0A]/12 px-1 py-2.5 text-[12px] font-bold text-[#C93400] disabled:opacity-55"
-                >
-                  {sessionAction === 'extend' ? '…' : opt.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
 
           <button
             type="button"
@@ -601,13 +675,15 @@ export function ParkingBottomSheet({
           {sessionNotice ? (
             <p
               data-testid="session-notice"
-              className={`rounded-2xl px-3.5 py-2.5 text-[13px] font-medium leading-snug ${
+              className={`rounded-2xl p-3.5 text-[13px] font-medium leading-snug ${
                 sessionNotice.kind === 'success'
                   ? 'bg-[#34C759]/12 text-[#248A3D]'
                   : sessionNotice.kind === 'error'
                     ? 'bg-[#FF3B30]/10 text-[#D70015]'
                     : sessionNotice.kind === 'loading'
-                      ? 'bg-[#F2F2F7] text-[#636366]'
+                      ? dark
+                        ? 'bg-white/10 text-[#98989D]'
+                        : 'bg-[#F2F2F7] text-[#636366]'
                       : 'bg-[#007AFF]/10 text-[#007AFF]'
               }`}
             >
