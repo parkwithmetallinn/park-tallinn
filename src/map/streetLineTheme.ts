@@ -34,11 +34,12 @@ export function lotFillColor(layer: ParkingLayerKey): string {
     layer === 'uhisteenused' ||
     layer === 'parkit' ||
     layer === 'park_ride' ||
-    layer === 'loading'
+    layer === 'loading' ||
+    layer === 'municipal'
   ) {
+    // Municipal without spot-level props is treated as paid (red), not gray
     return PARKING_COLOR_PAID
   }
-  if (layer === 'municipal') return PARKING_COLOR_UNKNOWN
   return PARKING_COLOR_UNKNOWN
 }
 

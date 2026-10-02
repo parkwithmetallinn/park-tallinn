@@ -2,7 +2,9 @@ import { normalizeSpot } from './geojson'
 import { mapLabelForLayer } from './mapLabels'
 import {
   emptyPurgeStats,
+  extractClockMinutes,
   getParkingExclusionReason,
+  hasClockKeyword,
   isClockLimitedParking,
   isPaidFeeTag,
   isUnclassifiedParking,
@@ -12,6 +14,7 @@ import {
   PARKING_COLOR_PAID,
   PARKING_COLOR_TIMED,
   PARKING_COLOR_UNKNOWN,
+  parseMaxstayMinutes,
   type ParkingPrepPurgeStats,
 } from './parkingClassification'
 
@@ -180,21 +183,6 @@ function isParkingFeature(p: Record<string, unknown>): boolean {
   return anyLane && anyAllowed
 }
 
-function parseMaxstayMinutes(maxstay: string): number {
-  if (!maxstay) return 0
-  const s = maxstay.toLowerCase().trim()
-  if (s === 'unlimited' || s === 'no') return 0
-  const hours = s.match(/^(\d+(?:\.\d+)?)\s*h(?:ours?)?$/)
-  if (hours) return Math.round(parseFloat(hours[1]) * 60)
-  const mins = s.match(/^(\d+)\s*m(?:in(?:utes?)?)?$/)
-  if (mins) return parseInt(mins[1], 10)
-  const combo = s.match(/(\d+(?:\.\d+)?)\s*hours?/)
-  if (combo) return Math.round(parseFloat(combo[1]) * 60)
-  const comboM = s.match(/(\d+)\s*minutes?/)
-  if (comboM) return parseInt(comboM[1], 10)
-  return 0
-}
-
 function classifyRules(p: Record<string, unknown>): {
   rules: StreetRules
   layer: ParkingLayerKey
@@ -205,7 +193,8 @@ function classifyRules(p: Record<string, unknown>): {
 } {
   const fee = str(p.fee)
   const maxstay = str(p.maxstay)
-  const maxMins = parseMaxstayMinutes(maxstay)
+  const maxMins =
+    parseMaxstayMinutes(maxstay) || extractClockMinutes(p, maxstay, p.name)
   const feeIsPaid = isPaidFeeTag(fee, p.charge)
   const verified_free = isVerifiedFreeParking({
     fee,
@@ -216,13 +205,17 @@ function classifyRules(p: Record<string, unknown>): {
   })
 
   const curatedFreeMins = Number(p.free_minutes ?? 0)
+  const clockSignal =
+    curatedFreeMins > 0 ||
+    maxMins > 0 ||
+    hasClockKeyword(p, p.name, maxstay)
 
   // Curated schema fallback — only trust rules=free when verified + unlimited
   const curatedRules = str(p.rules).toLowerCase()
   if (curatedRules === 'free' || curatedRules === 'clock' || curatedRules === 'paid') {
     if (curatedRules === 'free' && verified_free) {
       // Any clock window (free_minutes / maxstay) → Kellaga, not Tasuta
-      if (curatedFreeMins > 0 || maxMins > 0 || maxstay) {
+      if (clockSignal) {
         return {
           rules: 'clock',
           layer: 'timed',
@@ -274,8 +267,8 @@ function classifyRules(p: Record<string, unknown>): {
     }
   }
 
-  // Verified free + time window → Kellaga (blue), never unlimited Tasuta green
-  if (verified_free && (maxMins > 0 || maxstay || curatedFreeMins > 0)) {
+  // Verified free + time window → Kellaga, never unlimited Tasuta green
+  if (verified_free && clockSignal) {
     return {
       rules: 'clock',
       layer: 'timed',
@@ -297,24 +290,25 @@ function classifyRules(p: Record<string, unknown>): {
     }
   }
 
-  if (maxMins > 0) {
+  if (clockSignal) {
     return {
       rules: 'clock',
       layer: 'timed',
-      free_minutes: maxMins || Number(p.free_minutes ?? 15),
+      free_minutes: curatedFreeMins || maxMins || 15,
       price_per_hour: 0,
       color: STREET_COLOR.timed,
       verified_free: false,
     }
   }
 
-  // Untagged / private / unclassified curb — muted gray, NOT free green
+  // Public curb without fee tags (e.g. Kiriku plats / Old Town plazas) → Kellaga
+  // Never paint these as unlimited green or paid red "Määramata ZONE".
   return {
-    rules: 'unknown',
-    layer: 'municipal',
-    free_minutes: 0,
+    rules: 'clock',
+    layer: 'timed',
+    free_minutes: curatedFreeMins || 120,
     price_per_hour: 0,
-    color: STREET_COLOR.unknown,
+    color: STREET_COLOR.timed,
     verified_free: false,
   }
 }
@@ -389,7 +383,9 @@ export function prepareStreetParking(raw: RawCollection): StreetParkingCollectio
         address: address || street,
         desc: [
           rules === 'free' ? 'Tasuta tänavaparkimine' : null,
-          rules === 'clock' ? `Kellaga · ${free_minutes} min` : null,
+          rules === 'clock'
+            ? `Parkimiskellaga / Ajapiiranguga · ${free_minutes} min`
+            : null,
           rules === 'paid' ? 'Tasuline tsoon' : null,
           rules === 'unknown' ? 'Määramata / kontrolli silte' : null,
           str(p.description),
@@ -433,7 +429,7 @@ export function streetFeatureToSpot(f: StreetParkingFeature): ParkingSpot {
     price_per_hour: p.price_per_hour,
     badge: p.badge,
     timeLimit: isClock
-      ? `Parkimiskellaga tasuta: ${p.free_minutes || 15} min`
+      ? `Parkimiskellaga / Ajapiiranguga · ${p.free_minutes || 15} min`
       : isFree
         ? 'Tasuta · piiramatu · kellata'
         : p.rules === 'unknown'
@@ -531,6 +527,10 @@ export function filterStreetCollection(
           layer: f.properties.layer,
           free_minutes: f.properties.free_minutes,
           price_per_hour: f.properties.price_per_hour,
+          zone_code: f.properties.zone_code,
+          badge: f.properties.badge,
+          name: f.properties.name,
+          desc: f.properties.desc,
         }),
       ),
     }

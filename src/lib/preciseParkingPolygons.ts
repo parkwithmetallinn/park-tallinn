@@ -10,14 +10,17 @@ import { normalizeSpot } from './geojson'
 import { mapLabelForLayer } from './mapLabels'
 import {
   categoryPaintColor,
+  emptyPurgeStats,
+  extractClockMinutes,
   getParkingExclusionReason,
+  hasClockKeyword,
   isClockLimitedParking,
   isPaidFeeTag,
   isUnclassifiedParking,
   isUnlimitedFreeParking,
   isVerifiedFreeParking,
+  parseMaxstayMinutes,
   type ParkingPrepPurgeStats,
-  emptyPurgeStats,
 } from './parkingClassification'
 
 /** Last prepareParkingPolygons purge counts (for health checks). */
@@ -144,12 +147,14 @@ function layerFromOsm(
   if (op.includes('barking')) return 'parkit'
 
   const verifiedFree = isVerifiedFreeParking({ fee, access, zone, charge })
-  // fee=no + maxstay → clocked free window (Kellaga), not unlimited Tasuta green
-  if (verifiedFree && maxstay) return 'timed'
+  const clockMins = extractClockMinutes({ maxstay }, maxstay, zone)
+  // Clock window without a paid fee → Kellaga (yellow), never Tasuta green
+  if (clockMins > 0 && !isPaidFeeTag(fee, charge)) return 'timed'
+  if (verifiedFree && clockMins > 0) return 'timed'
   if (verifiedFree) return 'free_street'
   if (op.includes('tallinn') || op.includes('linn')) return 'municipal'
   if (isPaidFeeTag(fee, charge)) return 'municipal'
-  // Unclassified / generic ZONE — municipal layer, painted gray (not free-green)
+  // Unclassified / generic ZONE — municipal layer (may promote to timed below)
   return 'municipal'
 }
 
@@ -211,22 +216,6 @@ function parsePricePerHour(charge: string, fee: string): number {
   // "2 EUR/hour" style without slash spacing already handled
   const eurHour = normalized.match(/(\d+(?:\.\d+)?)\s*eur\s*\/\s*hour/i)
   if (eurHour) return Math.round(parseFloat(eurHour[1]) * 100) / 100
-  return 0
-}
-
-/** Parse OSM maxstay=* into minutes (used as free window when fee=no). */
-function parseMaxstayMinutes(maxstay: string): number {
-  if (!maxstay) return 0
-  const s = maxstay.toLowerCase().trim()
-  if (s === 'unlimited' || s === 'no') return 0
-  const hours = s.match(/^(\d+(?:\.\d+)?)\s*h(?:ours?)?$/)
-  if (hours) return Math.round(parseFloat(hours[1]) * 60)
-  const mins = s.match(/^(\d+)\s*m(?:in(?:utes?)?)?$/)
-  if (mins) return parseInt(mins[1], 10)
-  const combo = s.match(/(\d+(?:\.\d+)?)\s*hours?/)
-  if (combo) return Math.round(parseFloat(combo[1]) * 60)
-  const comboM = s.match(/(\d+)\s*minutes?/)
-  if (comboM) return parseInt(comboM[1], 10)
   return 0
 }
 
@@ -354,10 +343,14 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
 
     const priceFromCurated = p.price_per_hour
     const freeFromCurated = p.free_minutes
-    const maxstayMins = parseMaxstayMinutes(maxstay)
+    const maxstayMins =
+      parseMaxstayMinutes(maxstay) || extractClockMinutes(p, maxstay, nameTag)
     const curatedFreeMins =
       typeof freeFromCurated === 'number' ? freeFromCurated : 0
-    const hasClockWindow = Boolean(maxstay) || maxstayMins > 0 || curatedFreeMins > 0
+    const hasClockWindow =
+      maxstayMins > 0 ||
+      curatedFreeMins > 0 ||
+      hasClockKeyword(p, nameTag, maxstay)
 
     // Promote verified free onto free_street unless clocked (maxstay / free_minutes)
     if (verified_free && (layer === 'municipal' || layer === 'free_street')) {
@@ -365,6 +358,14 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
     }
     // Curated free_street with a clock window → Kellaga
     if (layer === 'free_street' && hasClockWindow) {
+      layer = 'timed'
+    }
+    // maxstay / clock keywords without paid fee → Kellaga (fixes missing yellow zones)
+    if (
+      layer === 'municipal' &&
+      hasClockWindow &&
+      !isPaidFeeTag(fee, charge)
+    ) {
       layer = 'timed'
     }
 
@@ -434,10 +435,13 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
     // Strict category paint: green / yellow / red / gray (not operator brands).
     const color = categoryPaintColor({
       layer,
+      type: layer === 'timed' ? 'timed' : structureType,
       free_minutes,
       price_per_hour,
       verified_free: verified_free && layer === 'free_street',
       zone_code,
+      badge,
+      name,
     })
 
     const descParts = [
@@ -495,7 +499,7 @@ export function preciseFeatureToSpot(f: PreciseParkingFeature): ParkingSpot {
     badge: p.badge,
     timeLimit:
       p.layer === 'timed' || (p.free_minutes > 0 && p.price_per_hour <= 0)
-        ? `Parkimiskellaga tasuta: ${p.free_minutes || 15} min`
+        ? `Parkimiskellaga / Ajapiiranguga · ${p.free_minutes || 15} min`
         : p.verified_free || p.layer === 'free_street'
           ? `Tasuta · piiramatu`
           : p.price_per_hour > 0
@@ -598,6 +602,10 @@ export function filterPreciseCollection(
           layer: f.properties.layer,
           free_minutes: f.properties.free_minutes,
           price_per_hour: f.properties.price_per_hour,
+          zone_code: f.properties.zone_code,
+          badge: f.properties.badge,
+          name: f.properties.name,
+          desc: f.properties.desc,
         }),
       ),
     }

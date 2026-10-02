@@ -5,13 +5,13 @@
  */
 
 /** Unlimited free — Tasuta (strict green). */
-export const PARKING_COLOR_FREE = '#22C55E'
-/** Unclassified / ZONE / private / unknown — not free public parking. */
+export const PARKING_COLOR_FREE = '#00FF00'
+/** Unclassified / private / unknown — not free public parking. */
 export const PARKING_COLOR_UNKNOWN = '#A0AEC0'
 /** Paid parking — Tasuline (strict red). */
-export const PARKING_COLOR_PAID = '#FF3B30'
+export const PARKING_COLOR_PAID = '#FF0000'
 /** Clock / time-limited free — Kellaga (strict yellow). */
-export const PARKING_COLOR_TIMED = '#FFD60A'
+export const PARKING_COLOR_TIMED = '#FFCC00'
 
 /** Spot-like fields used by Tasuta / Kellaga filter helpers. */
 export type FreeClockFields = {
@@ -22,6 +22,96 @@ export type FreeClockFields = {
   verified_free?: boolean
   timeLimit?: string
   zone_code?: string
+  badge?: string
+  name?: string
+  desc?: string
+}
+
+function strField(v: unknown): string {
+  return v == null ? '' : String(v).trim()
+}
+
+/** Parse OSM maxstay / duration strings into minutes. */
+export function parseMaxstayMinutes(maxstay: unknown): number {
+  const raw = strField(maxstay)
+  if (!raw) return 0
+  const s = raw.toLowerCase()
+  if (s === 'unlimited' || s === 'no') return 0
+  const hours = s.match(/^(\d+(?:\.\d+)?)\s*h(?:ours?)?$/)
+  if (hours) return Math.round(parseFloat(hours[1]) * 60)
+  const mins = s.match(/^(\d+)\s*m(?:in(?:utes?)?)?$/)
+  if (mins) return parseInt(mins[1], 10)
+  const combo = s.match(/(\d+(?:\.\d+)?)\s*hours?/)
+  if (combo) return Math.round(parseFloat(combo[1]) * 60)
+  const comboM = s.match(/(\d+)\s*minutes?/)
+  if (comboM) return parseInt(comboM[1], 10)
+  // "30 minutes @ Mo-Fr …" / bare number
+  const leading = s.match(/^(\d+(?:\.\d+)?)/)
+  if (leading && /min/.test(s)) return Math.round(parseFloat(leading[1]))
+  return 0
+}
+
+/**
+ * Detect clock / time-limit signals from OSM + curated text fields.
+ * Returns inferred free-window minutes (0 if none).
+ */
+export function extractClockMinutes(
+  ...parts: Array<unknown>
+): number {
+  let mins = 0
+  const texts: string[] = []
+  for (const part of parts) {
+    if (part && typeof part === 'object' && !Array.isArray(part)) {
+      const rec = part as Record<string, unknown>
+      for (const [k, v] of Object.entries(rec)) {
+        if (
+          k === 'maxstay' ||
+          k.startsWith('maxstay:') ||
+          k.startsWith('maxstay:conditional')
+        ) {
+          mins = mins || parseMaxstayMinutes(v)
+        }
+        if (
+          k === 'name' ||
+          k === 'description' ||
+          k === 'desc' ||
+          k === 'timeLimit' ||
+          k === 'badge' ||
+          k === 'zone_code' ||
+          k === 'zone' ||
+          k === 'rules' ||
+          k.includes('parking:condition')
+        ) {
+          texts.push(strField(v))
+        }
+      }
+    } else {
+      texts.push(strField(part))
+    }
+  }
+  const text = texts.join(' ')
+  if (!mins) {
+    const minMatch = text.match(/\b(\d{1,3})\s*min(?:utes?)?\b/i)
+    if (minMatch) mins = parseInt(minMatch[1], 10)
+  }
+  if (!mins) {
+    const hourMatch = text.match(/\b(\d+(?:\.\d+)?)\s*h(?:ours?|undi)?\b/i)
+    if (hourMatch) mins = Math.round(parseFloat(hourMatch[1]) * 60)
+  }
+  if (
+    !mins &&
+    /parkimiskell|ajapiirang|\bkellaga\b|\bdisc\b|parking\s*clock/i.test(text)
+  ) {
+    mins = 15
+  }
+  return mins
+}
+
+/** True when text/tags clearly indicate a parking-clock / time limit. */
+export function hasClockKeyword(...parts: Array<unknown>): boolean {
+  if (extractClockMinutes(...parts) > 0) return true
+  const text = parts.map(strField).join(' ')
+  return /parkimiskell|ajapiirang|\bkellaga\b|\bdisc\b|\bKELL\b/i.test(text)
 }
 
 /**
@@ -36,6 +126,9 @@ export function isUnlimitedFreeParking(p: FreeClockFields): boolean {
   if (price > 0) return false
   if (layer === 'timed') return false
   if (p.type === 'timed') return false
+  if (hasClockKeyword(p.timeLimit, p.badge, p.name, p.desc, p.zone_code)) {
+    return false
+  }
   if (layer === 'free_street') return true
   if (p.verified_free) return true
   if (p.type === 'free' && layer !== 'municipal') return true
@@ -44,24 +137,30 @@ export function isUnlimitedFreeParking(p: FreeClockFields): boolean {
 
 /**
  * Time-limited / parking-clock free parking — "Kellaga" filter.
- * Includes layer=timed and any €0 spot with a fixed free window (15/60/120…).
+ * Includes layer=timed, €0 spots with a free window (15/60/120…), KELL/ZONE
+ * clock curb, and keyword signals (Parkimiskellaga, Ajapiiranguga, …).
  * Paid hourly zones with a short grace period stay under "Tasuline".
  */
 export function isClockLimitedParking(p: FreeClockFields): boolean {
   const layer = String(p.layer || '')
   const mins = Number(p.free_minutes ?? 0)
   const price = Number(p.price_per_hour ?? 0)
+  const zone = String(p.zone_code || '').toUpperCase()
+  const badge = String(p.badge || '').toUpperCase()
   if (layer === 'timed' || p.type === 'timed') return true
+  if (zone === 'KELL' || badge === 'KELL') return true
   // Free (or effectively free) with an explicit clock window
   if (mins > 0 && price <= 0) return true
+  if (price > 0) return false
+  if (hasClockKeyword(p.timeLimit, p.badge, p.name, p.desc)) return true
   return false
 }
 
 /** Detail-sheet headline for clock-limited free parking. */
 export function clockFreeHeadline(freeMinutes: number): string {
   const mins = Math.max(0, Math.round(freeMinutes))
-  if (mins > 0) return `Parkimiskellaga tasuta: ${mins} min`
-  return 'Parkimiskellaga tasuta'
+  if (mins > 0) return `Parkimiskellaga / Ajapiiranguga · ${mins} min`
+  return 'Parkimiskellaga / Ajapiiranguga'
 }
 
 const PAID_LAYERS = new Set([
@@ -94,6 +193,7 @@ export function categoryPaintColor(p: FreeClockFields): string {
         price_per_hour: price,
         zone_code: p.zone_code,
         verified_free: p.verified_free,
+        type: p.type,
       })
     ) {
       return PARKING_COLOR_UNKNOWN
@@ -135,6 +235,18 @@ export function isUnclassifiedParking(p: {
   if (p.verified_free || layer === 'free_street') return false
   if (KNOWN_OPERATOR_LAYERS.has(layer) && layer !== 'municipal') return false
   if (layer === 'timed') return false
+  // Kellaga / clock curb is never "Muud / Era"
+  if (
+    isClockLimitedParking({
+      layer,
+      type: p.type,
+      price_per_hour: p.price_per_hour,
+      zone_code: p.zone_code,
+      verified_free: p.verified_free,
+    })
+  ) {
+    return false
+  }
   // Paid with a known hourly rate is classified municipal
   if ((p.price_per_hour ?? 0) > 0) return false
   const zone = String(p.zone_code || '').toUpperCase()

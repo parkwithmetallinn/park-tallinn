@@ -70,18 +70,18 @@ export function parkingMapPillTone(
 function badgeTone(spot: ParkingSpot, dark?: boolean): string {
   if (isUnlimitedFreeParking(spot)) {
     return dark
-      ? 'bg-[#22C55E]/25 text-[#86EFAC]'
-      : 'bg-[#22C55E]/15 text-[#15803D]'
+      ? 'bg-[#00FF00]/25 text-[#86EFAC]'
+      : 'bg-[#00FF00]/15 text-[#15803D]'
   }
   if (isClockLimitedParking(spot)) {
     return dark
-      ? 'bg-[#FFD60A]/20 text-[#FFD60A]'
-      : 'bg-[#FFD60A]/25 text-[#8A6D00]'
+      ? 'bg-[#FFCC00]/20 text-[#FFCC00]'
+      : 'bg-[#FFCC00]/25 text-[#8A6D00]'
   }
   if (spot.price_per_hour > 0 || spot.badge === 'PAID') {
     return dark
-      ? 'bg-[#FF3B30]/25 text-[#FCA5A5]'
-      : 'bg-[#FF3B30]/12 text-[#D70015]'
+      ? 'bg-[#FF0000]/25 text-[#FCA5A5]'
+      : 'bg-[#FF0000]/12 text-[#D70015]'
   }
   return dark ? 'bg-white/10 text-[#98989D]' : 'bg-[#F2F2F7] text-[#636366]'
 }

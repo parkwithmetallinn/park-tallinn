@@ -9,49 +9,49 @@ export const PARKING_LAYER_META: Record<
     id: 'parking-municipal',
     label: 'Avalik / munitsipaal',
     // Paid municipal → red; unclassified features override to gray via feature color
-    color: '#FF3B30',
+    color: '#FF0000',
     circleRadius: 7,
   },
   europark: {
     id: 'parking-europark',
     label: 'EuroPark',
-    color: '#FF3B30',
+    color: '#FF0000',
     circleRadius: 7,
   },
   snabb: {
     id: 'parking-snabb',
     label: 'Snabb',
-    color: '#FF3B30',
+    color: '#FF0000',
     circleRadius: 7,
   },
   citypark: {
     id: 'parking-citypark',
     label: 'Citypark',
-    color: '#FF3B30',
+    color: '#FF0000',
     circleRadius: 7,
   },
   uhisteenused: {
     id: 'parking-uhisteenused',
     label: 'Ühisteenused',
-    color: '#FF3B30',
+    color: '#FF0000',
     circleRadius: 7,
   },
   parkit: {
     id: 'parking-parkit',
     label: 'Parkit',
-    color: '#FF3B30',
+    color: '#FF0000',
     circleRadius: 7,
   },
   timed: {
     id: 'parking-timed',
     label: 'Kellaga / ajapiirang',
-    color: '#FFD60A',
+    color: '#FFCC00',
     circleRadius: 6,
   },
   free_street: {
     id: 'parking-free-street',
     label: 'Tasuta tänav',
-    color: '#22C55E',
+    color: '#00FF00',
     circleRadius: 5.5,
   },
   ev: {
@@ -69,13 +69,13 @@ export const PARKING_LAYER_META: Record<
   loading: {
     id: 'parking-loading',
     label: 'Kauba laadimine',
-    color: '#FF3B30',
+    color: '#FF0000',
     circleRadius: 6.5,
   },
   park_ride: {
     id: 'parking-park-ride',
     label: 'Pargi & Reisi',
-    color: '#FF3B30',
+    color: '#FF0000',
     circleRadius: 8,
   },
 }

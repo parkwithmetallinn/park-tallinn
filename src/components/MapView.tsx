@@ -86,6 +86,7 @@ import { NAV_PITCH } from '../map/theme'
 import { ZOOM } from '../map/zoom'
 import {
   isClockLimitedParking,
+  isUnclassifiedParking,
   isUnlimitedFreeParking,
 } from '../lib/parkingClassification'
 import type { FilterId, ParkingLayerKey, ParkingSpot } from '../types'
@@ -646,7 +647,26 @@ export const MapView = forwardRef<
                         s.layer !== 'free_street' &&
                         s.layer !== 'timed' &&
                         s.layer !== 'ev' &&
-                        !isClockLimitedParking(s),
+                        !isClockLimitedParking(s) &&
+                        !isUnclassifiedParking({
+                          layer: s.layer,
+                          price_per_hour: s.price_per_hour,
+                          zone_code: s.zone_code,
+                          operator: s.operator,
+                          verified_free: s.layer === 'free_street',
+                          type: s.type,
+                        }) &&
+                        (s.price_per_hour > 0 ||
+                          [
+                            'europark',
+                            'snabb',
+                            'citypark',
+                            'uhisteenused',
+                            'parkit',
+                            'park_ride',
+                            'loading',
+                            'municipal',
+                          ].includes(s.layer)),
                     )
                   : Array.isArray(layers)
                     ? result.spots.filter((s) => layers.includes(s.layer))

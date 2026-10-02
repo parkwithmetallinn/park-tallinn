@@ -50,11 +50,14 @@ function blockNav(e: MouseEvent | FormEvent) {
 }
 
 function priceSummary(spot: ParkingSpot): { headline: string; detail: string } {
-  // Kellaga: explicit clock-limited free window
+  // Kellaga: explicit clock-limited free window — never "Määramata ZONE"
   if (isClockLimitedParking(spot)) {
     return {
       headline: clockFreeHeadline(spot.free_minutes),
-      detail: spot.timeLimit || 'Parkimiskell kohustuslik',
+      detail:
+        spot.timeLimit && !/Määramata/i.test(spot.timeLimit)
+          ? spot.timeLimit
+          : 'Parkimiskellaga / Ajapiiranguga',
     }
   }
   // Tasuta: unlimited free, no clock
@@ -75,6 +78,17 @@ function priceSummary(spot: ParkingSpot): { headline: string; detail: string } {
     return {
       headline: `${spot.price_per_hour.toFixed(2)} €/h`,
       detail: spot.timeLimit || spot.operator,
+    }
+  }
+  // Last-resort: ZONE / unknown with no paid rate still reads as clock parking
+  if (
+    spot.zone_code === 'ZONE' ||
+    spot.zone_code === 'KELL' ||
+    /kell|ajapiirang|\d+\s*min/i.test(spot.timeLimit || spot.name || '')
+  ) {
+    return {
+      headline: clockFreeHeadline(spot.free_minutes || 15),
+      detail: 'Parkimiskellaga / Ajapiiranguga',
     }
   }
   return {

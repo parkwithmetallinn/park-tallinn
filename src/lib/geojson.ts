@@ -266,7 +266,8 @@ function sharedProps(s: ParkingSpot) {
     address: s.address,
     desc: s.desc,
     landmark: s.landmark ? 1 : 0,
-    color: layerColor(s.layer),
+    // Strict category paint from spot fields (not layer-only — municipal paid is red)
+    color: streetLineColor(s),
     labelRank: labelRank(s),
   }
 }
@@ -404,7 +405,6 @@ export function spotsToMapGeoJSON(spots: ParkingSpot[]): ParkingMapGeoJSON {
         type: 'Feature',
         properties: {
           ...sharedProps(s),
-          color: lotFillColor(s.layer),
           render: 'polygon',
         },
         geometry: {
