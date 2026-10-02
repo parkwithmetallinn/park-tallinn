@@ -40,6 +40,7 @@ export type DistrictPolyCollection = {
       name: string
       name_et: string
       role: string
+      color: string
       labelRank: number
     }
     geometry: DistrictFeature['geometry']
@@ -56,6 +57,7 @@ export type DistrictLabelCollection = {
       name: string
       name_et: string
       role: string
+      color: string
       labelRank: number
     }
     geometry: { type: 'Point'; coordinates: [number, number] }
@@ -85,6 +87,23 @@ export const DISTRICT_DEBUG_REFS: Array<{
   { id: 'ref-pirita', name: 'Pirita Beach', expect: 'Pirita', coordinates: [24.828, 59.468] },
 ]
 
+/** Per-district palette (matches the classic Park Tallinn linnaosa colors). */
+export const DISTRICT_COLORS: Record<string, string> = {
+  Haabersti: '#0E7490',
+  Kristiine: '#4D7C0F',
+  Mustamäe: '#1D4E89',
+  Nõmme: '#15803D',
+  Pirita: '#0284C7',
+  Kesklinn: '#0F766E',
+  'Põhja-Tallinn': '#0B6E4F',
+  Lasnamäe: '#0369A1',
+  Vanalinn: '#B45309',
+}
+
+function districtColor(name: string): string {
+  return DISTRICT_COLORS[name] ?? '#64748B'
+}
+
 function labelRank(role: string, name: string): number {
   if (role === 'subzone') return 1
   // Stable order for collision: central names prefer lower rank
@@ -102,19 +121,25 @@ function labelRank(role: string, name: string): number {
   return i === -1 ? 50 : 10 + i
 }
 
+function districtProps(f: DistrictFeature) {
+  const name = f.properties.name_et
+  return {
+    id: f.properties.id,
+    name,
+    name_et: name,
+    role: f.properties.role,
+    color: districtColor(name),
+    labelRank: labelRank(f.properties.role, name),
+  }
+}
+
 export function districtsToGeoJSON(): DistrictPolyCollection {
   return {
     type: 'FeatureCollection',
     features: DATA.features.map((f) => ({
       type: 'Feature',
       id: f.properties.id,
-      properties: {
-        id: f.properties.id,
-        name: f.properties.name_et,
-        name_et: f.properties.name_et,
-        role: f.properties.role,
-        labelRank: labelRank(f.properties.role, f.properties.name_et),
-      },
+      properties: districtProps(f),
       geometry: f.geometry,
     })),
   }
@@ -126,13 +151,7 @@ export function districtLabelsToGeoJSON(): DistrictLabelCollection {
     features: DATA.features.map((f) => ({
       type: 'Feature',
       id: `${f.properties.id}-label`,
-      properties: {
-        id: f.properties.id,
-        name: f.properties.name_et,
-        name_et: f.properties.name_et,
-        role: f.properties.role,
-        labelRank: labelRank(f.properties.role, f.properties.name_et),
-      },
+      properties: districtProps(f),
       geometry: {
         type: 'Point',
         coordinates: f.properties.labelPoint,
@@ -175,7 +194,7 @@ export function districtsAsZones(): DistrictZone[] {
       return {
         id: `d-${f.properties.id}`,
         name: f.properties.name_et,
-        color: '#64748B',
+        color: districtColor(f.properties.name_et),
         kind: 'mixed' as const,
         summary: f.properties.name_et,
         coords,

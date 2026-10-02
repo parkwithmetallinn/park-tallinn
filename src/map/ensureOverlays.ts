@@ -47,10 +47,8 @@ export const DISTRICT_LABEL_LAYER = 'district-zones-label'
 export const DISTRICT_DEBUG_CIRCLE_LAYER = 'district-debug-refs-circle'
 export const DISTRICT_DEBUG_LABEL_LAYER = 'district-debug-refs-label'
 
-/** Neutral gray-blue — must not collide with parking filter colors. */
-const DISTRICT_FILL = '#94A3B8'
-const DISTRICT_LINE = '#64748B'
-const VANALINN_LINE = '#475569'
+/** Fallback if a feature is missing its per-district color property. */
+const DISTRICT_COLOR_FALLBACK = '#64748B'
 
 const selectedFillOpacity = [
   'case',
@@ -176,7 +174,7 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
   ensureUndergroundHatch(map)
 
   // ——— Districts (Tallinn GIS → public/data/districts.geojson) ———
-  // Order: fill → district lines → Vanalinn line → labels. Neutral gray-blue only.
+  // Order: fill → district lines → Vanalinn line → labels. Per-district colors.
   if (!map.getSource(DISTRICT_SOURCE)) {
     map.addSource(DISTRICT_SOURCE, {
       type: 'geojson',
@@ -214,16 +212,16 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       filter: ['==', ['get', 'role'], 'district'],
       layout: { visibility: 'visible' },
       paint: {
-        'fill-color': DISTRICT_FILL,
+        'fill-color': ['coalesce', ['get', 'color'], DISTRICT_COLOR_FALLBACK],
         'fill-opacity': [
           'case',
           ['boolean', ['feature-state', 'hover'], false],
-          0.2,
+          0.28,
           [
             'case',
             ['boolean', ['feature-state', 'dim'], false],
-            0.04,
-            0.1,
+            0.06,
+            0.16,
           ],
         ],
       },
@@ -242,18 +240,18 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
         'line-join': 'round',
       },
       paint: {
-        'line-color': DISTRICT_LINE,
+        'line-color': ['coalesce', ['get', 'color'], DISTRICT_COLOR_FALLBACK],
         'line-width': [
           'case',
           ['boolean', ['feature-state', 'hover'], false],
           2.4,
-          1.7,
+          1.5,
         ],
         'line-opacity': [
           'case',
           ['boolean', ['feature-state', 'dim'], false],
           0.25,
-          0.75,
+          0.55,
         ],
       },
     })
@@ -268,12 +266,12 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       filter: ['==', ['get', 'role'], 'subzone'],
       layout: { visibility: 'visible' },
       paint: {
-        'fill-color': DISTRICT_FILL,
+        'fill-color': ['coalesce', ['get', 'color'], '#B45309'],
         'fill-opacity': [
           'case',
           ['boolean', ['feature-state', 'hover'], false],
-          0.16,
-          0.06,
+          0.32,
+          0.22,
         ],
       },
     })
@@ -291,9 +289,9 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
         'line-join': 'round',
       },
       paint: {
-        'line-color': VANALINN_LINE,
+        'line-color': ['coalesce', ['get', 'color'], '#B45309'],
         'line-width': 2,
-        'line-opacity': 0.9,
+        'line-opacity': 0.85,
       },
     })
   }
@@ -317,12 +315,61 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
         ...noOverlapSymbol,
       },
       paint: {
-        'text-color': '#334155',
+        'text-color': ['coalesce', ['get', 'color'], DISTRICT_COLOR_FALLBACK],
         'text-halo-color': '#FFFFFF',
         'text-halo-width': 2.4,
         'text-halo-blur': 0.3,
       },
     })
+  }
+
+  // Keep colors in sync on HMR / remount when layers already exist
+  if (map.getLayer(DISTRICT_FILL_LAYER)) {
+    map.setPaintProperty(DISTRICT_FILL_LAYER, 'fill-color', [
+      'coalesce',
+      ['get', 'color'],
+      DISTRICT_COLOR_FALLBACK,
+    ])
+    map.setPaintProperty(DISTRICT_FILL_LAYER, 'fill-opacity', [
+      'case',
+      ['boolean', ['feature-state', 'hover'], false],
+      0.28,
+      ['case', ['boolean', ['feature-state', 'dim'], false], 0.06, 0.16],
+    ])
+  }
+  if (map.getLayer(DISTRICT_OUTLINE_LAYER)) {
+    map.setPaintProperty(DISTRICT_OUTLINE_LAYER, 'line-color', [
+      'coalesce',
+      ['get', 'color'],
+      DISTRICT_COLOR_FALLBACK,
+    ])
+  }
+  if (map.getLayer(DISTRICT_SUBZONE_FILL_LAYER)) {
+    map.setPaintProperty(DISTRICT_SUBZONE_FILL_LAYER, 'fill-color', [
+      'coalesce',
+      ['get', 'color'],
+      '#B45309',
+    ])
+    map.setPaintProperty(DISTRICT_SUBZONE_FILL_LAYER, 'fill-opacity', [
+      'case',
+      ['boolean', ['feature-state', 'hover'], false],
+      0.32,
+      0.22,
+    ])
+  }
+  if (map.getLayer(DISTRICT_SUBZONE_OUTLINE_LAYER)) {
+    map.setPaintProperty(DISTRICT_SUBZONE_OUTLINE_LAYER, 'line-color', [
+      'coalesce',
+      ['get', 'color'],
+      '#B45309',
+    ])
+  }
+  if (map.getLayer(DISTRICT_LABEL_LAYER)) {
+    map.setPaintProperty(DISTRICT_LABEL_LAYER, 'text-color', [
+      'coalesce',
+      ['get', 'color'],
+      DISTRICT_COLOR_FALLBACK,
+    ])
   }
   // Temporary QA markers (hidden by default — toggled from MapView)
   if (!map.getLayer(DISTRICT_DEBUG_CIRCLE_LAYER)) {
