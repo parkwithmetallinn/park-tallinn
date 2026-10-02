@@ -704,7 +704,8 @@ export const MapView = forwardRef<
                             price_per_hour: s.price_per_hour,
                             zone_code: s.zone_code,
                             operator: s.operator,
-                            verified_free: s.layer === 'free_street',
+                            // free_street already excluded above
+                            verified_free: false,
                             type: s.type,
                           }) &&
                           (s.price_per_hour > 0 ||

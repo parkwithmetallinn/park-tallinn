@@ -3,6 +3,7 @@
  * Private access stations are excluded. Unified under "Elektriautolaadijad".
  */
 
+import type { Map as MapLibreMapType } from 'maplibre-gl'
 import { normalizeSpot } from './geojson'
 import type { ParkingOperator, ParkingSpot } from '../types'
 
@@ -298,18 +299,8 @@ export function filterEvCollection(
   return fc
 }
 
-type MapLike = {
-  getSource: (id: string) => { setData?: (data: unknown) => void } | undefined
-  getLayer: (id: string) => unknown
-  addSource: (id: string, src: unknown) => void
-  addLayer: (layer: unknown) => void
-  setLayoutProperty: (id: string, key: string, value: unknown) => void
-  hasImage?: (id: string) => boolean
-  addImage?: (id: string, img: ImageData | HTMLImageElement | ImageBitmap, opts?: { pixelRatio?: number }) => void
-}
-
 /** Soft cyan glow + bolt circle layers for EV chargers. */
-export function ensureEvChargerLayers(map: MapLike) {
+export function ensureEvChargerLayers(map: MapLibreMapType) {
   if (!map.getSource(EV_CHARGERS_SOURCE)) {
     map.addSource(EV_CHARGERS_SOURCE, {
       type: 'geojson',
@@ -418,7 +409,7 @@ export function ensureEvChargerLayers(map: MapLike) {
   }
 }
 
-export function setEvChargerVisibility(map: MapLike, visible: boolean) {
+export function setEvChargerVisibility(map: MapLibreMapType, visible: boolean) {
   const vis = visible ? 'visible' : 'none'
   for (const id of [
     EV_CHARGERS_GLOW_LAYER,
@@ -432,9 +423,9 @@ export function setEvChargerVisibility(map: MapLike, visible: boolean) {
   }
 }
 
-export function setEvChargerData(map: MapLike, fc: EvChargerCollection) {
-  const src = map.getSource(EV_CHARGERS_SOURCE) as
-    | { setData?: (data: unknown) => void }
-    | undefined
-  src?.setData?.(fc)
+export function setEvChargerData(map: MapLibreMapType, fc: EvChargerCollection) {
+  const src = map.getSource(EV_CHARGERS_SOURCE)
+  if (src && 'setData' in src && typeof src.setData === 'function') {
+    src.setData(fc)
+  }
 }
