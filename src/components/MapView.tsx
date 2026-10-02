@@ -200,6 +200,16 @@ function withoutSuppressed<T extends { properties: { id: string } }>(
   return features.filter((f) => !suppressed.has(f.properties.id))
 }
 
+/** Pärnu EV charger polygons are not rendered on the map. */
+function withoutParnuEvFeatures<
+  T extends { properties: { layer?: string; badge?: string } },
+>(features: T[], cityId: CityId): T[] {
+  if (cityId !== 'parnu') return features
+  return features.filter(
+    (f) => f.properties.layer !== 'ev' && f.properties.badge !== 'EV',
+  )
+}
+
 /**
  * Apply moderation suppress list, spatial dedupe (polygon > street), then
  * top filter chips — both GeoJSON sources update together.
@@ -210,20 +220,27 @@ function applyDualLayerFilter(
   preciseFc: PreciseParkingCollection | null,
   streetFc: StreetParkingCollection | null,
   suppressedIds: Set<string> = new Set(),
+  cityId: CityId = 'tallinn',
 ) {
   const layers = filterToLayers(filter)
 
   const polys: PreciseParkingCollection | null = preciseFc
     ? {
         type: 'FeatureCollection',
-        features: withoutSuppressed(preciseFc.features, suppressedIds),
+        features: withoutParnuEvFeatures(
+          withoutSuppressed(preciseFc.features, suppressedIds),
+          cityId,
+        ),
       }
     : null
 
   let streets: StreetParkingCollection | null = streetFc
     ? {
         type: 'FeatureCollection',
-        features: withoutSuppressed(streetFc.features, suppressedIds),
+        features: withoutParnuEvFeatures(
+          withoutSuppressed(streetFc.features, suppressedIds),
+          cityId,
+        ),
       }
     : null
 
@@ -594,6 +611,7 @@ export const MapView = forwardRef<
         preciseFcRef.current,
         streetRawFcRef.current ?? streetFcRef.current,
         suppressedRef.current,
+        cityIdRef.current,
       )
       applySelectionHighlight(map, selectedIdRef.current)
       setDistrictDebugVisible(map, districtDebugRef.current)
@@ -665,6 +683,7 @@ export const MapView = forwardRef<
             fc,
             streetRawFcRef.current,
             suppressedRef.current,
+            cityIdRef.current,
           )
           const spots = preciseCollectionToSpots({
             type: 'FeatureCollection',
@@ -710,6 +729,7 @@ export const MapView = forwardRef<
             preciseFcRef.current,
             streetRawFcRef.current,
             suppressedRef.current,
+            cityIdRef.current,
           )
           const spots = streetCollectionToSpots(deduped.collection)
           for (const s of spots) parkingIndex.insert(s)
@@ -898,6 +918,7 @@ export const MapView = forwardRef<
         warmPoly,
         streetRawFcRef.current,
         suppressedRef.current,
+        cityIdRef.current,
       )
       const spots = preciseCollectionToSpots({
         type: 'FeatureCollection',
@@ -914,6 +935,7 @@ export const MapView = forwardRef<
         preciseFcRef.current,
         warmStreet,
         suppressedRef.current,
+        cityIdRef.current,
       )
       const spots = streetCollectionToSpots(warmStreet)
       for (const s of spots) parkingIndex.insert(s)
@@ -931,6 +953,7 @@ export const MapView = forwardRef<
           split.polygons,
           split.streets,
           suppressedRef.current,
+          cityIdRef.current,
         )
         const lots = preciseCollectionToSpots({
           type: 'FeatureCollection',
@@ -983,6 +1006,7 @@ export const MapView = forwardRef<
       preciseFcRef.current,
       streetRawFcRef.current ?? streetFcRef.current,
       suppressedRef.current,
+      cityIdRef.current,
     )
     applySelectionHighlight(map, selectedIdRef.current)
     ;(map as MapLibreMapType & { __refreshViewport?: () => void }).__refreshViewport?.()
