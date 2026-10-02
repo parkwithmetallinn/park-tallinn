@@ -44,6 +44,7 @@ import {
   ZONE_RATE_LIST,
 } from './data/zones'
 import { distanceMeters, formatDistance } from './lib/geo'
+import { isUnclassifiedParking, PARKING_COLOR_UNKNOWN } from './lib/parkingClassification'
 import {
   fetchRoute,
   formatDuration,
@@ -90,6 +91,7 @@ const FILTERS: { id: FilterId; label: string; color?: string }[] = [
   { id: 'europark', label: 'EuroPark', color: PARKING_LAYER_META.europark.color },
   { id: 'snabb', label: 'Snabb', color: PARKING_LAYER_META.snabb.color },
   { id: 'ev', label: 'Elektriauto', color: PARKING_LAYER_META.ev.color },
+  { id: 'other', label: 'Other / Private', color: PARKING_COLOR_UNKNOWN },
 ]
 
 const glass =
@@ -381,11 +383,23 @@ export default function App() {
   ])
 
   const visibleSpots = useMemo(() => {
-    if (filter !== 'ev') return allSpots
-    // Elektriauto: chargers + Pärnu EV exemption spots
-    return allSpots.filter(
-      (s) => s.layer === 'ev' || s.exemptions?.includes('ev_m1'),
-    )
+    if (filter === 'ev') {
+      return allSpots.filter(
+        (s) => s.layer === 'ev' || s.exemptions?.includes('ev_m1'),
+      )
+    }
+    if (filter === 'other') {
+      return allSpots.filter((s) =>
+        isUnclassifiedParking({
+          layer: s.layer,
+          price_per_hour: s.price_per_hour,
+          zone_code: s.zone_code,
+          operator: s.operator,
+          verified_free: s.layer === 'free_street',
+        }),
+      )
+    }
+    return allSpots
   }, [allSpots, filter])
 
   // Deep-link: /?spot=<id> opens the parking sheet (no map click needed)

@@ -186,9 +186,10 @@ export type MapViewHandle = {
  */
 function filterToLayers(
   filter: FilterId,
-): ParkingLayerKey[] | 'all' | 'verified_free' {
+): ParkingLayerKey[] | 'all' | 'verified_free' | 'unclassified' {
   if (filter === 'all') return 'all'
   if (filter === 'free_street') return 'verified_free'
+  if (filter === 'other') return 'unclassified'
   if ((PARKING_PROVIDERS as string[]).includes(filter)) return [filter as ParkingLayerKey]
   return 'all'
 }

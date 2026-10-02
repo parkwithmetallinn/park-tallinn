@@ -6,6 +6,48 @@
 export const PARKING_COLOR_FREE = '#22C55E'
 /** Unclassified / ZONE / private / unknown — not free public parking. */
 export const PARKING_COLOR_UNKNOWN = '#A0AEC0'
+
+const KNOWN_OPERATOR_LAYERS = new Set([
+  'europark',
+  'snabb',
+  'citypark',
+  'uhisteenused',
+  'parkit',
+  'ev',
+  'inva',
+  'loading',
+  'park_ride',
+  'free_street',
+  'timed',
+])
+
+/**
+ * Grey / private / unclassified parking — no clear operator pricing.
+ * Used by the "Other / Private" filter and detail-panel warning.
+ */
+export function isUnclassifiedParking(p: {
+  layer?: string
+  verified_free?: boolean
+  price_per_hour?: number
+  zone_code?: string
+  operator?: string
+  color?: string
+  type?: string
+}): boolean {
+  const layer = String(p.layer || '')
+  if (p.verified_free || layer === 'free_street') return false
+  if (KNOWN_OPERATOR_LAYERS.has(layer) && layer !== 'municipal') return false
+  if (layer === 'timed') return false
+  // Paid with a known hourly rate is classified municipal
+  if ((p.price_per_hour ?? 0) > 0) return false
+  const zone = String(p.zone_code || '').toUpperCase()
+  const op = String(p.operator || '')
+  if (p.color === PARKING_COLOR_UNKNOWN) return true
+  if (zone === 'ZONE' || zone === '' || zone === 'UNKNOWN') return true
+  if (!op || op === 'Unknown') return true
+  // Municipal with no fee tags falls into the grey bucket
+  return layer === 'municipal'
+}
 /** Explicitly paid municipal / curb (when no operator brand color). */
 export const PARKING_COLOR_PAID = '#FF3B30'
 /** Clock / maxstay free window. */

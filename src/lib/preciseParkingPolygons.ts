@@ -12,6 +12,7 @@ import { mapLabelForLayer } from './mapLabels'
 import {
   getParkingExclusionReason,
   isPaidFeeTag,
+  isUnclassifiedParking,
   isVerifiedFreeParking,
   PARKING_COLOR_FREE,
   PARKING_COLOR_UNKNOWN,
@@ -533,7 +534,7 @@ export function preciseCollectionToSpots(fc: PreciseParkingCollection): ParkingS
 /** Filter lot polygons by app layer keys (top filters). */
 export function filterPreciseCollection(
   fc: PreciseParkingCollection,
-  layers: ParkingLayerKey[] | 'all' | 'verified_free',
+  layers: ParkingLayerKey[] | 'all' | 'verified_free' | 'unclassified',
 ): PreciseParkingCollection {
   if (layers === 'all') return fc
   if (layers === 'verified_free') {
@@ -541,6 +542,21 @@ export function filterPreciseCollection(
       type: 'FeatureCollection',
       features: fc.features.filter(
         (f) => f.properties.verified_free || f.properties.layer === 'free_street',
+      ),
+    }
+  }
+  if (layers === 'unclassified') {
+    return {
+      type: 'FeatureCollection',
+      features: fc.features.filter((f) =>
+        isUnclassifiedParking({
+          layer: f.properties.layer,
+          verified_free: f.properties.verified_free,
+          price_per_hour: f.properties.price_per_hour,
+          zone_code: f.properties.zone_code,
+          operator: f.properties.operator,
+          color: f.properties.color,
+        }),
       ),
     }
   }

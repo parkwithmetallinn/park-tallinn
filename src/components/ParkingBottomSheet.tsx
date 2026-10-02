@@ -22,6 +22,7 @@ import {
 import type { ParkingSpot } from '../types'
 import { formatFreeUntil } from '../lib/freeRules'
 import { navLinks, openAppleMaps } from '../lib/geocode'
+import { isUnclassifiedParking } from '../lib/parkingClassification'
 import { PARKING_LAYER_META } from '../map/parkingLayers'
 import { streetLineColor } from '../map/streetLineTheme'
 import { InfoSidePanelShell } from './InfoSidePanel'
@@ -95,6 +96,13 @@ export function ParkingBottomSheet({
       ? streetLineColor(spot)
       : (PARKING_LAYER_META[spot.layer]?.color ?? '#30D158')
   const pricing = priceSummary(spot)
+  const unclassified = isUnclassifiedParking({
+    layer: spot.layer,
+    price_per_hour: spot.price_per_hour,
+    zone_code: spot.zone_code,
+    operator: spot.operator,
+    verified_free: spot.layer === 'free_street',
+  })
   const [touched, setTouched] = useState(false)
   const carOk = carNumber.trim().length >= 2
   const hasActive = Boolean(activeSession?.carNumber && activeSession?.zone)
@@ -268,6 +276,21 @@ export function ParkingBottomSheet({
             <X className="h-4 w-4" />
           </button>
         </div>
+
+        {unclassified ? (
+          <div
+            data-testid="unclassified-warning"
+            role="status"
+            className={`mb-2.5 rounded-xl px-3 py-2.5 text-[12px] font-semibold leading-snug ${
+              dark
+                ? 'bg-[#FFD60A]/14 text-[#FFD60A]'
+                : 'bg-[#FFD60A]/18 text-[#8A6D00]'
+            }`}
+          >
+            Private or unclassified parking area. Please check local parking
+            signs and conditions on site.
+          </div>
+        ) : null}
 
         {spot.freeNow != null || spot.freeReason ? (
           <div

@@ -145,7 +145,8 @@ export interface DistrictZone {
   }
 }
 
-export type FilterId = 'all' | ParkingLayerKey
+/** `other` = grey / private / unclassified parking (no clear operator pricing). */
+export type FilterId = 'all' | ParkingLayerKey | 'other'
 
 /** Legacy UI type labels (report form / older filters) */
 export type SpotType = NonNullable<ParkingSpot['type']>

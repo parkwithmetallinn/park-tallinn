@@ -4,6 +4,7 @@ import {
   emptyPurgeStats,
   getParkingExclusionReason,
   isPaidFeeTag,
+  isUnclassifiedParking,
   isVerifiedFreeParking,
   PARKING_COLOR_FREE,
   PARKING_COLOR_PAID,
@@ -455,7 +456,7 @@ export function streetCollectionToSpots(fc: StreetParkingCollection): ParkingSpo
 /** Filter a street FeatureCollection by app layer keys (top filters). */
 export function filterStreetCollection(
   fc: StreetParkingCollection,
-  layers: ParkingLayerKey[] | 'all' | 'verified_free',
+  layers: ParkingLayerKey[] | 'all' | 'verified_free' | 'unclassified',
 ): StreetParkingCollection {
   if (layers === 'all') return fc
   if (layers === 'verified_free') {
@@ -463,6 +464,21 @@ export function filterStreetCollection(
       type: 'FeatureCollection',
       features: fc.features.filter(
         (f) => f.properties.verified_free || f.properties.layer === 'free_street',
+      ),
+    }
+  }
+  if (layers === 'unclassified') {
+    return {
+      type: 'FeatureCollection',
+      features: fc.features.filter((f) =>
+        isUnclassifiedParking({
+          layer: f.properties.layer,
+          verified_free: f.properties.verified_free,
+          price_per_hour: f.properties.price_per_hour,
+          zone_code: f.properties.zone_code,
+          operator: f.properties.operator,
+          color: f.properties.color,
+        }),
       ),
     }
   }
