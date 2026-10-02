@@ -119,19 +119,25 @@ export function parnuOverlayPolygonsToGeoJSON(): DistrictPolyCollection {
     type: 'FeatureCollection',
     features: [
       ...districts.features,
-      ...zones.features.map((f) => ({
-        type: 'Feature' as const,
-        id: String(f.id ?? f.properties.id),
-        properties: {
-          id: String(f.properties.id),
-          name: String(f.properties.name_et ?? f.properties.name),
-          name_et: String(f.properties.name_et ?? f.properties.name),
-          role: 'subzone',
-          color: String(f.properties.color),
-          labelRank: 20,
-        },
-        geometry: f.geometry as DistrictPolyCollection['features'][number]['geometry'],
-      })),
+      ...zones.features.map((f) => {
+        // Prefix ids so they never collide with admin district ids (promoteId: id)
+        const zoneId = String(f.properties.id)
+        const id = `paid-${zoneId}`
+        return {
+          type: 'Feature' as const,
+          id,
+          properties: {
+            id,
+            name: String(f.properties.name_et ?? f.properties.name),
+            name_et: String(f.properties.name_et ?? f.properties.name),
+            role: 'subzone',
+            color: String(f.properties.color),
+            labelRank: 20,
+            parnuZone: zoneId,
+          },
+          geometry: f.geometry as DistrictPolyCollection['features'][number]['geometry'],
+        }
+      }),
     ],
   }
 }
