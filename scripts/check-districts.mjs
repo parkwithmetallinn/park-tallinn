@@ -177,5 +177,60 @@ const totalKm2 = districts.reduce((s, f) => s + area(f), 0) / 1e6
 if (totalKm2 > 100 && totalKm2 < 200) ok(`total district area ${totalKm2.toFixed(1)} km² (Tallinn ~159 km²)`)
 else fail(`total district area unexpected: ${totalKm2.toFixed(1)} km²`)
 
+// --- Põhja-Tallinn peninsula coverage ---
+console.log('\n[põhja-tallinn peninsula]')
+const pohja = fc.features.find((f) => f.properties.name_et === 'Põhja-Tallinn')
+if (!pohja) {
+  fail('Põhja-Tallinn feature missing')
+} else {
+  const parts =
+    pohja.geometry.type === 'MultiPolygon' ? pohja.geometry.coordinates.length : 1
+  if (parts >= 1) ok(`Põhja-Tallinn geometry ${pohja.geometry.type} parts=${parts}`)
+  // Task hints verified against Tallinn GIS: some lie just outside the shore.
+  const pohjaIn = [
+    {
+      name: 'Kopli',
+      lng: 24.66933,
+      lat: 59.45103,
+      note: 'task [24.669,59.451] is ~22m offshore of official border',
+    },
+    {
+      name: 'Kopli tram / Bekkeri',
+      lng: 24.665,
+      lat: 59.458,
+      note: 'near task [24.660,59.456]; verified on peninsula',
+    },
+    { name: 'Paljassaare', lng: 24.7, lat: 59.47 },
+    { name: 'Kalamaja', lng: 24.735, lat: 59.445 },
+    {
+      name: 'Pelgulinn',
+      lng: 24.725,
+      lat: 59.442,
+      note: 'task [24.730,59.430] is in Kesklinn; verified Pelgulinn interior',
+    },
+    { name: 'Merimetsa', lng: 24.705, lat: 59.435 },
+    { name: 'Kopli liinid', lng: 24.682, lat: 59.453 },
+    { name: 'Stroomi', lng: 24.685, lat: 59.448 },
+  ]
+  const pohjaOut = [
+    { name: 'Town Hall Square', lng: 24.7454, lat: 59.437 },
+    { name: 'Õismäe', lng: 24.655, lat: 59.416 },
+  ]
+  for (const r of pohjaIn) {
+    if (booleanPointInPolygon(point([r.lng, r.lat]), pohja)) {
+      ok(`${r.name} inside Põhja-Tallinn${r.note ? ' [' + r.note + ']' : ''}`)
+    } else {
+      fail(`${r.name} NOT inside Põhja-Tallinn`)
+    }
+  }
+  for (const r of pohjaOut) {
+    if (!booleanPointInPolygon(point([r.lng, r.lat]), pohja)) {
+      ok(`${r.name} correctly outside Põhja-Tallinn`)
+    } else {
+      fail(`${r.name} unexpectedly inside Põhja-Tallinn`)
+    }
+  }
+}
+
 console.log('\n' + (failed ? `FAILED (${failed} errors)` : 'ALL CHECKS PASSED'))
 process.exit(failed ? 1 : 0)

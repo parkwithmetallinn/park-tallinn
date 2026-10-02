@@ -20,6 +20,7 @@ import rewind from '@turf/rewind'
 import bbox from '@turf/bbox'
 import area from '@turf/area'
 import intersect from '@turf/intersect'
+import difference from '@turf/difference'
 import { featureCollection, feature, polygon, multiPolygon } from '@turf/helpers'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -222,6 +223,19 @@ async function main() {
     writeFileSync(erasedPath, readFileSync(rawPath))
   }
 
+  // Ocean erase (NE 10m) wrongly shaves Põhja-Tallinn peninsulas / islets.
+  // Restore Põhja from pre-erase geometry so Kopli/Paljassaare stay intact.
+  const erased = JSON.parse(readFileSync(erasedPath, 'utf8'))
+  const rawFc = JSON.parse(readFileSync(rawPath, 'utf8'))
+  const rawPohja = rawFc.features.find((f) => f.properties.id === 'pohja-tallinn')
+  if (rawPohja) {
+    erased.features = erased.features.map((f) =>
+      f.properties.id === 'pohja-tallinn' ? rawPohja : f,
+    )
+    writeFileSync(erasedPath, JSON.stringify(erased))
+    console.log('Restored Põhja-Tallinn from pre-ocean-erase geometry')
+  }
+
   console.log('Topology clean (snap + clean)…')
   runMapshaperClean(erasedPath, cleanedPath)
 
@@ -233,6 +247,28 @@ async function main() {
     if (!byId.has(meta.id)) throw new Error(`Missing after clean: ${meta.name_et}`)
   }
 
+  // After restoring full Põhja, subtract neighbor overlaps without moving neighbors.
+  {
+    let pohja = byId.get('pohja-tallinn')
+    for (const nid of ['haabersti', 'kristiine', 'kesklinn']) {
+      const n = byId.get(nid)
+      if (!pohja || !n) continue
+      try {
+        const inter = intersect(featureCollection([pohja, n]))
+        if (inter && area(inter) > 1) {
+          const diffed = difference(featureCollection([pohja, n]))
+          if (diffed) {
+            pohja = feature(diffed.geometry, pohja.properties)
+          }
+        }
+      } catch {
+        /* keep */
+      }
+    }
+    pohja = cleanCoords(rewind(pohja, { reverse: false }))
+    byId.set('pohja-tallinn', pohja)
+  }
+
   // Vanalinn overlay (not part of district topology snap)
   let vanalinn = toTurfFeature(van.features[0].geometry, {
     id: 'vanalinn',
@@ -242,10 +278,26 @@ async function main() {
   vanalinn = simplify(vanalinn, { tolerance: SIMPLIFY_TOL, highQuality: true, mutate: false })
   vanalinn = cleanCoords(vanalinn)
 
+  function largestPart(feat) {
+    if (feat.geometry.type === 'Polygon') return feat
+    let best = null
+    let bestA = -1
+    for (const coords of feat.geometry.coordinates) {
+      const p = feature({ type: 'Polygon', coordinates: coords }, feat.properties)
+      const a = area(p)
+      if (a > bestA) {
+        bestA = a
+        best = p
+      }
+    }
+    return best || feat
+  }
+
   const outFeatures = []
   for (const meta of Object.values(NAME_MAP)) {
     const f = byId.get(meta.id)
-    const label = pointOnFeature(f)
+    const labelSrc = meta.id === 'pohja-tallinn' ? largestPart(f) : f
+    const label = pointOnFeature(labelSrc)
     outFeatures.push({
       type: 'Feature',
       id: meta.id,
