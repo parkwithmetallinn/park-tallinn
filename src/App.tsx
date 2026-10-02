@@ -224,9 +224,10 @@ export default function App() {
       setStreetSpots([])
       setFilter('all')
       const cfg = CITIES[next]
-      if (!hasGps) setUserLocation(cfg.center)
+      const center: [number, number] = [cfg.center[0], cfg.center[1]]
+      if (!hasGps) setUserLocation(center)
       setFlyMode('fly')
-      setFlyTarget(cfg.center)
+      setFlyTarget(center)
       setFlyZoom(cfg.zoom)
       setFlyKey((k) => k + 1)
     },

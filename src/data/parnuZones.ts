@@ -170,6 +170,7 @@ export function parnuZoneLabelsToGeoJSON() {
           name: z.name.toUpperCase(),
           role: 'subzone',
           color: z.color,
+          labelRank: 1,
         },
         geometry: {
           type: 'Point' as const,
