@@ -313,6 +313,8 @@ export function MapView({
     })
 
     mapRef.current = map
+    // Dev/test hook for LOD screenshots & debugging (non-reactive).
+    ;(window as unknown as { __parkMap?: typeof map }).__parkMap = map
 
     let setupDone = false
     const parkingHitLayers = [

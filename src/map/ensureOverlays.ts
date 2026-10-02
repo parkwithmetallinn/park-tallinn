@@ -38,7 +38,9 @@ const ROUTE_SOURCE = 'nav-route'
 export const DISTRICT_SOURCE = 'district-zones'
 export const DISTRICT_LABEL_SOURCE = 'district-zone-labels'
 export const DISTRICT_FILL_LAYER = 'district-zones-fill'
+export const DISTRICT_SUBZONE_FILL_LAYER = 'district-zones-subzone-fill'
 export const DISTRICT_OUTLINE_LAYER = 'district-zones-outline'
+export const DISTRICT_SUBZONE_OUTLINE_LAYER = 'district-zones-subzone-outline'
 export const DISTRICT_LABEL_LAYER = 'district-zones-label'
 
 const selectedFillOpacity = [
@@ -105,7 +107,9 @@ function syncLodZoomLimits(map: MapLibreMapType) {
   }
 
   setMax(DISTRICT_FILL_LAYER, ZOOM.lotMin)
+  setMax(DISTRICT_SUBZONE_FILL_LAYER, ZOOM.lotMin)
   setMax(DISTRICT_OUTLINE_LAYER, ZOOM.lotMin)
+  setMax(DISTRICT_SUBZONE_OUTLINE_LAYER, ZOOM.lotMin)
   setMax(DISTRICT_LABEL_LAYER, ZOOM.lotMin)
 
   setMin(PARKING_LOTS_FILL_LAYER, ZOOM.lotMin)
@@ -160,41 +164,50 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
   ensureUndergroundHatch(map)
 
   // ——— District badges (city macro, zoom < 13) ———
-  // Precise Tallinn GIS borders; sub-zones (Vanalinn, Südalinn) sort above linnaosad.
+  // Precise Tallinn GIS borders. Sub-zones are separate layers so they paint
+  // above linnaosad without fill-sort-key (unsupported in this MapLibre build).
   if (!map.getSource(DISTRICT_SOURCE)) {
     map.addSource(DISTRICT_SOURCE, {
       type: 'geojson',
       data: districtsToGeoJSON(),
     })
+  } else {
+    const src = map.getSource(DISTRICT_SOURCE) as { setData?: (d: unknown) => void }
+    src.setData?.(districtsToGeoJSON())
+  }
+  if (!map.getSource(DISTRICT_LABEL_SOURCE)) {
     map.addSource(DISTRICT_LABEL_SOURCE, {
       type: 'geojson',
       data: districtLabelsToGeoJSON(),
     })
+  } else {
+    const src = map.getSource(DISTRICT_LABEL_SOURCE) as {
+      setData?: (d: unknown) => void
+    }
+    src.setData?.(districtLabelsToGeoJSON())
+  }
+
+  if (!map.getLayer(DISTRICT_FILL_LAYER)) {
     map.addLayer({
       id: DISTRICT_FILL_LAYER,
       type: 'fill',
       source: DISTRICT_SOURCE,
       maxzoom: ZOOM.lotMin,
+      filter: ['!=', ['get', 'layerRole'], 'subzone'],
       layout: { visibility: 'visible' },
       paint: {
         'fill-color': ['get', 'color'],
-        'fill-opacity': [
-          'match',
-          ['get', 'layerRole'],
-          'subzone',
-          0.28,
-          0.14,
-        ],
-        // MapLibre paints sub-zones above linnaosad when fillSort is higher
-        ...({ 'fill-sort-key': ['get', 'fillSort'] } as Record<string, unknown>),
-      } as Record<string, unknown>,
+        'fill-opacity': 0.14,
+      },
     })
-    // Soft outline only — shared municipal borders, no rough rectangles
+  }
+  if (!map.getLayer(DISTRICT_OUTLINE_LAYER)) {
     map.addLayer({
       id: DISTRICT_OUTLINE_LAYER,
       type: 'line',
       source: DISTRICT_SOURCE,
       maxzoom: ZOOM.lotMin,
+      filter: ['!=', ['get', 'layerRole'], 'subzone'],
       layout: {
         visibility: 'visible',
         'line-cap': 'round',
@@ -202,23 +215,45 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
       },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': [
-          'match',
-          ['get', 'layerRole'],
-          'subzone',
-          1.6,
-          1.1,
-        ],
-        'line-opacity': [
-          'match',
-          ['get', 'layerRole'],
-          'subzone',
-          0.55,
-          0.32,
-        ],
+        'line-width': 1.1,
+        'line-opacity': 0.32,
       },
     })
-    // Labels use explicit centroid Point features (not bbox / polygon defaults)
+  }
+  if (!map.getLayer(DISTRICT_SUBZONE_FILL_LAYER)) {
+    map.addLayer({
+      id: DISTRICT_SUBZONE_FILL_LAYER,
+      type: 'fill',
+      source: DISTRICT_SOURCE,
+      maxzoom: ZOOM.lotMin,
+      filter: ['==', ['get', 'layerRole'], 'subzone'],
+      layout: { visibility: 'visible' },
+      paint: {
+        'fill-color': ['get', 'color'],
+        'fill-opacity': 0.28,
+      },
+    })
+  }
+  if (!map.getLayer(DISTRICT_SUBZONE_OUTLINE_LAYER)) {
+    map.addLayer({
+      id: DISTRICT_SUBZONE_OUTLINE_LAYER,
+      type: 'line',
+      source: DISTRICT_SOURCE,
+      maxzoom: ZOOM.lotMin,
+      filter: ['==', ['get', 'layerRole'], 'subzone'],
+      layout: {
+        visibility: 'visible',
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-width': 1.6,
+        'line-opacity': 0.55,
+      },
+    })
+  }
+  if (!map.getLayer(DISTRICT_LABEL_LAYER)) {
     map.addLayer({
       id: DISTRICT_LABEL_LAYER,
       type: 'symbol',
