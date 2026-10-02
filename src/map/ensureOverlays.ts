@@ -187,89 +187,23 @@ function applyOverlayThemePaints(map: MapLibreMapType, mode: ThemeMode) {
   const casing = dark ? CASING_DARK : CASING_LIGHT
   const circleStroke = dark ? CIRCLE_STROKE_DARK : CIRCLE_STROKE_LIGHT
 
-  if (map.getLayer(DISTRICT_FILL_LAYER)) {
-    map.setPaintProperty(
-      DISTRICT_FILL_LAYER,
-      'fill-color',
-      dark
-        ? DISTRICT_FILL_DARK
-        : (['coalesce', ['get', 'color'], DISTRICT_COLOR_FALLBACK] as never),
-    )
-    map.setPaintProperty(
-      DISTRICT_FILL_LAYER,
-      'fill-opacity',
-      dark
-        ? ([
-            'case',
-            ['boolean', ['feature-state', 'hover'], false],
-            0.1,
-            ['case', ['boolean', ['feature-state', 'dim'], false], 0.04, 0.07],
-          ] as never)
-        : ([
-            'case',
-            ['boolean', ['feature-state', 'hover'], false],
-            0.28,
-            ['case', ['boolean', ['feature-state', 'dim'], false], 0.06, 0.16],
-          ] as never),
-    )
+  // Administrative district overlays stay disabled (empty source + hidden).
+  for (const id of [
+    DISTRICT_FILL_LAYER,
+    DISTRICT_OUTLINE_LAYER,
+    DISTRICT_SUBZONE_FILL_LAYER,
+    DISTRICT_SUBZONE_OUTLINE_LAYER,
+    DISTRICT_LABEL_LAYER,
+  ]) {
+    if (map.getLayer(id)) {
+      map.setLayoutProperty(id, 'visibility', 'none')
+    }
   }
-  if (map.getLayer(DISTRICT_OUTLINE_LAYER)) {
-    map.setPaintProperty(
-      DISTRICT_OUTLINE_LAYER,
-      'line-color',
-      dark
-        ? DISTRICT_LINE_DARK
-        : (['coalesce', ['get', 'color'], DISTRICT_COLOR_FALLBACK] as never),
-    )
-    map.setPaintProperty(DISTRICT_OUTLINE_LAYER, 'line-width', [
-      'case',
-      ['boolean', ['feature-state', 'hover'], false],
-      2.4,
-      1.5,
-    ])
-    map.setPaintProperty(
-      DISTRICT_OUTLINE_LAYER,
-      'line-opacity',
-      dark
-        ? ([
-            'case',
-            ['boolean', ['feature-state', 'dim'], false],
-            0.3,
-            0.6,
-          ] as never)
-        : ([
-            'case',
-            ['boolean', ['feature-state', 'dim'], false],
-            0.25,
-            0.55,
-          ] as never),
-    )
+  if (map.getLayer(DISTRICT_FILL_LAYER)) {
+    map.setPaintProperty(DISTRICT_FILL_LAYER, 'fill-opacity', 0)
   }
   if (map.getLayer(DISTRICT_SUBZONE_FILL_LAYER)) {
-    map.setPaintProperty(
-      DISTRICT_SUBZONE_FILL_LAYER,
-      'fill-color',
-      dark
-        ? '#c4a574'
-        : (['coalesce', ['get', 'color'], '#B45309'] as never),
-    )
-    map.setPaintProperty(
-      DISTRICT_SUBZONE_FILL_LAYER,
-      'fill-opacity',
-      dark
-        ? ([
-            'case',
-            ['boolean', ['feature-state', 'hover'], false],
-            0.12,
-            0.08,
-          ] as never)
-        : ([
-            'case',
-            ['boolean', ['feature-state', 'hover'], false],
-            0.32,
-            0.22,
-          ] as never),
-    )
+    map.setPaintProperty(DISTRICT_SUBZONE_FILL_LAYER, 'fill-opacity', 0)
   }
   if (map.getLayer(DISTRICT_SUBZONE_OUTLINE_LAYER)) {
     map.setPaintProperty(
