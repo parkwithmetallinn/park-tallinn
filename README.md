@@ -81,3 +81,16 @@ Server toetab ainult `start` | `stop` | `status` (extend puudub). Ettemakstud mi
 Deep-link testimiseks (ilma kaardiklõpsuta):
 
 `http://127.0.0.1:43127/?spot=ev-ignitis-ahtri`
+
+### Aadressirida (detail sheet)
+
+Bottom sheet’i aadressirida ei korda tsoonikoodi. Kui GeoJSON-is puudub päris `addr:*`,
+lahendatakse aadress laiskult In-AKS (Maa-amet) pöördgeokodeerimisega, varuna Nominatim/Photon.
+Tulemused cache’itakse (~30 päeva). Valikuline eelarvutus:
+
+```bash
+npm run precompute:addresses -- --limit=50
+npm run precompute:addresses -- --resume
+```
+
+Aadressi-validatsiooni test: `npm run test:address`.

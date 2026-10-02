@@ -1,7 +1,20 @@
 import { Flag, MapPin, Navigation, RefreshCw, Square, X } from 'lucide-react'
-import { useCallback, useState, type FormEvent, type MouseEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type MouseEvent,
+} from 'react'
 import type { ActiveParkingSession } from '../lib/parkingSession'
 import { formatHourlyRate, formatSessionInstant } from '../lib/parkingSession'
+import { getCachedAddress } from '../lib/addressCache'
+import { isRealAddress } from '../lib/isRealAddress'
+import {
+  MISSING_ADDRESS,
+  resolveSpotAddress,
+} from '../lib/resolveSpotAddress'
 import type { ParkingSpot } from '../types'
 import { navLinks, openAppleMaps } from '../lib/geocode'
 import { PARKING_LAYER_META } from '../map/parkingLayers'
@@ -78,6 +91,72 @@ export function ParkingBottomSheet({
   const hasActive = Boolean(activeSession?.carNumber && activeSession?.zone)
   const startedLabel = formatSessionInstant(activeSession?.startedAt)
   const title = `${spot.zone_code} — ${spot.name}`
+  const [resolvedAddress, setResolvedAddress] = useState<string | null>(() => {
+    const cached = getCachedAddress(spot.id)
+    if (cached?.address) return cached.address
+    if (isRealAddress(spot.address, { name: spot.name, code: spot.zone_code })) {
+      return spot.address.trim()
+    }
+    return null
+  })
+  const [addressLoading, setAddressLoading] = useState(
+    () => !getCachedAddress(spot.id) && !isRealAddress(spot.address, {
+      name: spot.name,
+      code: spot.zone_code,
+    }),
+  )
+  const [copiedHint, setCopiedHint] = useState(false)
+  const longPressTimer = useRef<number | null>(null)
+
+  useEffect(() => {
+    const ac = new AbortController()
+    const cached = getCachedAddress(spot.id)
+    if (cached?.address) {
+      setResolvedAddress(cached.address)
+      setAddressLoading(false)
+      return () => ac.abort()
+    }
+    if (isRealAddress(spot.address, { name: spot.name, code: spot.zone_code })) {
+      setResolvedAddress(spot.address.trim())
+      setAddressLoading(false)
+    } else {
+      setResolvedAddress(null)
+      setAddressLoading(true)
+    }
+    setCopiedHint(false)
+
+    void resolveSpotAddress(spot, ac.signal)
+      .then((r) => {
+        if (ac.signal.aborted) return
+        setResolvedAddress(r.address)
+        setAddressLoading(false)
+      })
+      .catch((err: unknown) => {
+        if ((err as Error)?.name === 'AbortError' || ac.signal.aborted) return
+        setResolvedAddress(MISSING_ADDRESS)
+        setAddressLoading(false)
+      })
+
+    return () => {
+      ac.abort()
+      if (longPressTimer.current) {
+        window.clearTimeout(longPressTimer.current)
+        longPressTimer.current = null
+      }
+    }
+  }, [spot])
+
+  const copyAddress = useCallback(async () => {
+    const text = resolvedAddress?.trim()
+    if (!text || text === MISSING_ADDRESS) return
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedHint(true)
+      window.setTimeout(() => setCopiedHint(false), 1600)
+    } catch {
+      /* ignore clipboard failures */
+    }
+  }, [resolvedAddress])
 
   return (
     <div
@@ -122,10 +201,53 @@ export function ParkingBottomSheet({
             <h3 className="text-[22px] leading-tight font-bold tracking-tight text-[#1C1C1E]">
               {spot.name}
             </h3>
-            <p className="mt-1 flex items-center gap-1 truncate text-[13px] text-[#8E8E93]">
+            <button
+              type="button"
+              data-testid="spot-address"
+              title={
+                resolvedAddress && resolvedAddress !== MISSING_ADDRESS
+                  ? 'Kopeeri aadress'
+                  : undefined
+              }
+              disabled={addressLoading || !resolvedAddress || resolvedAddress === MISSING_ADDRESS}
+              onClick={() => void copyAddress()}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                void copyAddress()
+              }}
+              onPointerDown={() => {
+                if (longPressTimer.current) window.clearTimeout(longPressTimer.current)
+                longPressTimer.current = window.setTimeout(() => {
+                  void copyAddress()
+                }, 480)
+              }}
+              onPointerUp={() => {
+                if (longPressTimer.current) {
+                  window.clearTimeout(longPressTimer.current)
+                  longPressTimer.current = null
+                }
+              }}
+              onPointerLeave={() => {
+                if (longPressTimer.current) {
+                  window.clearTimeout(longPressTimer.current)
+                  longPressTimer.current = null
+                }
+              }}
+              className="mt-1 flex w-full min-w-0 items-center gap-1 truncate text-left text-[13px] text-[#8E8E93] disabled:cursor-default"
+            >
               <MapPin className="h-3.5 w-3.5 shrink-0 opacity-70" />
-              {spot.address}
-            </p>
+              {addressLoading ? (
+                <span
+                  data-testid="spot-address-skeleton"
+                  className="inline-block h-[14px] w-[min(100%,14rem)] max-w-full animate-pulse rounded bg-[#E5E5EA]"
+                  aria-label="Aadressi laadimine"
+                />
+              ) : (
+                <span className="truncate">
+                  {copiedHint ? 'Aadress kopeeritud' : resolvedAddress}
+                </span>
+              )}
+            </button>
             {spot.featureType === 'on-street-line' || spot.kind === 'street' ? (
               <p className="mt-2 text-[12px] font-semibold text-[#636366]">
                 Teeäärne tsoon · {spot.zone_code}

@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "build:districts": "node scripts/build-districts.mjs",
     "check:districts": "node scripts/check-districts.mjs",
-    "test:districts": "node scripts/check-districts.mjs"
+    "test:districts": "node scripts/check-districts.mjs",
+    "test:address": "node scripts/test-is-real-address.mjs",
+    "precompute:addresses": "node scripts/precompute-addresses.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.0",

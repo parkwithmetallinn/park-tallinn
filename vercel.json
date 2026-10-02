@@ -5,6 +5,10 @@
       "destination": "https://nominatim.openstreetmap.org/:path*"
     },
     {
+      "source": "/api/inaks/:path*",
+      "destination": "https://aks.geoportaal.ee/inaks/inaadress/:path*"
+    },
+    {
       "source": "/admin",
       "destination": "/index.html"
     },

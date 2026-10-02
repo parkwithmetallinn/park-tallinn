@@ -47,6 +47,18 @@ export default defineConfig(({ mode }) => {
             'User-Agent': 'ParkTallinn/1.0 (parking-map)',
           },
         },
+        // In-AKS (Maa-amet) gazetteer reverse geocoding
+        '/api/inaks': {
+          target: 'https://aks.geoportaal.ee',
+          changeOrigin: true,
+          rewrite: (path) =>
+            path.replace(/^\/api\/inaks/, '/inaks/inaadress'),
+          headers: {
+            'User-Agent': 'ParkTallinn/1.0 (parking-map; address-resolution)',
+            Accept: 'application/json',
+            Referer: 'https://aks.geoportaal.ee/',
+          },
+        },
         // n8n parking session webhook — inject Header Auth from env
         '/api/parkimine': {
           target: n8nOrigin,
