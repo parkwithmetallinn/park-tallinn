@@ -218,12 +218,12 @@ export function ensureParkingOverlaySources(map: MapLibreMapType) {
         'fill-opacity': [
           'case',
           ['boolean', ['feature-state', 'hover'], false],
-          0.18,
+          0.2,
           [
             'case',
             ['boolean', ['feature-state', 'dim'], false],
-            0.03,
-            0.08,
+            0.04,
+            0.1,
           ],
         ],
       },
