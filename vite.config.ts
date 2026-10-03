@@ -47,6 +47,18 @@ export default defineConfig(({ mode }) => {
     optimizeDeps: {
       exclude: ['maplibre-gl'],
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/maplibre-gl')) return 'maplibre'
+            if (id.includes('node_modules/@turf')) return 'turf'
+            if (id.includes('node_modules/zod')) return 'zod'
+            return undefined
+          },
+        },
+      },
+    },
     server: {
       host: '0.0.0.0',
       port: 43127,
