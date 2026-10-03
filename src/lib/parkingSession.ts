@@ -567,16 +567,27 @@ async function postSession(
   )
 }
 
+import { parseParkingSessionBody } from './validation'
+
 function validateRequest(input: ParkingSessionRequest): string | null {
-  const carNumber = input.carNumber?.trim() ?? ''
-  const zone = input.zone?.trim() ?? ''
-
-  if (input.action === 'status') {
-    return null
+  const parsed = parseParkingSessionBody({
+    action: input.action,
+    carNumber: input.carNumber?.trim() || undefined,
+    zone: input.zone?.trim() || undefined,
+  })
+  if (!parsed) {
+    // Reuse existing error strings — no new UX copy
+    if (input.action !== 'status' && !input.carNumber?.trim()) {
+      return 'Sisesta auto number'
+    }
+    if (input.action === 'start' && !input.zone?.trim()) {
+      return 'Tsoon puudub'
+    }
+    if (input.action !== 'status' && !input.zone?.trim()) {
+      return 'Tsoon puudub'
+    }
+    return 'Sisesta auto number'
   }
-
-  if (!carNumber) return 'Sisesta auto number'
-  if (!zone) return 'Tsoon puudub'
   return null
 }
 

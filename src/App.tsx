@@ -88,6 +88,7 @@ import {
   outcomeToResponse,
 } from './lib/parkingSession'
 import { useParkingSession } from './hooks/useParkingSession'
+import { clampSearchQuery } from './lib/validation'
 
 import { parkingIndex } from './lib/spatialIndex'
 import { loadCustomSpots } from './lib/storage'
@@ -246,7 +247,7 @@ export default function App() {
       setGeoLoading(false)
       return
     }
-    const q = query.trim()
+    const q = clampSearchQuery(query)
     if (q.length < 3) {
       setGeoResults([])
       setGeoError(null)
@@ -1288,12 +1289,12 @@ export default function App() {
                     value={query}
                     onChange={(e) => {
                       skipNextGeocode.current = false
-                      const v = e.target.value
+                      const v = e.target.value.slice(0, 120)
                       setQuery(v)
-                      setIsDropdownOpen(v.trim().length >= 3)
+                      setIsDropdownOpen(clampSearchQuery(v).length >= 3)
                     }}
                     onFocus={() => {
-                      if (query.trim().length >= 3) setIsDropdownOpen(true)
+                      if (clampSearchQuery(query).length >= 3) setIsDropdownOpen(true)
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') {

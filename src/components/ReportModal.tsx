@@ -1,7 +1,11 @@
 import { Flag, MapPinPlus, X } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { enqueueParkingRequest, type ParkingRequestType } from '../lib/parkingRequests'
 import type { ParkingSpot, SpotType } from '../types'
+import {
+  reportInvalidSchema,
+  reportProposeSchema,
+} from '../lib/validation'
 
 export type ReportModalContext = {
   /** Default request type */
@@ -45,20 +49,53 @@ export function ReportModal({
 }) {
   const [mode, setMode] = useState<ParkingRequestType>(context.mode)
   const [submitting, setSubmitting] = useState(false)
+  const openedAtRef = useRef(Date.now())
 
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (submitting) return
     const fd = new FormData(e.currentTarget)
+
+    // Invisible spam checks — same success path, no new UI
+    const honeypot = String(fd.get('company_website') || '')
+    if (honeypot) {
+      onSubmitted?.(
+        mode === 'PROPOSE_NEW'
+          ? 'Ettepanek saadetud ülevaatusse — tootmise GeoJSON-i ei muudeta otseselt.'
+          : 'Vea teade saadetud ülevaatusse — kaart muutub alles pärast kinnitust.',
+      )
+      onClose()
+      return
+    }
+    if (Date.now() - openedAtRef.current < 1200) {
+      onSubmitted?.(
+        mode === 'PROPOSE_NEW'
+          ? 'Ettepanek saadetud ülevaatusse — tootmise GeoJSON-i ei muudeta otseselt.'
+          : 'Vea teade saadetud ülevaatusse — kaart muutub alles pärast kinnitust.',
+      )
+      onClose()
+      return
+    }
+
     let note = String(fd.get('note') || '').trim()
 
     setSubmitting(true)
     try {
       if (mode === 'PROPOSE_NEW') {
-        const name = String(fd.get('name') || '').trim()
-        const address = String(fd.get('address') || '').trim()
-        if (!name) return
-        const rawType = String(fd.get('type') || 'free')
+        const parsed = reportProposeSchema.safeParse({
+          name: String(fd.get('name') || ''),
+          address: String(fd.get('address') || ''),
+          type: String(fd.get('type') || 'free'),
+          kind: String(fd.get('kind') || 'street'),
+          limit: String(fd.get('limit') || ''),
+          note,
+          company_website: honeypot,
+        })
+        if (!parsed.success) return
+        const name = parsed.data.name
+        const address = parsed.data.address?.trim() || ''
+        note = parsed.data.note?.trim() || ''
+        const rawType = parsed.data.type
         if (rawType === 'other' && !note.toLowerCase().includes('muud')) {
           note = note ? `Muud / Era. ${note}` : 'Muud / Era'
         }
@@ -69,9 +106,9 @@ export function ReportModal({
           note,
           name,
           address: address || undefined,
-          proposedKind: (String(fd.get('kind') || 'street') as 'street' | 'lot'),
+          proposedKind: parsed.data.kind,
           proposedType: mapProposedType(rawType),
-          timeLimit: String(fd.get('limit') || '').trim() || undefined,
+          timeLimit: parsed.data.limit?.trim() || undefined,
         })
         onSubmitted?.(
           'Ettepanek saadetud ülevaatusse — tootmise GeoJSON-i ei muudeta otseselt.',
@@ -79,19 +116,21 @@ export function ReportModal({
       } else {
         const target = context.target
         if (!target) return
+        const parsed = reportInvalidSchema.safeParse({
+          reason: String(fd.get('reason') || 'nonexistent'),
+          note,
+          company_website: honeypot,
+        })
+        if (!parsed.success) return
         enqueueParkingRequest({
           type: 'REPORT_INVALID',
           lat: target.lat,
           lng: target.lng,
-          note,
+          note: parsed.data.note?.trim() || '',
           targetFeatureId: target.id,
           targetName: target.name,
           targetLayer: target.layer,
-          reason: (String(fd.get('reason') || 'nonexistent') as
-            | 'nonexistent'
-            | 'blocked'
-            | 'private'
-            | 'other'),
+          reason: parsed.data.reason,
         })
         onSubmitted?.(
           'Vea teade saadetud ülevaatusse — kaart muutub alles pärast kinnitust.',
@@ -176,6 +215,28 @@ export function ReportModal({
         </p>
 
         <form onSubmit={submit} className="space-y-3">
+          {/* Invisible honeypot — off-screen, ignored by assistive tech */}
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              left: '-10000px',
+              top: 'auto',
+              width: 1,
+              height: 1,
+              overflow: 'hidden',
+            }}
+          >
+            <label>
+              Company website
+              <input
+                type="text"
+                name="company_website"
+                tabIndex={-1}
+                autoComplete="off"
+              />
+            </label>
+          </div>
           {mode === 'PROPOSE_NEW' ? (
             <>
               <div>
