@@ -14,9 +14,9 @@ function htmlSeoEnvPlugin(env: Record<string, string>): Plugin {
     name: 'html-seo-env',
     transformIndexHtml(html) {
       return html
-        .replaceAll('%VITE_ROBOTS%', robots)
-        .replaceAll('%VITE_CANONICAL%', canonical)
-        .replaceAll('%VITE_OG_IMAGE%', ogImage)
+        .replaceAll('__SEO_ROBOTS__', robots)
+        .replaceAll('__SEO_CANONICAL__', canonical)
+        .replaceAll('__SEO_OG_IMAGE__', ogImage)
     },
   }
 }
