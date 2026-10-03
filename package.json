@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "node scripts/sync-robots.mjs && vite",
     "prebuild": "node scripts/sync-robots.mjs",
+  "fetch:parking-max": "node scripts/fetch-ee-parking-max.mjs",
+    "build:parking-max": "node scripts/build-ee-parking-max.mjs",
+    "rebuild:parking-max": "node scripts/fetch-ee-parking-max.mjs && node scripts/build-ee-parking-max.mjs",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",

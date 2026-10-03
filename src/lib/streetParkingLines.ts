@@ -28,8 +28,8 @@ export function getLastStreetPurgeStats(): ParkingPrepPurgeStats {
 }
 import type { ParkingLayerKey, ParkingOperator, ParkingSpot } from '../types'
 
-/** @deprecated Use estonia_parking_master via parkingDataCache / loadEstoniaParkingMaster */
-export const STREET_PARKING_URL = '/data/estonia_parking_master.geojson'
+/** @deprecated Use ee_parking_max via parkingDataCache / loadEstoniaParkingMaster */
+export const STREET_PARKING_URL = '/data/ee_parking_max.geojson'
 
 export const STREET_PARKING_SOURCE = 'street-parking'
 export const STREET_PARKING_LINE_LAYER = 'street-parking-line'
@@ -596,7 +596,7 @@ export function filterStreetCollection(
 export async function loadStreetParking(
   url = STREET_PARKING_URL,
 ): Promise<StreetParkingCollection> {
-  if (url.includes('estonia_parking_master')) {
+  if (url.includes('ee_parking_max') || url.includes('estonia_parking_master')) {
     const { loadEstoniaParkingMaster } = await import('./estoniaParkingMaster')
     return (await loadEstoniaParkingMaster(url)).streets
   }

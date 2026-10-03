@@ -1416,6 +1416,7 @@ export const MapView = forwardRef<
   }, [theme, ready])
 
   /** Reload parking + district overlays when the city layer changes. */
+  // City parking lots/streets: ee_parking_max.geojson via loadCityParking(cityId)
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return

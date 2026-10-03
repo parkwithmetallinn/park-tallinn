@@ -1,5 +1,5 @@
 /**
- * Cache-first parking loaders backed by estonia_parking_master.geojson.
+ * Cache-first parking loaders backed by ee_parking_max.geojson.
  * Production master file is never mutated; results live in memory.
  */
 

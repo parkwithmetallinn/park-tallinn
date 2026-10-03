@@ -1,6 +1,6 @@
 /**
  * Single source of truth for map parking geometry:
- *   public/data/estonia_parking_master.geojson
+ *   public/data/ee_parking_max.geojson (nationwide Overpass + municipal merge)
  *
  * Splits features into lot polygons vs roadside curb geometry so MapView
  * can keep its dual-layer rendering without the old split files.
@@ -15,7 +15,7 @@ import {
   type StreetParkingCollection,
 } from './streetParkingLines'
 
-export const ESTONIA_PARKING_MASTER_URL = '/data/estonia_parking_master.geojson'
+export const ESTONIA_PARKING_MASTER_URL = '/data/ee_parking_max.geojson'
 
 type RawFeature = {
   type: string
@@ -111,7 +111,7 @@ export async function loadEstoniaParkingMaster(
   masterInflight = (async () => {
     const res = await fetch(url)
     if (!res.ok) {
-      throw new Error(`Failed to load estonia_parking_master.geojson (${res.status})`)
+      throw new Error(`Failed to load ee_parking_max.geojson (${res.status})`)
     }
     const raw = (await res.json()) as RawCollection
     const { lotRaw, streetRaw } = splitMasterCollection(raw)

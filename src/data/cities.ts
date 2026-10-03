@@ -27,7 +27,7 @@ export const CITIES: Record<CityId, CityConfig> = {
     center: [59.437, 24.7535],
     zoom: 12.2,
     viewbox: '24.55,59.35,25.00,59.55',
-    parkingUrl: '/data/estonia_parking_master.geojson',
+    parkingUrl: '/data/ee_parking_max.geojson',
     showTallinnDistricts: true,
   },
   parnu: {
