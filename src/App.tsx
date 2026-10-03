@@ -89,6 +89,7 @@ import {
 } from './lib/parkingSession'
 import { useParkingSession } from './hooks/useParkingSession'
 import { clampSearchQuery } from './lib/validation'
+import { track } from './lib/analytics'
 
 import { parkingIndex } from './lib/spatialIndex'
 import { loadCustomSpots } from './lib/storage'
@@ -1375,7 +1376,13 @@ export default function App() {
                     key={f.id}
                     type="button"
                     data-filter={f.id}
-                    onClick={() => setFilter(f.id)}
+                    onClick={() => {
+                      setFilter(f.id)
+                      track('filter_used', { filter: f.id })
+                      if (f.id === 'free_street') {
+                        track('free_now_toggled', { filter: f.id })
+                      }
+                    }}
                     className={`tap-scale shrink-0 cursor-pointer rounded-full px-3.5 py-2 text-[13px] font-semibold shadow-sm sm:px-4 ${
                       active ? chipActive : `${panel} ${chip}`
                     }`}
@@ -1752,6 +1759,9 @@ export default function App() {
           onClose={() => setReportContext(null)}
           onSubmitted={(message) => {
             setToast({ kind: 'info', title: 'Saadetud ülevaatusse', detail: message })
+            if (reportContext?.mode === 'PROPOSE_NEW') {
+              track('spot_added', { mode: 'PROPOSE_NEW' })
+            }
             // Refresh moderation layer if admin approved in another tab later
             setApprovedOverlays(loadApprovedOverlays())
             setSuppressedIds(loadSuppressedFeatureIds())

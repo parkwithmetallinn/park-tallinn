@@ -24,6 +24,7 @@ import {
 import type { ParkingSpot } from '../types'
 import { formatFreeUntil } from '../lib/freeRules'
 import { navLinks, openAppleMaps } from '../lib/geocode'
+import { track } from '../lib/analytics'
 import {
   categoryBadgeLabel,
   categoryPaintColor,
@@ -515,6 +516,7 @@ export function ParkingBottomSheet({
               href={links.waze}
               target="_blank"
               rel="noreferrer"
+              onClick={() => track('navigate_clicked', { provider: 'waze' })}
               className="flex flex-col items-center justify-center gap-1 rounded-xl bg-[#33CCFF] px-1.5 py-2.5 text-center transition active:scale-[0.98]"
             >
               <Navigation className="h-4 w-4 text-[#053B4A]" strokeWidth={2.5} />
@@ -524,6 +526,7 @@ export function ParkingBottomSheet({
               href={links.google}
               target="_blank"
               rel="noreferrer"
+              onClick={() => track('navigate_clicked', { provider: 'google' })}
               className="flex flex-col items-center justify-center gap-1 rounded-xl bg-[#4285F4] px-1.5 py-2.5 text-center transition active:scale-[0.98]"
             >
               <MapPin className="h-4 w-4 text-white" strokeWidth={2.5} />
@@ -531,7 +534,10 @@ export function ParkingBottomSheet({
             </a>
             <button
               type="button"
-              onClick={() => openAppleMaps(spot.lat, spot.lng)}
+              onClick={() => {
+                track('navigate_clicked', { provider: 'apple' })
+                openAppleMaps(spot.lat, spot.lng)
+              }}
               className="flex flex-col items-center justify-center gap-1 rounded-xl bg-[#1C1C1E] px-1.5 py-2.5 text-center transition active:scale-[0.98]"
             >
               <MapPin className="h-4 w-4 text-white" strokeWidth={2.5} />

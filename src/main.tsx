@@ -6,6 +6,7 @@ import App from './App.tsx'
 import { AdminReviewView } from './components/AdminReviewView.tsx'
 import { queryClient } from './lib/queryClient'
 import { prefetchParkingLayers } from './lib/parkingDataCache'
+import { initAnalytics } from './lib/analytics'
 
 const path = window.location.pathname.replace(/\/+$/, '') || '/'
 const isAdmin =
@@ -15,6 +16,7 @@ const isAdmin =
 
 // Warm parking layer cache as soon as the shell boots
 prefetchParkingLayers()
+initAnalytics()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
