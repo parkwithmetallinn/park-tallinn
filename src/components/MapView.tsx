@@ -616,7 +616,9 @@ export const MapView = forwardRef<
      * pin/polygon + active price pill. Does not open detail or fetch routes.
      */
     highlightId?: string | null
-    /** Glass price pills above nearest parking options (no numeric ranks). */
+    /** Glass price pills above nearest parking options (no numeric ranks).
+     * Parent supplies already-clustered / category-diverse optionKeys from
+     * collectNearestAround — MapView does not re-expand street segments. */
     nearestPills?: NearestMapPill[]
     /** Frame destination + all nearest pills (fit once when fitAll). */
     previewFocus?: {

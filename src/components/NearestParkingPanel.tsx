@@ -8,6 +8,10 @@ import {
 } from '../lib/parkingClassification'
 import { spotDisplayName } from '../lib/parkingDisplayName'
 import type { NearestParkingOption } from '../lib/nearestParking'
+import {
+  isPaidParkingSpot,
+  sortOdavaimTasuta,
+} from '../lib/nearestParking'
 import type { ParkingSpot } from '../types'
 import { InfoSidePanelShell } from './InfoSidePanel'
 
@@ -88,17 +92,12 @@ function badgeTone(spot: ParkingSpot, dark?: boolean): string {
 function matchesPanelFilter(spot: ParkingSpot, filter: PanelFilter): boolean {
   if (filter === 'all') return true
   if (filter === 'free') {
-    return isUnlimitedFreeParking(spot) || spot.price_per_hour <= 0
+    // Odavaim / Tasuta: unlimited FREE + clock (clock listed strictly below FREE)
+    return isUnlimitedFreeParking(spot) || isClockLimitedParking(spot)
   }
   if (filter === 'clock') return isClockLimitedParking(spot)
-  // paid
-  return (
-    spot.price_per_hour > 0 ||
-    spot.badge === 'PAID' ||
-    ['europark', 'snabb', 'citypark', 'uhisteenused', 'parkit', 'municipal'].includes(
-      spot.layer,
-    )
-  )
+  // paid — never mix FREE / KELLAGA into Tasuline
+  return isPaidParkingSpot(spot)
 }
 
 export function NearestParkingPanel({
@@ -131,16 +130,8 @@ export function NearestParkingPanel({
   const filtered = useMemo(() => {
     const list = options.filter((o) => matchesPanelFilter(o.spot, filter))
     if (filter === 'free') {
-      // Cheapest first: free → clock → lowest €/h
-      return [...list].sort((a, b) => {
-        const score = (s: ParkingSpot) => {
-          if (isUnlimitedFreeParking(s)) return 0
-          if (isClockLimitedParking(s)) return 1
-          return 2 + (s.price_per_hour || 99)
-        }
-        const d = score(a.spot) - score(b.spot)
-        return d !== 0 ? d : a.distanceM - b.distanceM
-      })
+      // FREE always above KELLAGA — even when a clock spot is closer
+      return sortOdavaimTasuta(list)
     }
     return list
   }, [options, filter])
