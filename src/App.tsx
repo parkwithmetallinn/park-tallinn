@@ -1303,6 +1303,7 @@ export default function App() {
                       }
                     }}
                     placeholder="Otsi aadressi või kohta Eestis"
+                    aria-label="Otsi aadressi või kohta"
                     className={`w-full rounded-2xl border-0 bg-transparent py-3 pr-10 pl-10 text-[16px] font-sans outline-none ${text} placeholder:text-[#8E8E93]`}
                     autoComplete="off"
                     enterKeyHint="search"
@@ -1329,6 +1330,7 @@ export default function App() {
                   onClick={() => setInfoOpen(true)}
                   className={`cursor-pointer rounded-full p-2.5 ${chip}`}
                   title="Reeglid"
+                  aria-label="Reeglid"
                 >
                   <CircleHelp className="h-5 w-5" />
                 </button>
@@ -1495,6 +1497,7 @@ export default function App() {
           onClick={openProposeNew}
           className="tap-scale flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[#34C759] text-white shadow-[0_4px_16px_rgba(52,199,89,0.35)]"
           title="Paku uut kohta (ülevaatusse)"
+          aria-label="Paku uut kohta"
         >
           <Plus className="h-6 w-6" strokeWidth={2.4} />
         </button>
