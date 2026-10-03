@@ -61,6 +61,7 @@ import {
   DISTRICT_FILL_LAYER,
   DISTRICT_SUBZONE_FILL_LAYER,
   ensureParkingOverlaySources,
+  orderParkingOverlayStack,
   ROUTE_SOURCE,
   WALK_ROUTE_CASING,
   WALK_ROUTE_LINE,
@@ -69,6 +70,7 @@ import {
   setDistrictDebugVisible,
   setDistrictHover,
   setParkingLayerVisibility,
+  setParkingOverlaysRevealed,
 } from '../map/ensureOverlays'
 import {
   PARKING_LAYER_META,
@@ -92,6 +94,7 @@ import {
 import {
   ensureEvChargerLayers,
   EV_CHARGERS_CIRCLE_LAYER,
+  EV_CHARGERS_GLOW_LAYER,
   EV_CHARGERS_HIT_LAYER,
   EV_CHARGERS_SOURCE,
   EV_CHARGERS_SYMBOL_LAYER,
@@ -852,27 +855,62 @@ export const MapView = forwardRef<
     const onStyleLoad = () => {
       ensureParkingOverlaySources(map, themeRef.current)
       ensureEvChargerLayers(map)
+      // Polygons → lines → pins/symbols; EV markers sit above parking pins
+      orderParkingOverlayStack(map)
+      for (const id of [
+        EV_CHARGERS_GLOW_LAYER,
+        EV_CHARGERS_CIRCLE_LAYER,
+        EV_CHARGERS_SYMBOL_LAYER,
+        EV_CHARGERS_HIT_LAYER,
+      ]) {
+        if (map.getLayer(id)) {
+          try {
+            map.moveLayer(id)
+          } catch {
+            /* ok */
+          }
+        }
+      }
+      // Keep overlays hidden until the basemap finishes its first paint
+      setParkingOverlaysRevealed(map, false)
+      setEvChargerVisibility(map, false)
       appliedThemeRef.current = themeRef.current
+
+      const revealOverlaysAfterBasemap = (then: () => void) => {
+        let done = false
+        const reveal = () => {
+          if (done || !mapRef.current) return
+          done = true
+          map.off('idle', reveal)
+          setParkingOverlaysRevealed(map, true)
+          orderParkingOverlayStack(map)
+          for (const id of [
+            EV_CHARGERS_GLOW_LAYER,
+            EV_CHARGERS_CIRCLE_LAYER,
+            EV_CHARGERS_SYMBOL_LAYER,
+            EV_CHARGERS_HIT_LAYER,
+          ]) {
+            if (map.getLayer(id)) {
+              try {
+                map.moveLayer(id)
+              } catch {
+                /* ok */
+              }
+            }
+          }
+          then()
+        }
+        // Wait for style + vector tiles so lines don't flash on blank white.
+        map.once('idle', reveal)
+        // Safety: if idle already fired before we subscribed, reveal shortly.
+        window.setTimeout(() => {
+          if (!done && map.isStyleLoaded()) reveal()
+        }, 400)
+      }
 
       if (!setupDone) {
         setupDone = true
         bindHover()
-        // Public EV chargers (private access already stripped in prepare)
-        void loadEvChargers().then((fc) => {
-          if (!mapRef.current) return
-          evFcRef.current = fc
-          const show =
-            filterRef.current === 'all' || filterRef.current === 'ev'
-          setEvChargerData(
-            mapRef.current,
-            filterEvCollection(fc, show ? filterRef.current === 'ev' ? 'ev' : 'all' : 'hide'),
-          )
-          setEvChargerVisibility(mapRef.current, show)
-          for (const f of fc.features) {
-            const spot = evFeatureToSpot(f)
-            if (!parkingIndex.getById(spot.id)) parkingIndex.insert(spot)
-          }
-        })
         // District hover → feature-state (does not affect parking hit targets)
         const districtLayers = [DISTRICT_FILL_LAYER, DISTRICT_SUBZONE_FILL_LAYER]
         let hoveredDistrict: string | number | null = null
@@ -894,9 +932,6 @@ export const MapView = forwardRef<
         }
         map.resize()
         map.setPitch(pitch3dRef.current ? NAV_PITCH : 0)
-        setReady(true)
-        onMapReadyRef.current?.()
-        void refreshViewport(map)
         emitZoom(map)
 
         // Dual-layer parking (Tallinn master or Pärnu city extract).
@@ -972,25 +1007,69 @@ export const MapView = forwardRef<
 
         const city = cityIdRef.current
         setCityDistrictOverlays(map, city)
-        const warmPoly = getCachedCityPolygons(city)
-        const warmStreet = getCachedCityStreets(city)
-        if (warmPoly) applyPoly(warmPoly)
-        if (warmStreet) applyStreet(warmStreet)
 
-        void loadCityParking(city)
-          .then((split) => {
-            if (cityIdRef.current !== city) return
-            applyPoly(split.polygons)
-            applyStreet(split.streets)
+        // Defer parking GeoJSON + EV until basemap tiles have painted —
+        // prevents blue curb lines flashing on a blank white canvas.
+        revealOverlaysAfterBasemap(() => {
+          if (!mapRef.current) return
+          setReady(true)
+          onMapReadyRef.current?.()
+          void refreshViewport(map)
+
+          const warmPoly = getCachedCityPolygons(city)
+          const warmStreet = getCachedCityStreets(city)
+          if (warmPoly) applyPoly(warmPoly)
+          if (warmStreet) applyStreet(warmStreet)
+
+          void loadCityParking(city)
+            .then((split) => {
+              if (cityIdRef.current !== city) return
+              applyPoly(split.polygons)
+              applyStreet(split.streets)
+            })
+            .catch((err) => {
+              console.warn(`[parking] ${city} master failed to load`, err)
+            })
+
+          // Public EV chargers — only under Kõik / Elektriautolaadijad
+          void loadEvChargers().then((fc) => {
+            if (!mapRef.current) return
+            evFcRef.current = fc
+            const show =
+              filterRef.current === 'all' || filterRef.current === 'ev'
+            setEvChargerData(
+              mapRef.current,
+              filterEvCollection(
+                fc,
+                show ? (filterRef.current === 'ev' ? 'ev' : 'all') : 'hide',
+              ),
+            )
+            setEvChargerVisibility(mapRef.current, show)
+            for (const f of fc.features) {
+              const spot = evFeatureToSpot(f)
+              if (!parkingIndex.getById(spot.id)) parkingIndex.insert(spot)
+            }
           })
-          .catch((err) => {
-            console.warn(`[parking] ${city} master failed to load`, err)
-          })
+        })
         return
       }
 
-      // Theme / style reload — restore overlays + filters + selection + camera data
-      reapplyOverlayData()
+      // Theme / style reload — reveal after basemap idle, then restore data
+      revealOverlaysAfterBasemap(() => {
+        reapplyOverlayData()
+        if (evFcRef.current) {
+          const show =
+            filterRef.current === 'all' || filterRef.current === 'ev'
+          setEvChargerData(
+            map,
+            filterEvCollection(
+              evFcRef.current,
+              show ? (filterRef.current === 'ev' ? 'ev' : 'all') : 'hide',
+            ),
+          )
+          setEvChargerVisibility(map, show)
+        }
+      })
     }
 
     map.on('style.load', onStyleLoad)

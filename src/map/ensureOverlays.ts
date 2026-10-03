@@ -14,6 +14,8 @@ const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] as never[] }
 let activeDistrictCity: CityId = 'tallinn'
 /** When false, Pärnu paid-zone overlays stay hidden (e.g. Tasuta / Kellaga filter). */
 let parnuPaidZonesVisible = true
+/** When false, parking geom/line overlays stay hidden to avoid pre-basemap flash. */
+let parkingOverlaysRevealed = false
 import {
   PRECISE_FILL_LAYER,
   PRECISE_LABEL_LAYER,
@@ -800,7 +802,7 @@ export function ensureParkingOverlaySources(
       source: STREET_PARKING_SOURCE,
       minzoom: ZOOM.streetMin,
       layout: {
-        visibility: 'visible',
+        visibility: 'none',
         'line-cap': 'round',
         'line-join': 'round',
       },
@@ -837,7 +839,7 @@ export function ensureParkingOverlaySources(
       source: STREET_PARKING_SOURCE,
       minzoom: ZOOM.streetMin,
       layout: {
-        visibility: 'visible',
+        visibility: 'none',
         'line-cap': 'round',
         'line-join': 'round',
       },
@@ -895,7 +897,7 @@ export function ensureParkingOverlaySources(
       source: STREET_PARKING_SOURCE,
       minzoom: ZOOM.streetMin,
       layout: {
-        visibility: 'visible',
+        visibility: 'none',
         'line-cap': 'round',
         'line-join': 'round',
       },
@@ -920,7 +922,7 @@ export function ensureParkingOverlaySources(
       source: PARKING_LINES_SOURCE,
       minzoom: ZOOM.detailMin,
       layout: {
-        visibility: 'visible',
+        visibility: 'none',
         'line-cap': 'round',
         'line-join': 'round',
       },
@@ -936,7 +938,7 @@ export function ensureParkingOverlaySources(
       source: PARKING_LINES_SOURCE,
       minzoom: ZOOM.detailMin,
       layout: {
-        visibility: 'visible',
+        visibility: 'none',
         'line-cap': 'round',
         'line-join': 'round',
       },
@@ -966,7 +968,7 @@ export function ensureParkingOverlaySources(
       source: PARKING_LINES_SOURCE,
       minzoom: ZOOM.detailMin,
       layout: {
-        visibility: 'visible',
+        visibility: 'none',
         'line-cap': 'round',
         'line-join': 'round',
       },
@@ -982,7 +984,7 @@ export function ensureParkingOverlaySources(
       source: PARKING_LINES_SOURCE,
       minzoom: ZOOM.detailMin,
       layout: {
-        visibility: 'visible',
+        visibility: 'none',
         'line-cap': 'round',
         'line-join': 'round',
       },
@@ -1245,6 +1247,9 @@ export function ensureParkingOverlaySources(
   syncLodZoomLimits(map)
   syncCollisionProps(map)
   applyOverlayThemePaints(map, mode)
+  // Fresh style/layers start hidden — MapView reveals after basemap idle.
+  parkingOverlaysRevealed = false
+  setParkingOverlaysRevealed(map, false)
 }
 
 /** Toggle temporary district QA reference markers. */
@@ -1378,6 +1383,17 @@ export function setDistrictHover(
   }
 }
 
+/** When false, parking geom/line overlays stay hidden to avoid pre-basemap flash. */
+const LINE_OVERLAY_LAYER_IDS = [
+  STREET_PARKING_CASING_LAYER,
+  STREET_PARKING_LINE_LAYER,
+  STREET_PARKING_HIT_LAYER,
+  PARKING_LINES_CASING_LAYER,
+  PARKING_LINES_GLOW_LAYER,
+  PARKING_LINES_LAYER,
+  'parking-street-lines-hit',
+] as const
+
 const GEOM_LAYER_IDS = [
   PARKING_LOTS_FILL_LAYER,
   PARKING_LOTS_OUTLINE_LAYER,
@@ -1389,14 +1405,68 @@ const GEOM_LAYER_IDS = [
   PRECISE_OUTLINE_UNDERGROUND_LAYER,
   PRECISE_LABEL_LAYER,
   PRECISE_MULTISTOREY_BADGE_LAYER,
-  STREET_PARKING_CASING_LAYER,
-  STREET_PARKING_LINE_LAYER,
-  STREET_PARKING_HIT_LAYER,
-  PARKING_LINES_CASING_LAYER,
-  PARKING_LINES_GLOW_LAYER,
-  PARKING_LINES_LAYER,
-  'parking-street-lines-hit',
+  ...LINE_OVERLAY_LAYER_IDS,
 ] as const
+
+/**
+ * Hide parking polygons + curb lines until the basemap has finished its first
+ * paint. Prevents blue/colored line flash on a blank white canvas.
+ */
+export function setParkingOverlaysRevealed(
+  map: MapLibreMapType,
+  revealed: boolean,
+) {
+  parkingOverlaysRevealed = revealed
+  const vis = revealed ? 'visible' : 'none'
+  for (const id of GEOM_LAYER_IDS) {
+    if (map.getLayer(id)) {
+      try {
+        map.setLayoutProperty(id, 'visibility', vis)
+      } catch {
+        /* layer may be mid-remove during setStyle */
+      }
+    }
+  }
+}
+
+/**
+ * Stack order (bottom → top): lot polygons → curb/line overlays → pin circles
+ * → symbol/label layers. Lines sit above fills but strictly below icons.
+ */
+export function orderParkingOverlayStack(map: MapLibreMapType) {
+  const stack: string[] = [
+    PARKING_LOTS_FILL_LAYER,
+    PRECISE_FILL_LAYER,
+    'parking-fill-underground-hatch',
+    PARKING_LOTS_OUTLINE_LAYER,
+    'parking-fill-outline-glow',
+    PRECISE_OUTLINE_LAYER,
+    PRECISE_OUTLINE_UNDERGROUND_LAYER,
+    // Line overlays above polygons
+    STREET_PARKING_CASING_LAYER,
+    STREET_PARKING_LINE_LAYER,
+    STREET_PARKING_HIT_LAYER,
+    PARKING_LINES_CASING_LAYER,
+    PARKING_LINES_GLOW_LAYER,
+    PARKING_LINES_LAYER,
+    'parking-street-lines-hit',
+    // Point / circle pins above lines
+    ...PARKING_PROVIDERS.map((k) => PARKING_LAYER_META[k].id),
+    // Symbols / labels on top of circles
+    PARKING_LOTS_LABEL_LAYER,
+    PRECISE_LABEL_LAYER,
+    PRECISE_MULTISTOREY_BADGE_LAYER,
+    ...PARKING_PROVIDERS.map((k) => `${PARKING_LAYER_META[k].id}-label`),
+  ]
+  for (const id of stack) {
+    if (!map.getLayer(id)) continue
+    try {
+      map.moveLayer(id)
+    } catch {
+      /* ok */
+    }
+  }
+}
 
 export function setParkingLayerVisibility(
   map: MapLibreMapType,
@@ -1414,7 +1484,11 @@ export function setParkingLayerVisibility(
   }
   for (const id of GEOM_LAYER_IDS) {
     if (map.getLayer(id)) {
-      map.setLayoutProperty(id, 'visibility', 'visible')
+      map.setLayoutProperty(
+        id,
+        'visibility',
+        parkingOverlaysRevealed ? 'visible' : 'none',
+      )
     }
   }
 }

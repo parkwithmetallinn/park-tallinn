@@ -299,6 +299,19 @@ export function filterEvCollection(
   return fc
 }
 
+/**
+ * Neighborhood / street zoom only — city-wide EV icon clutter is too dense
+ * below this (district / whole-city views).
+ */
+export const EV_CHARGERS_MIN_ZOOM = 13
+
+const EV_LAYER_IDS = [
+  EV_CHARGERS_GLOW_LAYER,
+  EV_CHARGERS_CIRCLE_LAYER,
+  EV_CHARGERS_SYMBOL_LAYER,
+  EV_CHARGERS_HIT_LAYER,
+] as const
+
 /** Soft cyan glow + bolt circle layers for EV chargers. */
 export function ensureEvChargerLayers(map: MapLibreMapType) {
   if (!map.getSource(EV_CHARGERS_SOURCE)) {
@@ -314,14 +327,15 @@ export function ensureEvChargerLayers(map: MapLibreMapType) {
       id: EV_CHARGERS_GLOW_LAYER,
       type: 'circle',
       source: EV_CHARGERS_SOURCE,
-      minzoom: 10,
+      minzoom: EV_CHARGERS_MIN_ZOOM,
+      layout: { visibility: 'none' },
       paint: {
         'circle-color': EV_COLOR_CYAN,
         'circle-radius': [
           'interpolate',
           ['linear'],
           ['zoom'],
-          11,
+          13,
           10,
           15,
           18,
@@ -339,14 +353,15 @@ export function ensureEvChargerLayers(map: MapLibreMapType) {
       id: EV_CHARGERS_CIRCLE_LAYER,
       type: 'circle',
       source: EV_CHARGERS_SOURCE,
-      minzoom: 10,
+      minzoom: EV_CHARGERS_MIN_ZOOM,
+      layout: { visibility: 'none' },
       paint: {
         'circle-color': EV_COLOR_BLUE,
         'circle-radius': [
           'interpolate',
           ['linear'],
           ['zoom'],
-          11,
+          13,
           5,
           15,
           8,
@@ -365,8 +380,9 @@ export function ensureEvChargerLayers(map: MapLibreMapType) {
       id: EV_CHARGERS_SYMBOL_LAYER,
       type: 'symbol',
       source: EV_CHARGERS_SOURCE,
-      minzoom: 11,
+      minzoom: EV_CHARGERS_MIN_ZOOM,
       layout: {
+        visibility: 'none',
         // Short "EV" label — emoji glyphs often 404 on OpenFreeMap fonts
         'text-field': 'EV',
         'text-font': ['Noto Sans Bold'],
@@ -374,7 +390,7 @@ export function ensureEvChargerLayers(map: MapLibreMapType) {
           'interpolate',
           ['linear'],
           ['zoom'],
-          11,
+          13,
           9,
           15,
           11,
@@ -399,7 +415,8 @@ export function ensureEvChargerLayers(map: MapLibreMapType) {
       id: EV_CHARGERS_HIT_LAYER,
       type: 'circle',
       source: EV_CHARGERS_SOURCE,
-      minzoom: 10,
+      minzoom: EV_CHARGERS_MIN_ZOOM,
+      layout: { visibility: 'none' },
       paint: {
         'circle-radius': 18,
         'circle-opacity': 0.01,
@@ -407,16 +424,18 @@ export function ensureEvChargerLayers(map: MapLibreMapType) {
       },
     })
   }
+
+  // HMR / remount: keep minzoom in sync if layers already exist
+  for (const id of EV_LAYER_IDS) {
+    if (map.getLayer(id)) {
+      map.setLayerZoomRange(id, EV_CHARGERS_MIN_ZOOM, 24)
+    }
+  }
 }
 
 export function setEvChargerVisibility(map: MapLibreMapType, visible: boolean) {
   const vis = visible ? 'visible' : 'none'
-  for (const id of [
-    EV_CHARGERS_GLOW_LAYER,
-    EV_CHARGERS_CIRCLE_LAYER,
-    EV_CHARGERS_SYMBOL_LAYER,
-    EV_CHARGERS_HIT_LAYER,
-  ]) {
+  for (const id of EV_LAYER_IDS) {
     if (map.getLayer(id)) {
       map.setLayoutProperty(id, 'visibility', vis)
     }
