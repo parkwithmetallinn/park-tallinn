@@ -1,15 +1,19 @@
 /**
- * Nominatim (OSM) geocoding — Tallinn / Estonia address search.
- * Browser calls go through /api/nominatim (Vite proxy / Vercel rewrite)
- * because Nominatim does not send CORS headers to arbitrary origins.
+ * Nominatim (OSM) + Photon geocoding — Estonia addresses AND POI landmarks.
+ * Nominatim goes through /api/nominatim (Vite proxy / Vercel rewrite).
+ * Photon is called directly (CORS-enabled) as a POI-friendly complement.
  */
 
 export type GeocodeResult = {
   id: string
+  /** Short display name (POI / street) */
+  name: string
   label: string
   lat: number
   lng: number
   kind: string
+  /** Higher = preferred (POIs / exact name matches) */
+  rank?: number
 }
 
 /** Dropped / selected place for the location info sheet (search or map pick). */
@@ -64,19 +68,74 @@ export function viewboxForQuery(
   return viewboxAround(userLat, userLng)
 }
 
-export async function searchAddress(
-  query: string,
-  signal?: AbortSignal,
-  viewbox = ESTONIA_VIEWBOX,
-): Promise<GeocodeResult[]> {
-  const q = query.trim()
-  if (q.length < 3) return []
+const POI_CLASSES = new Set([
+  'tourism',
+  'amenity',
+  'leisure',
+  'historic',
+  'building',
+  'shop',
+  'office',
+  'craft',
+  'railway',
+  'aeroway',
+])
 
+function stripCountry(label: string): string {
+  return label.replace(/, Eesti$/i, '').replace(/, Estonia$/i, '')
+}
+
+function shortName(label: string, named?: string): string {
+  if (named?.trim()) return named.trim()
+  return label.split(',')[0]?.trim() || label
+}
+
+function haversineM(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+): number {
+  const R = 6371000
+  const toR = (d: number) => (d * Math.PI) / 180
+  const dLat = toR(lat2 - lat1)
+  const dLng = toR(lng2 - lng1)
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toR(lat1)) * Math.cos(toR(lat2)) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(a))
+}
+
+function dedupeNearby(results: GeocodeResult[], meters = 45): GeocodeResult[] {
+  const out: GeocodeResult[] = []
+  for (const r of results) {
+    const hit = out.find(
+      (o) => haversineM(o.lat, o.lng, r.lat, r.lng) < meters,
+    )
+    if (!hit) {
+      out.push(r)
+      continue
+    }
+    // Keep higher-ranked / POI-preferring entry
+    if ((r.rank ?? 0) > (hit.rank ?? 0)) {
+      out[out.indexOf(hit)] = r
+    }
+  }
+  return out
+}
+
+async function searchNominatim(
+  query: string,
+  viewbox: string,
+  signal?: AbortSignal,
+): Promise<GeocodeResult[]> {
   const params = new URLSearchParams({
-    q,
+    q: query,
     format: 'json',
-    addressdetails: '0',
-    limit: '8',
+    addressdetails: '1',
+    namedetails: '1',
+    extratags: '1',
+    limit: '12',
     countrycodes: 'ee',
     viewbox,
     bounded: '0',
@@ -94,15 +153,139 @@ export async function searchAddress(
     lon: string
     type?: string
     class?: string
+    importance?: number
+    namedetails?: Record<string, string> | null
   }>
 
-  return data.map((r) => ({
-    id: String(r.place_id),
-    label: r.display_name.replace(/, Eesti$/i, '').replace(/, Estonia$/i, ''),
-    lat: Number(r.lat),
-    lng: Number(r.lon),
-    kind: r.type || r.class || 'place',
-  }))
+  const qLower = query.trim().toLowerCase()
+  return data.map((r) => {
+    const label = stripCountry(r.display_name)
+    const named =
+      r.namedetails?.name ||
+      r.namedetails?.['name:et'] ||
+      r.namedetails?.['name:en']
+    const name = shortName(label, named)
+    const isPoi = POI_CLASSES.has(String(r.class || ''))
+    const exact =
+      name.toLowerCase() === qLower ||
+      name.toLowerCase().includes(qLower) ||
+      qLower.includes(name.toLowerCase())
+    return {
+      id: `nom-${r.place_id}`,
+      name,
+      label,
+      lat: Number(r.lat),
+      lng: Number(r.lon),
+      kind: r.type || r.class || 'place',
+      rank:
+        (isPoi ? 40 : 10) +
+        (exact ? 30 : 0) +
+        Math.round((r.importance ?? 0) * 20),
+    }
+  })
+}
+
+async function searchPhoton(
+  query: string,
+  biasLat: number,
+  biasLng: number,
+  signal?: AbortSignal,
+): Promise<GeocodeResult[]> {
+  const params = new URLSearchParams({
+    q: query,
+    lang: 'default',
+    limit: '10',
+    lat: String(biasLat),
+    lon: String(biasLng),
+  })
+  // Photon has browser CORS; keep Estonia-ish by discarding far outliers later
+  const res = await fetch(`https://photon.komoot.io/api/?${params}`, {
+    signal,
+    headers: { Accept: 'application/json' },
+  })
+  if (!res.ok) return []
+  const data = (await res.json()) as {
+    features?: Array<{
+      geometry?: { coordinates?: [number, number] }
+      properties?: {
+        osm_id?: number | string
+        osm_type?: string
+        name?: string
+        street?: string
+        housenumber?: string
+        city?: string
+        countrycode?: string
+        type?: string
+        osm_key?: string
+        osm_value?: string
+      }
+    }>
+  }
+
+  const qLower = query.trim().toLowerCase()
+  const out: GeocodeResult[] = []
+  for (const f of data.features ?? []) {
+    const p = f.properties || {}
+    const coords = f.geometry?.coordinates
+    if (!coords || coords.length < 2) continue
+    const [lng, lat] = coords
+    const cc = String(p.countrycode || '').toLowerCase()
+    if (cc && cc !== 'ee') continue
+    const name =
+      p.name ||
+      [p.street, p.housenumber].filter(Boolean).join(' ') ||
+      'Koht'
+    const label = [name, p.street && p.name ? `${p.street}${p.housenumber ? ` ${p.housenumber}` : ''}` : '', p.city]
+      .filter(Boolean)
+      .filter((v, i, a) => a.indexOf(v) === i)
+      .join(', ')
+    const isPoi = POI_CLASSES.has(String(p.osm_key || '')) || Boolean(p.name)
+    const exact =
+      name.toLowerCase() === qLower || name.toLowerCase().includes(qLower)
+    out.push({
+      id: `ph-${p.osm_type || 'n'}-${p.osm_id || `${lat},${lng}`}`,
+      name,
+      label: stripCountry(label),
+      lat,
+      lng,
+      kind: p.osm_value || p.type || 'place',
+      rank: (isPoi ? 45 : 12) + (exact ? 35 : 0),
+    })
+  }
+  return out
+}
+
+function parseViewboxCenter(viewbox: string): { lat: number; lng: number } {
+  const parts = viewbox.split(',').map(Number)
+  if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) {
+    return { lat: 59.437, lng: 24.7535 }
+  }
+  const [west, south, east, north] = parts
+  return { lat: (south + north) / 2, lng: (west + east) / 2 }
+}
+
+/**
+ * Search Estonia for addresses AND named POIs / landmarks
+ * (e.g. Kultuurikatel). Merges Nominatim + Photon, dedupes, ranks POIs first.
+ */
+export async function searchAddress(
+  query: string,
+  signal?: AbortSignal,
+  viewbox = ESTONIA_VIEWBOX,
+): Promise<GeocodeResult[]> {
+  const q = query.trim()
+  if (q.length < 3) return []
+
+  const { lat, lng } = parseViewboxCenter(viewbox)
+
+  const [nom, photon] = await Promise.all([
+    searchNominatim(q, viewbox, signal).catch(() => [] as GeocodeResult[]),
+    searchPhoton(q, lat, lng, signal).catch(() => [] as GeocodeResult[]),
+  ])
+
+  const merged = dedupeNearby([...photon, ...nom])
+  merged.sort((a, b) => (b.rank ?? 0) - (a.rank ?? 0))
+  return merged.slice(0, 10)
 }
 
 export function navLinks(lat: number, lng: number) {
@@ -130,10 +313,9 @@ export function openAppleMaps(lat: number, lng: number) {
 }
 
 export function geocodeToSearchLocation(r: GeocodeResult): SearchLocation {
-  const short = r.label.split(',')[0]?.trim() || r.label
   return {
     id: r.id,
-    name: short,
+    name: r.name || r.label.split(',')[0]?.trim() || r.label,
     label: r.label,
     lat: r.lat,
     lng: r.lng,

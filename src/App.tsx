@@ -69,6 +69,7 @@ import {
   PARKING_COLOR_TIMED,
   PARKING_COLOR_UNKNOWN,
 } from './lib/parkingClassification'
+import { spotDisplayName } from './lib/parkingDisplayName'
 import {
   fetchRoute,
   fetchWalkingRoute,
@@ -470,10 +471,17 @@ export default function App() {
 
     const parkingHits: SearchSuggestion[] = allSpots
       .filter((s) => {
-        const name = s.name.toLowerCase()
+        const name = spotDisplayName(s).toLowerCase()
         const zone = s.zone_code.toLowerCase()
         const addr = (s.address || '').toLowerCase()
-        return name.includes(q) || zone.includes(q) || addr.includes(q)
+        const op = (s.operator || '').toLowerCase()
+        return (
+          name.includes(q) ||
+          zone.includes(q) ||
+          addr.includes(q) ||
+          op.includes(q) ||
+          s.name.toLowerCase().includes(q)
+        )
       })
       .map((s) => {
         const distanceM = distanceMeters(
@@ -485,7 +493,7 @@ export default function App() {
         return {
           kind: 'parking' as const,
           id: s.id,
-          name: s.name,
+          name: spotDisplayName(s),
           subtitle: [s.zone_code, s.operator, s.address]
             .filter(Boolean)
             .filter((v, i, a) => a.indexOf(v) === i)
@@ -512,8 +520,8 @@ export default function App() {
         return {
           kind: 'place' as const,
           id: r.id,
-          name,
-          subtitle,
+          name: r.name || name,
+          subtitle: r.kind && r.kind !== 'place' ? `${subtitle || r.kind}` : subtitle,
           lat: r.lat,
           lng: r.lng,
           distanceM,
@@ -878,8 +886,8 @@ export default function App() {
       flyToDestination(
         {
           id: item.spot.id,
-          name: item.spot.name,
-          label: item.spot.address || item.spot.name,
+          name: spotDisplayName(item.spot),
+          label: item.spot.address || spotDisplayName(item.spot),
           lat: item.spot.lat,
           lng: item.spot.lng,
           kind: 'parking',
@@ -985,7 +993,7 @@ export default function App() {
       const sameAsHouse =
         Math.abs(parking[0] - house[0]) < 1e-6 &&
         Math.abs(parking[1] - house[1]) < 1e-6
-      const label = spot.name
+      const label = spotDisplayName(spot)
 
       if (opts?.toastTitle) {
         setToast({ kind: 'info', title: opts.toastTitle })

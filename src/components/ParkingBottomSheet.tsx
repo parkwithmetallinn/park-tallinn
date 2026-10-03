@@ -31,6 +31,7 @@ import {
   isUnclassifiedParking,
   isUnlimitedFreeParking,
 } from '../lib/parkingClassification'
+import { spotDisplayName } from '../lib/parkingDisplayName'
 import { formatDuration } from '../lib/routing'
 import { streetLineColor } from '../map/streetLineTheme'
 import { FindParkingActions } from './FindParkingActions'
@@ -170,7 +171,7 @@ export function ParkingBottomSheet({
   const carOk = carNumber.trim().length >= 2
   const hasActive = Boolean(activeSession?.carNumber && activeSession?.zone)
   const startedLabel = formatSessionInstant(activeSession?.startedAt)
-  const title = `${spot.zone_code} — ${spot.name}`
+  const title = `${spot.zone_code} — ${spotDisplayName(spot)}`
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(() => {
     const cached = getCachedAddress(spot.id)
     if (cached?.address) return cached.address
@@ -344,7 +345,7 @@ export function ParkingBottomSheet({
               ) : null}
             </div>
             <h3 className={`text-[15px] leading-snug font-bold tracking-tight ${ink}`}>
-              {spot.name}
+              {spotDisplayName(spot)}
             </h3>
             <button
               type="button"

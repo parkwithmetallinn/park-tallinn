@@ -2,6 +2,7 @@ import { Ban, ChevronDown, ChevronUp, Navigation, RefreshCw } from 'lucide-react
 import { useState } from 'react'
 import type { AlternativeParking } from '../lib/alternatives'
 import { formatDistance } from '../lib/geo'
+import { spotDisplayName } from '../lib/parkingDisplayName'
 import type { ParkingSpot } from '../types'
 
 /**
@@ -141,7 +142,7 @@ export function FindParkingActions({
                     type="button"
                     onClick={() => onSelectAlternative(alt.spot)}
                     className={`tap-scale flex min-h-11 w-full cursor-pointer items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition ${rowHover} ${ink}`}
-                    aria-label={`Vali ${alt.spot.name}`}
+                    aria-label={`Vali ${spotDisplayName(alt.spot)}`}
                   >
                     <span
                       className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[10px] font-extrabold text-white"
@@ -154,7 +155,7 @@ export function FindParkingActions({
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13px] font-semibold">
-                        {alt.spot.name}
+                        {spotDisplayName(alt.spot)}
                       </span>
                       <span className={`block text-[11px] font-medium ${muted}`}>
                         {formatDistance(alt.distanceM)}

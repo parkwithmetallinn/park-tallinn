@@ -137,6 +137,181 @@ const EV_HIT_LAYERS = [
   EV_CHARGERS_SYMBOL_LAYER,
 ] as const
 
+export type NearestMapPill = {
+  id: string
+  lat: number
+  lng: number
+  label: string
+  tone: 'free' | 'clock' | 'paid' | 'other'
+}
+
+/** Native GL price pills — glued to coords (no HTML Marker jitter). */
+export const NEAREST_PILLS_SOURCE = 'nearest-price-pills'
+export const NEAREST_PILLS_BG_LAYER = 'nearest-price-pills-bg'
+export const NEAREST_PILLS_TEXT_LAYER = 'nearest-price-pills-text'
+export const NEAREST_PILLS_HIT_LAYER = 'nearest-price-pills-hit'
+const NEAREST_PILL_HIT_LAYERS = [
+  NEAREST_PILLS_HIT_LAYER,
+  NEAREST_PILLS_TEXT_LAYER,
+  NEAREST_PILLS_BG_LAYER,
+] as const
+
+function ensureNearestPricePillLayers(map: MapLibreMapType) {
+  if (!map.getSource(NEAREST_PILLS_SOURCE)) {
+    map.addSource(NEAREST_PILLS_SOURCE, {
+      type: 'geojson',
+      promoteId: 'id',
+      data: { type: 'FeatureCollection', features: [] },
+    })
+  }
+
+  if (!map.getLayer(NEAREST_PILLS_BG_LAYER)) {
+    map.addLayer({
+      id: NEAREST_PILLS_BG_LAYER,
+      type: 'circle',
+      source: NEAREST_PILLS_SOURCE,
+      paint: {
+        'circle-radius': [
+          'case',
+          ['boolean', ['get', 'active'], false],
+          22,
+          18,
+        ],
+        'circle-color': [
+          'match',
+          ['get', 'tone'],
+          'free',
+          '#ECFDF5',
+          'clock',
+          '#FFFBEB',
+          'paid',
+          '#FEF2F2',
+          '#F8FAFC',
+        ],
+        'circle-stroke-width': [
+          'case',
+          ['boolean', ['get', 'active'], false],
+          3.5,
+          2,
+        ],
+        'circle-stroke-color': [
+          'case',
+          ['boolean', ['get', 'active'], false],
+          '#007AFF',
+          [
+            'match',
+            ['get', 'tone'],
+            'free',
+            '#22C55E',
+            'clock',
+            '#FFD60A',
+            'paid',
+            '#FF3B30',
+            '#C7C7CC',
+          ],
+        ],
+        'circle-opacity': 0.96,
+        'circle-pitch-alignment': 'viewport',
+        'circle-pitch-scale': 'viewport',
+      },
+    })
+  }
+
+  if (!map.getLayer(NEAREST_PILLS_TEXT_LAYER)) {
+    map.addLayer({
+      id: NEAREST_PILLS_TEXT_LAYER,
+      type: 'symbol',
+      source: NEAREST_PILLS_SOURCE,
+      layout: {
+        'text-field': ['get', 'label'],
+        'text-font': ['Noto Sans Bold'],
+        'text-size': [
+          'case',
+          ['boolean', ['get', 'active'], false],
+          12,
+          11,
+        ],
+        'text-allow-overlap': true,
+        'text-ignore-placement': true,
+        'text-anchor': 'center',
+        'text-pitch-alignment': 'viewport',
+        'text-rotation-alignment': 'viewport',
+      },
+      paint: {
+        'text-color': [
+          'match',
+          ['get', 'tone'],
+          'free',
+          '#15803D',
+          'clock',
+          '#8A6D00',
+          'paid',
+          '#D70015',
+          '#636366',
+        ],
+        'text-halo-color': '#FFFFFF',
+        'text-halo-width': 1.2,
+      },
+    })
+  }
+
+  if (!map.getLayer(NEAREST_PILLS_HIT_LAYER)) {
+    map.addLayer({
+      id: NEAREST_PILLS_HIT_LAYER,
+      type: 'circle',
+      source: NEAREST_PILLS_SOURCE,
+      paint: {
+        'circle-radius': 26,
+        'circle-opacity': 0.01,
+        'circle-color': '#000000',
+        'circle-pitch-alignment': 'viewport',
+      },
+    })
+  }
+
+  // Keep pills above parking overlays
+  for (const id of [
+    NEAREST_PILLS_BG_LAYER,
+    NEAREST_PILLS_TEXT_LAYER,
+    NEAREST_PILLS_HIT_LAYER,
+  ]) {
+    if (map.getLayer(id)) {
+      try {
+        map.moveLayer(id)
+      } catch {
+        /* ok */
+      }
+    }
+  }
+}
+
+function setNearestPricePillData(
+  map: MapLibreMapType,
+  pills: NearestMapPill[],
+  activeId: string | null,
+) {
+  ensureNearestPricePillLayers(map)
+  const src = map.getSource(NEAREST_PILLS_SOURCE)
+  if (!src || !('setData' in src) || typeof src.setData !== 'function') return
+  src.setData({
+    type: 'FeatureCollection',
+    features: pills.map((p) => ({
+      type: 'Feature',
+      id: p.id,
+      properties: {
+        id: p.id,
+        label: p.label,
+        tone: p.tone,
+        active: p.id === activeId,
+      },
+      geometry: {
+        type: 'Point',
+        coordinates: [p.lng, p.lat],
+      },
+    })),
+  })
+}
+
 function makeUserEl() {
   const wrap = document.createElement('div')
   wrap.className = 'user-location-wrap'
@@ -163,36 +338,6 @@ function makeFullSpotEl() {
   wrap.setAttribute('aria-label', 'Parkla on täis')
   wrap.textContent = 'TÄIS'
   return wrap
-}
-
-export type NearestMapPill = {
-  id: string
-  lat: number
-  lng: number
-  label: string
-  tone: 'free' | 'clock' | 'paid' | 'other'
-}
-
-function makeNearestPillEl(
-  pill: NearestMapPill,
-  active: boolean,
-  onClick?: () => void,
-) {
-  const el = document.createElement('button')
-  el.type = 'button'
-  el.className = `nearest-map-pill nearest-map-pill--${pill.tone}${
-    active ? ' nearest-map-pill--active' : ''
-  }`
-  el.setAttribute('aria-label', `Parkla ${pill.label}`)
-  el.dataset.pillId = pill.id
-  el.textContent = pill.label
-  if (onClick) {
-    el.addEventListener('click', (e) => {
-      e.stopPropagation()
-      onClick()
-    })
-  }
-  return el
 }
 
 function prefersReducedMotion() {
@@ -553,13 +698,14 @@ export const MapView = forwardRef<
   const userMarkerRef = useRef<Marker | null>(null)
   const searchMarkerRef = useRef<Marker | null>(null)
   const fullMarkersRef = useRef<Map<string, Marker>>(new Map())
-  const nearestPillMarkersRef = useRef<Map<string, Marker>>(new Map())
   const routeAnimatingRef = useRef(false)
   const routeIntroCancelRef = useRef({ cancelled: false })
   const routeDrawRafRef = useRef(0)
   const walkRouteRef = useRef(walkRoute)
   const onNearestPillClickRef = useRef(onNearestPillClick)
   const nearestPillsFitKeyRef = useRef('')
+  const nearestPillsRef = useRef(nearestPills)
+  const highlightIdRef = useRef(highlightId)
   const onNavigateRef = useRef(onNavigate)
   const onEvChargerSelectRef = useRef(onEvChargerSelect)
   const onBackgroundClickRef = useRef(onBackgroundClick)
@@ -592,6 +738,8 @@ export const MapView = forwardRef<
   onBackgroundClickRef.current = onBackgroundClick
   onSearchPinClickRef.current = onSearchPinClick
   onNearestPillClickRef.current = onNearestPillClick
+  nearestPillsRef.current = nearestPills
+  highlightIdRef.current = highlightId
   onPreciseSpotsLoadedRef.current = onPreciseSpotsLoaded
   onStreetSpotsLoadedRef.current = onStreetSpotsLoaded
   onMapReadyRef.current = onMapReady
@@ -636,6 +784,7 @@ export const MapView = forwardRef<
 
     let setupDone = false
     const parkingHitLayers = [
+      ...NEAREST_PILL_HIT_LAYERS,
       ...EV_HIT_LAYERS,
       ...PRECISE_HIT_LAYERS,
       ...STREET_HIT_LAYERS,
@@ -806,6 +955,11 @@ export const MapView = forwardRef<
       )
       applySelectionHighlight(map, selectedIdRef.current)
       setDistrictDebugVisible(map, districtDebugRef.current)
+      setNearestPricePillData(
+        map,
+        nearestPillsRef.current,
+        highlightIdRef.current ?? null,
+      )
 
       const routeSrc = map.getSource(ROUTE_SOURCE) as GeoJSONSource | undefined
       if (routeSrc) {
@@ -855,6 +1009,7 @@ export const MapView = forwardRef<
     const onStyleLoad = () => {
       ensureParkingOverlaySources(map, themeRef.current)
       ensureEvChargerLayers(map)
+      ensureNearestPricePillLayers(map)
       // Polygons → lines → pins/symbols; EV markers sit above parking pins
       orderParkingOverlayStack(map)
       for (const id of [
@@ -1100,6 +1255,15 @@ export const MapView = forwardRef<
       const layers = parkingHitLayers.filter((id) => map.getLayer(id))
       const hits = layers.length ? map.queryRenderedFeatures(box, { layers }) : []
 
+      // Nearest-parking price pills (preview only)
+      const pillHit = hits.find((f) =>
+        (NEAREST_PILL_HIT_LAYERS as readonly string[]).includes(f.layer?.id ?? ''),
+      )
+      if (pillHit?.properties?.id) {
+        onNearestPillClickRef.current?.(String(pillHit.properties.id))
+        return
+      }
+
       // EV charger cyan markers — glass preview (not parking detail)
       const evHit = hits.find((f) =>
         (EV_HIT_LAYERS as readonly string[]).includes(f.layer?.id ?? ''),
@@ -1204,8 +1368,6 @@ export const MapView = forwardRef<
       searchMarkerRef.current?.remove()
       for (const m of fullMarkersRef.current.values()) m.remove()
       fullMarkersRef.current.clear()
-      for (const m of nearestPillMarkersRef.current.values()) m.remove()
-      nearestPillMarkersRef.current.clear()
       map.off('style.load', onStyleLoad)
       map.remove()
       mapRef.current = null
@@ -1544,49 +1706,14 @@ export const MapView = forwardRef<
     applyHoverHighlight(map, highlightId)
   }, [highlightId, ready])
 
-  /** Glass price pills for nearest-parking picker (never numbered 1/2/3). */
+  /** Native GL price pills — stay glued during pan/zoom (no HTML Marker jitter). */
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
-    const markers = nearestPillMarkersRef.current
     if (nearestPills.length === 0) {
       nearestPillsFitKeyRef.current = ''
-      for (const m of markers.values()) m.remove()
-      markers.clear()
-      return
     }
-    const nextIds = new Set(nearestPills.map((p) => p.id))
-
-    for (const [id, marker] of markers) {
-      if (!nextIds.has(id)) {
-        marker.remove()
-        markers.delete(id)
-      }
-    }
-
-    for (const pill of nearestPills) {
-      const active = highlightId === pill.id
-      const existing = markers.get(pill.id)
-      if (existing) {
-        existing.setLngLat([pill.lng, pill.lat])
-        const el = existing.getElement()
-        el.className = `nearest-map-pill nearest-map-pill--${pill.tone}${
-          active ? ' nearest-map-pill--active' : ''
-        }`
-        el.textContent = pill.label
-      } else {
-        const m = new Marker({
-          element: makeNearestPillEl(pill, active, () =>
-            onNearestPillClickRef.current?.(pill.id),
-          ),
-          anchor: 'bottom',
-          offset: [0, -6],
-        })
-          .setLngLat([pill.lng, pill.lat])
-          .addTo(map)
-        markers.set(pill.id, m)
-      }
-    }
+    setNearestPricePillData(map, nearestPills, highlightId)
   }, [nearestPills, highlightId, ready])
 
   /** Frame searched target + all nearest pills (and optional hover focus). */

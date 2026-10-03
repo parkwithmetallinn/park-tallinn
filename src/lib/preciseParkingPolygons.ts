@@ -8,6 +8,7 @@ import type {
 } from '../types'
 import { normalizeSpot } from './geojson'
 import { mapLabelForLayer } from './mapLabels'
+import { parkingDisplayName } from './parkingDisplayName'
 import {
   categoryPaintColor,
   emptyPurgeStats,
@@ -416,11 +417,16 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
 
     const operator = operatorDisplay(operatorRaw, layer)
     const address = buildAddress(p) || str(p.address)
-    const name =
-      nameTag ||
-      (zone ? `Zone ${zone}` : '') ||
-      (operator !== 'Unknown' && operator !== 'Tallinna Linn' ? `${operator} parkla` : '') ||
-      structureLabel(structureType)
+    const name = parkingDisplayName({
+      name: nameTag,
+      operator,
+      zone_code: zone_code,
+      zone,
+      address,
+      layer,
+      'addr:street': str(p['addr:street']),
+      'addr:housenumber': str(p['addr:housenumber']),
+    })
     // Map badge from layer (Snabb → "SB"); zone_code keeps real X/SB codes for sheets.
     const badge = mapLabelForLayer(layer, zone_code)
     const area_m2 = Math.max(0, Math.round(area(f as never)))

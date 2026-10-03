@@ -20,6 +20,7 @@ import type {
 } from './preciseParkingPolygons'
 import type { StreetParkingCollection } from './streetParkingLines'
 import { evaluateFreeRules } from './freeRules'
+import { parkingDisplayName } from './parkingDisplayName'
 import {
   categoryPaintColor,
   PARKING_COLOR_PAID,
@@ -140,10 +141,13 @@ function enrichProps(
   const evaled = evaluateFreeRules(zone.freeRules, at)
   return {
     ...props,
-    name:
-      props.name && !/^Zone |^Surface|^Underground|^Multi|^Tänav/i.test(props.name)
-        ? props.name
-        : `Pärnu ${zone.name}`,
+    name: parkingDisplayName({
+      name: props.name,
+      operator: 'Pärnu Linn',
+      zone_code: zone.id === 'kesklinn' ? 'PKESK' : 'PRAND',
+      address: props.address,
+      layer: 'municipal',
+    }) || `Pärnu ${zone.name}`,
     operator: 'Pärnu Linn',
     zone_code: zone.id === 'kesklinn' ? 'PKESK' : 'PRAND',
     badge: 'PAID',

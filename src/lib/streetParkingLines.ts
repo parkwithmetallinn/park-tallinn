@@ -1,5 +1,6 @@
 import { normalizeSpot } from './geojson'
 import { mapLabelForLayer } from './mapLabels'
+import { parkingDisplayName } from './parkingDisplayName'
 import {
   emptyPurgeStats,
   extractClockMinutes,
@@ -349,7 +350,8 @@ export function prepareStreetParking(raw: RawCollection): StreetParkingCollectio
     const id = str(p['@id'] ?? p.id ?? f.id) || `street-${features.length}`
     const { rules, layer, free_minutes, price_per_hour, color, verified_free } = classifyRules(p)
     const nameTag = str(p.name)
-    const street = nameTag || str(p['addr:street']) || 'Tänav'
+    const streetAddr = str(p['addr:street'])
+    const houseNo = str(p['addr:housenumber'])
     const zone = str(p.zone ?? p.zone_code ?? p.ref)
     const zone_code =
       zone ||
@@ -361,16 +363,27 @@ export function prepareStreetParking(raw: RawCollection): StreetParkingCollectio
             ? 'PAID'
             : 'ZONE')
     const operator = str(p.operator) || 'Tallinna Linn'
-    const address = [str(p['addr:street']), str(p['addr:housenumber']), str(p['addr:city'])]
+    const address = [streetAddr, houseNo, str(p['addr:city'])]
       .filter(Boolean)
       .join(', ')
+    const name = parkingDisplayName({
+      name: nameTag,
+      operator,
+      zone_code,
+      zone,
+      address,
+      layer,
+      'addr:street': streetAddr,
+      'addr:housenumber': houseNo,
+    })
+    const street = streetAddr || nameTag || name
 
     features.push({
       type: 'Feature',
       id,
       properties: {
         id,
-        name: nameTag || `${street} · ${zone_code}`,
+        name,
         street,
         zone_code,
         zone: zone_code,
@@ -380,7 +393,7 @@ export function prepareStreetParking(raw: RawCollection): StreetParkingCollectio
         free_minutes,
         price_per_hour,
         badge: mapLabelForLayer(layer, zone_code),
-        address: address || street,
+        address: address || street || name,
         desc: [
           rules === 'free' ? 'Tasuta tänavaparkimine' : null,
           rules === 'clock'

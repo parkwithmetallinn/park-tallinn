@@ -6,6 +6,7 @@ import {
   isClockLimitedParking,
   isUnlimitedFreeParking,
 } from '../lib/parkingClassification'
+import { spotDisplayName } from '../lib/parkingDisplayName'
 import type { ParkingSpot } from '../types'
 import { InfoSidePanelShell } from './InfoSidePanel'
 
@@ -277,7 +278,7 @@ export function NearestParkingPanel({
                             <span
                               className={`truncate text-[13px] font-bold ${ink}`}
                             >
-                              {spot.name || spot.zone_code || 'Parkla'}
+                              {spotDisplayName(spot)}
                             </span>
                             <span
                               className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${badgeTone(spot, dark)}`}
