@@ -1,0 +1,4 @@
+# Indexing off while on tunnel/dev (VITE_ALLOW_INDEXING=false).
+# At launch: set VITE_ALLOW_INDEXING=true and rebuild.
+User-agent: *
+Disallow: /

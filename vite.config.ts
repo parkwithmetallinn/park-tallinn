@@ -1,6 +1,25 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
+
+/** Inject indexing + canonical placeholders into index.html from env. */
+function htmlSeoEnvPlugin(env: Record<string, string>): Plugin {
+  const allowIndexing = env.VITE_ALLOW_INDEXING === 'true'
+  const siteUrl = (env.VITE_SITE_URL || '').replace(/\/$/, '')
+  const canonical = siteUrl || 'https://park-tallinn.local'
+  const ogImage = `${canonical}/og-image.png`
+  const robots = allowIndexing ? 'index, follow' : 'noindex, nofollow'
+
+  return {
+    name: 'html-seo-env',
+    transformIndexHtml(html) {
+      return html
+        .replaceAll('%VITE_ROBOTS%', robots)
+        .replaceAll('%VITE_CANONICAL%', canonical)
+        .replaceAll('%VITE_OG_IMAGE%', ogImage)
+    },
+  }
+}
 
 export default defineConfig(({ mode }) => {
   // Server-only secrets (no VITE_ prefix — never exposed to the browser)
@@ -21,7 +40,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), htmlSeoEnvPlugin(env)],
     worker: {
       format: 'es',
     },

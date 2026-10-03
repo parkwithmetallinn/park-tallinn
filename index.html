@@ -3,12 +3,42 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#F2F4F7" />
     <meta
       name="description"
       content="Tallinna tasuta ja kellaajaga parkimine — avalikud parklad, tänavaäärsed kohad, Pargi ja Reisi."
     />
+    <!-- Single indexing switch: VITE_ALLOW_INDEXING=true at launch (see .env.example + public/robots.txt) -->
+    <meta name="robots" content="%VITE_ROBOTS%" />
+    <link rel="canonical" href="%VITE_CANONICAL%" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="et_EE" />
+    <meta property="og:site_name" content="Park Tallinn" />
+    <meta property="og:title" content="Park Tallinn — Tasuta parkimine" />
+    <meta
+      property="og:description"
+      content="Tallinna tasuta ja kellaajaga parkimine — avalikud parklad, tänavaäärsed kohad, Pargi ja Reisi."
+    />
+    <meta property="og:url" content="%VITE_CANONICAL%" />
+    <meta property="og:image" content="%VITE_OG_IMAGE%" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Park Tallinn" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Park Tallinn — Tasuta parkimine" />
+    <meta
+      name="twitter:description"
+      content="Tallinna tasuta ja kellaajaga parkimine — avalikud parklad, tänavaäärsed kohad, Pargi ja Reisi."
+    />
+    <meta name="twitter:image" content="%VITE_OG_IMAGE%" />
+
     <script>
       /* Must match THEME_STORAGE_KEY / LEGACY in src/lib/theme.ts */
       try {
@@ -24,6 +54,8 @@
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
+    <link rel="dns-prefetch" href="https://tiles.openfreemap.org" />
     <link
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
