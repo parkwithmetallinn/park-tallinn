@@ -557,8 +557,9 @@ export function ParkingBottomSheet({
           />
         ) : null}
 
-        {/* Session controls — form wrapper blocks Enter/submit page reloads */}
+        {/* Session controls — single primary CTA inside the detail card */}
         <form
+          id="parking-session-section"
           className={`space-y-3 border-t pt-3 ${dark ? 'border-white/10' : 'border-black/5'}`}
           onSubmit={(e) => {
             blockNav(e)

@@ -23,7 +23,8 @@ import {
   type NearestParkingOption,
 } from './components/NearestParkingPanel'
 import { collectNearestAround } from './lib/nearestParking'
-import { ParkingBottomSheet } from './components/ParkingBottomSheet'
+import { ParkingDetailPanel } from './components/ParkingDetailPanel'
+import { ParkingSessionModal } from './components/ParkingSessionModal'
 import { OfflineBanner } from './components/OfflineBanner'
 import { ReportModal, type ReportModalContext } from './components/ReportModal'
 import {
@@ -49,11 +50,7 @@ import {
 import { MOCK_KESKLINN_SPOTS } from './data/mockKesklinn'
 import { PARKING_SPOTS } from './data/parking'
 import { PARNU_ZONE_LIST } from './data/parnuZones'
-import {
-  canStartParkingSession,
-  sessionStartDisabledHint,
-  ZONE_RATE_LIST,
-} from './data/zones'
+import { ZONE_RATE_LIST } from './data/zones'
 import {
   ALT_RADIUS_WIDE,
   findAlternatives,
@@ -86,7 +83,6 @@ import {
   type SearchLocation,
 } from './lib/geocode'
 import { normalizeSpot } from './lib/geojson'
-import { formatHMS } from './lib/parking'
 import {
   listActiveParkingSessions,
   outcomeToResponse,
@@ -105,13 +101,6 @@ import {
 import { EV_COLOR_CYAN, type EvChargerFeature } from './lib/evChargers'
 import { EvChargerSheet } from './components/EvChargerSheet'
 import type { FilterId, ParkingSpot } from './types'
-
-const TIME_EXTEND_OPTIONS = [
-  { minutes: 15, label: '+15m' },
-  { minutes: 30, label: '+30m' },
-  { minutes: 60, label: '+1h' },
-  { minutes: 120, label: '+2h' },
-] as const
 
 /** Top filter pills — EV chargers unified under Elektriautolaadijad */
 const FILTERS: { id: FilterId; label: string; color?: string }[] = [
@@ -560,7 +549,11 @@ export default function App() {
     } catch {
       /* ignore */
     }
-    if (params.get('panel') === '1' || params.get('timer') === '1') {
+    if (params.get('panel') === '1') {
+      // Detail card owns the session form — do not also open the clock modal
+      setTimerOpen(false)
+    } else if (params.get('timer') === '1') {
+      setSelected(null)
       setTimerOpen(true)
     }
   }, [allSpots, setTimerOpen])
@@ -575,23 +568,39 @@ export default function App() {
       if (!AUTO_ROUTE_ON_MARKER_CLICK) {
         clearRoute()
       }
+      // Exclusive with clock session modal — session lives inside this detail card
+      setTimerOpen(false)
       setSearchSheetOpen(false)
       setNearestPickerOpen(false)
       setFromNearestPicker(false)
       setSelectedEvCharger(null)
       setSelected(spot)
     },
-    [clearRoute],
+    [clearRoute, setTimerOpen],
   )
 
   const openEvCharger = useCallback((feature: EvChargerFeature) => {
     clearRoute()
+    setTimerOpen(false)
     setSearchSheetOpen(false)
     setNearestPickerOpen(false)
     setFromNearestPicker(false)
     setSelected(null)
     setSelectedEvCharger(feature)
-  }, [clearRoute])
+  }, [clearRoute, setTimerOpen])
+
+  const openSessionModal = useCallback(() => {
+    // Exclusive with left detail panel — never stack both in the sidebar
+    setSelected(null)
+    setSelectedEvCharger(null)
+    setNearestPickerOpen(false)
+    setSearchSheetOpen(false)
+    setTimerOpen(true)
+  }, [setTimerOpen])
+
+  const closeSessionModal = useCallback(() => {
+    setTimerOpen(false)
+  }, [setTimerOpen])
 
   const closeSheet = useCallback(() => setSelected(null), [])
 
@@ -678,6 +687,7 @@ export default function App() {
       setSearchSheetOpen(false)
       setAlternatives([])
       setNoAlternatives(false)
+      setTimerOpen(false)
 
       const house: [number, number] = [houseLoc.lat, houseLoc.lng]
       const parking: [number, number] = destSpot
@@ -693,6 +703,7 @@ export default function App() {
       const openInfoSheet = () => {
         if (routeRunId.current !== runId) return
         if (destSpot) {
+          setTimerOpen(false)
           setSearchSheetOpen(false)
           setSelected(destSpot)
         } else {
@@ -1453,9 +1464,14 @@ export default function App() {
         </button>
         <button
           type="button"
-          onClick={() => setTimerOpen((o) => !o)}
+          onClick={() => {
+            if (timerOpen) closeSessionModal()
+            else openSessionModal()
+          }}
           className={`relative ${fabClass}`}
           title={activeSession ? 'Aktiivne sessioon' : 'Parkimiskell'}
+          aria-label={activeSession ? 'Aktiivne sessioon' : 'Parkimiskell'}
+          aria-expanded={timerOpen}
         >
           <Clock3 className={`h-[22px] w-[22px] ${activeSession ? 'text-[#34C759]' : muted}`} />
           {activeSession ? (
@@ -1472,187 +1488,49 @@ export default function App() {
         </button>
       </div>
 
-      {/* Compact timer / parking session control panel */}
-      {timerOpen ? (
-        <div
-          className={`absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-3 z-30 max-h-[min(70vh,28rem)] w-[min(100%-5.5rem,20rem)] overflow-y-auto overscroll-contain px-3.5 py-3 pb-4 sm:left-4 ${panel}`}
+      {/* Isolated clock-FAB session modal — never stacks in the left detail rail */}
+      {timerOpen && !selected && !selectedEvCharger ? (
+        <ParkingSessionModal
+          dark={dark}
+          carNumber={carNumber}
+          onCarNumberChange={handleCarNumberChange}
+          timerSeconds={timerSeconds}
+          timerMode={timerMode}
+          timerLabel={timerLabel}
+          sessionLoading={sessionLoading}
+          sessionAction={sessionAction}
+          activeSession={activeSession}
+          sessionNotice={sessionNotice}
+          selectedSpot={null}
+          onClose={closeSessionModal}
+          onStart={() => {
+            void beginParkingSession()
+          }}
+          onStop={() => {
+            void endParkingSession()
+          }}
+          onStatus={() => {
+            void refreshParkingStatus()
+          }}
+          onExtend={(mins) => {
+            void addPrepaidMinutes(mins)
+          }}
+          onShowAll={() => {
+            void loadActiveSessionsOverview()
+          }}
+          formatHourlyRate={formatHourlyRate}
+          formatSessionInstant={formatSessionInstant}
+        />
+      ) : null}
+      {connectionNotice && !selected && !timerOpen ? (
+        <p
+          data-testid="connection-notice"
+          className={`pointer-events-none absolute bottom-[max(5.5rem,env(safe-area-inset-bottom))] left-1/2 z-40 max-w-[min(90vw,20rem)] -translate-x-1/2 rounded-full px-3 py-1.5 text-center text-[10px] font-semibold ${
+            dark ? 'bg-black/50 text-white/80' : 'bg-white/80 text-[#636366]'
+          }`}
         >
-          <div className="mb-2.5 flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <p className={`text-xs font-bold ${text}`}>
-                {activeSession ? 'Aktiivne sessioon' : 'Parkimiskell'}
-              </p>
-              <p className={`truncate text-[10px] ${muted}`}>{timerLabel}</p>
-            </div>
-            <span className={`shrink-0 font-mono text-xl font-extrabold tabular-nums ${text}`}>
-              {formatHMS(timerSeconds)}
-            </span>
-          </div>
-          {activeSession ? (
-            <div className="mb-2.5 rounded-2xl bg-moss/10 p-3.5 text-[11px] font-semibold leading-snug text-moss">
-              <p>
-                {activeSession.carNumber} · {activeSession.zone}
-                {activeSession.status ? ` · ${activeSession.status}` : ''}
-              </p>
-              {(formatHourlyRate(activeSession.hourlyRate) ||
-                formatSessionInstant(activeSession.startedAt)) && (
-                <p className="mt-1 opacity-90">
-                  {[
-                    formatHourlyRate(activeSession.hourlyRate),
-                    formatSessionInstant(activeSession.startedAt)
-                      ? `alates ${formatSessionInstant(activeSession.startedAt)}`
-                      : null,
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </p>
-              )}
-              <span className="mt-1.5 block text-[10px] font-medium opacity-80">
-                {timerMode === 'elapsed' ? 'Möödunud aeg' : 'Ettemakstud / jäänud'}
-              </span>
-            </div>
-          ) : null}
-          <form
-            className="flex flex-col gap-2.5"
-            onSubmit={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              void refreshParkingStatus()
-            }}
-          >
-            <div>
-              <label className={`mb-1 block text-[10px] font-semibold ${muted}`}>
-                Auto number
-              </label>
-              <input
-                value={carNumber}
-                onChange={(e) => handleCarNumberChange(e.target.value.toUpperCase())}
-                placeholder="nt 123ABC"
-                autoCapitalize="characters"
-                autoCorrect="off"
-                spellCheck={false}
-                disabled={sessionLoading}
-                enterKeyHint="done"
-                className={`w-full rounded-xl border px-2.5 py-2 font-mono text-xs font-semibold tracking-wider outline-none focus:ring-2 focus:ring-moss/25 ${
-                  dark
-                    ? 'border-white/10 bg-white/5 text-white'
-                    : 'border-ink/10 bg-white/80 text-ink'
-                }`}
-              />
-            </div>
-            <div className="grid grid-cols-4 gap-1.5">
-              {TIME_EXTEND_OPTIONS.map((opt) => (
-                <button
-                  key={opt.minutes}
-                  type="button"
-                  disabled={sessionLoading}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    void addPrepaidMinutes(opt.minutes)
-                  }}
-                  className={`rounded-lg py-2 text-[10px] font-bold ${chip} disabled:opacity-55`}
-                  title={`Lisa ${opt.minutes} minutit`}
-                >
-                  {sessionAction === 'extend' ? '…' : opt.label}
-                </button>
-              ))}
-            </div>
-            {activeSession ? (
-              <button
-                type="button"
-                disabled={sessionLoading}
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  void endParkingSession()
-                }}
-                className="w-full rounded-xl bg-clay py-2.5 text-xs font-bold text-white disabled:opacity-55"
-              >
-                {sessionAction === 'stop' ? 'Lõpetan…' : 'Lõpeta sessioon'}
-              </button>
-            ) : (
-              <div className="flex min-w-0 flex-col gap-1">
-                <button
-                  type="button"
-                  disabled={
-                    sessionLoading ||
-                    !selected ||
-                    carNumber.trim().length < 2 ||
-                    (selected != null && !canStartParkingSession(selected))
-                  }
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    void beginParkingSession()
-                  }}
-                  className="w-full rounded-xl bg-moss py-2.5 text-xs font-bold text-white disabled:opacity-55"
-                >
-                  {sessionAction === 'start' ? 'Alustan…' : 'Alusta sessiooni'}
-                </button>
-                {selected && !canStartParkingSession(selected) ? (
-                  <p className={`text-[10px] font-semibold leading-snug ${muted}`}>
-                    {sessionStartDisabledHint(selected)}
-                  </p>
-                ) : null}
-              </div>
-            )}
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={sessionLoading}
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  void refreshParkingStatus()
-                }}
-                className={`flex-1 rounded-xl px-3 py-2 text-xs font-bold ${chip} disabled:opacity-55`}
-                title="Ainult staatuse päring (ei peata ega alusta)"
-              >
-                {sessionAction === 'status' ? '…' : 'Staatus'}
-              </button>
-              <button
-                type="button"
-                disabled={sessionLoading}
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  void loadActiveSessionsOverview()
-                }}
-                className={`flex-1 rounded-xl px-3 py-2 text-xs font-bold ${chip} disabled:opacity-55`}
-                title="Kõik aktiivsed sessioonid"
-              >
-                Kõik
-              </button>
-            </div>
-          </form>
-          {sessionNotice ? (
-            <p
-              data-testid="session-notice"
-              className={`mt-2.5 rounded-2xl p-3.5 text-[11px] font-semibold leading-snug ${
-                sessionNotice.kind === 'success'
-                  ? 'bg-moss/12 text-moss'
-                  : sessionNotice.kind === 'error'
-                    ? 'bg-clay/15 text-clay'
-                    : sessionNotice.kind === 'loading'
-                      ? dark
-                        ? 'bg-white/10 text-white/80'
-                        : 'bg-ink/5 text-ink-soft'
-                      : 'bg-sea/12 text-sea'
-              }`}
-            >
-              {sessionNotice.text}
-            </p>
-          ) : null}
-          {connectionNotice ? (
-            <p
-              data-testid="connection-notice"
-              className={`mt-1.5 text-[10px] font-semibold ${muted}`}
-            >
-              {connectionNotice}
-            </p>
-          ) : null}
-        </div>
+          {connectionNotice}
+        </p>
       ) : null}
 
       {selectedEvCharger && !selected ? (
@@ -1664,7 +1542,7 @@ export default function App() {
       ) : null}
 
       {selected ? (
-        <ParkingBottomSheet
+        <ParkingDetailPanel
           spot={selected}
           distanceLabel={selectedDist}
           carNumber={carNumber}
