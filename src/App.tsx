@@ -11,7 +11,6 @@ import {
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ActiveSessionsModal } from './components/ActiveSessionsModal'
 import { MapErrorBoundary } from './components/MapErrorBoundary'
 import { MapView, type MapViewHandle } from './components/MapView'
 import { ModalShell } from './components/ModalShell'
@@ -38,7 +37,6 @@ import {
   loadApprovedOverlays,
   loadSuppressedFeatureIds,
 } from './lib/parkingRequests'
-import { parkingQueryKeys, queryClient } from './lib/queryClient'
 import { prefetchParkingLayers } from './lib/parkingDataCache'
 import {
   CITIES,
@@ -83,10 +81,6 @@ import {
   type SearchLocation,
 } from './lib/geocode'
 import { normalizeSpot } from './lib/geojson'
-import {
-  listActiveParkingSessions,
-  outcomeToResponse,
-} from './lib/parkingSession'
 import { useParkingSession } from './hooks/useParkingSession'
 import { clampSearchQuery } from './lib/validation'
 import { track } from './lib/analytics'
@@ -194,11 +188,6 @@ export default function App() {
     sessionAction,
     activeSession,
     sessionNotice,
-    sessionsOverviewOpen,
-    setSessionsOverviewOpen,
-    activeSessionsList,
-    activeSessionsCount,
-    activeSessionsMessage,
     toast,
     setToast,
     dismissToast,
@@ -206,9 +195,7 @@ export default function App() {
     beginParkingSession,
     endParkingSession,
     refreshParkingStatus,
-    loadActiveSessionsOverview,
     addPrepaidMinutes,
-    adoptListedSession,
     formatHourlyRate,
     formatSessionInstant,
   } = useParkingSession(selected)
@@ -1538,9 +1525,6 @@ export default function App() {
           onExtend={(mins) => {
             void addPrepaidMinutes(mins)
           }}
-          onShowAll={() => {
-            void loadActiveSessionsOverview()
-          }}
           formatHourlyRate={formatHourlyRate}
           formatSessionInstant={formatSessionInstant}
         />
@@ -1655,25 +1639,6 @@ export default function App() {
       ) : null}
 
       <Toast toast={toast} onClose={dismissToast} />
-
-      {sessionsOverviewOpen ? (
-        <ActiveSessionsModal
-          sessions={activeSessionsList}
-          count={activeSessionsCount}
-          message={activeSessionsMessage}
-          loading={sessionLoading && sessionAction === 'status'}
-          onClose={() => setSessionsOverviewOpen(false)}
-          onRefresh={() => void loadActiveSessionsOverview()}
-          onPrefetch={() => {
-            void queryClient.prefetchQuery({
-              queryKey: parkingQueryKeys.sessions,
-              queryFn: async () => outcomeToResponse(await listActiveParkingSessions()),
-              staleTime: 15_000,
-            })
-          }}
-          onSelect={adoptListedSession}
-        />
-      ) : null}
 
       {infoOpen ? (
         <ModalShell

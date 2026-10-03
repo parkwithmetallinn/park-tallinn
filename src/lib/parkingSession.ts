@@ -4,8 +4,10 @@
  * The browser never sees n8n credentials. The Vite / Vercel proxy reads
  * N8N_WEBHOOK_URL + N8N_API_KEY (server env) and injects X-N8N-API-KEY.
  *
- * Body:  { action: "start"|"stop"|"status", carNumber?, zone? }
- * There is NO server "extend" action — prepaid time is local-only.
+ * Body:  { action: "start"|"stop"|"status"|"extend", carNumber?, zone?, endsAt? }
+ * - status REQUIRES carNumber (server no longer lists sessions)
+ * - extend: { action: "extend", carNumber, endsAt } — endsAt ISO, 1 min–24 h ahead
+ * - "ei leitud aktiivset" → NOT_FOUND (normal, never ERROR)
  */
 
 /** Same-origin proxy — the only client endpoint. */
@@ -17,13 +19,15 @@ function webhookHeaders(): Headers {
   return headers
 }
 
-/** Server-supported actions only (no extend). */
-export type ParkingSessionAction = 'start' | 'stop' | 'status'
+/** Server-supported actions. */
+export type ParkingSessionAction = 'start' | 'stop' | 'status' | 'extend'
 
 export type ParkingSessionRequest = {
   action: ParkingSessionAction
   carNumber?: string
   zone?: string
+  /** ISO timestamp — required for extend */
+  endsAt?: string
 }
 
 export type ParkingSessionDetails = {
@@ -94,6 +98,9 @@ function defaultMessage(action: ParkingSessionAction, success: boolean): string 
   }
   if (action === 'status') {
     return success ? 'Staatus kontrollitud' : 'Staatuse päring ebaõnnestus'
+  }
+  if (action === 'extend') {
+    return success ? 'Parkimisaega pikendatud' : 'Pikendamine ebaõnnestus'
   }
   return success ? 'Parkimissessioon alustatud' : 'Sessiooni alustamine ebaõnnestus'
 }
@@ -375,10 +382,10 @@ export function toSessionOutcome(
     }
   }
 
-  // Successful stop / status with no active session → NOT_FOUND (normal)
+  // Successful stop / status / extend with no active session → NOT_FOUND (normal)
   if (
     response.success &&
-    (action === 'stop' || action === 'status') &&
+    (action === 'stop' || action === 'status' || action === 'extend') &&
     !isActiveSessionStatus(response.sessionDetails)
   ) {
     return {
@@ -423,10 +430,17 @@ function buildPayload(body: ParkingSessionRequest): Record<string, string> {
   const action = body.action
 
   if (action === 'status') {
-    const plate = body.carNumber?.trim()
-    return plate
-      ? { action: 'status', carNumber: plate.toUpperCase() }
-      : { action: 'status' }
+    const plate = body.carNumber?.trim() ?? ''
+    return { action: 'status', carNumber: plate.toUpperCase() }
+  }
+
+  if (action === 'extend') {
+    const plate = body.carNumber?.trim() ?? ''
+    return {
+      action: 'extend',
+      carNumber: plate.toUpperCase(),
+      endsAt: body.endsAt?.trim() ?? '',
+    }
   }
 
   const payload: Record<string, string> = { action }
@@ -574,16 +588,23 @@ function validateRequest(input: ParkingSessionRequest): string | null {
     action: input.action,
     carNumber: input.carNumber?.trim() || undefined,
     zone: input.zone?.trim() || undefined,
+    endsAt: input.endsAt?.trim() || undefined,
   })
   if (!parsed) {
     // Reuse existing error strings — no new UX copy
-    if (input.action !== 'status' && !input.carNumber?.trim()) {
+    if (!input.carNumber?.trim()) {
       return 'Sisesta auto number'
     }
     if (input.action === 'start' && !input.zone?.trim()) {
       return 'Tsoon puudub'
     }
-    if (input.action !== 'status' && !input.zone?.trim()) {
+    if (input.action === 'extend' && !input.endsAt?.trim()) {
+      return 'Vigane päring'
+    }
+    if (input.action === 'extend') {
+      return 'Vigane päring'
+    }
+    if (input.action === 'stop' && !input.zone?.trim()) {
       return 'Tsoon puudub'
     }
     return 'Sisesta auto number'
@@ -608,6 +629,7 @@ export async function sendParkingSession(
     action: input.action,
     carNumber: input.carNumber?.trim() || undefined,
     zone: input.zone?.trim() || undefined,
+    endsAt: input.endsAt?.trim() || undefined,
   }
 
   return postSession(PARKING_WEBHOOK_PROXY, body, signal)
@@ -634,7 +656,7 @@ export function stopParkingSession(
 }
 
 /**
- * Status for a specific car.
+ * Status for a specific car (carNumber required).
  * POST body is exactly:
  *   { "action": "status", "carNumber": "123DFG" }
  * Never starts or stops a session; never includes zone.
@@ -648,12 +670,22 @@ export function checkParkingStatus(
 }
 
 /**
- * List all active parking sessions (status without carNumber).
+ * Extend prepaid end time on the server.
+ * POST body: { "action": "extend", "carNumber", "endsAt" }
+ * NOT_FOUND ("ei leitud aktiivset") is a normal outcome.
  */
-export function listActiveParkingSessions(
+export function extendParkingSession(
+  input: { carNumber: string; endsAt: string },
   signal?: AbortSignal,
 ): Promise<SessionOutcome> {
-  return sendParkingSession({ action: 'status' }, signal)
+  return sendParkingSession(
+    {
+      action: 'extend',
+      carNumber: input.carNumber,
+      endsAt: input.endsAt,
+    },
+    signal,
+  )
 }
 
 export function sessionStartIso(details?: ParkingSessionDetails | null): string | undefined {

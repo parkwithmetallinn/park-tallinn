@@ -15,16 +15,35 @@ export const zoneCodeSchema = z
   .max(32)
   .regex(/^[A-Za-z0-9ÄÖÜÕäöüõ+\-_./ ]*$/)
 
-export const parkingSessionActionSchema = z.enum(['start', 'stop', 'status'])
+export const parkingSessionActionSchema = z.enum([
+  'start',
+  'stop',
+  'status',
+  'extend',
+])
+
+/** endsAt must be ISO and 1 minute–24 hours ahead of now. */
+function isValidExtendEndsAt(iso: string): boolean {
+  const ms = Date.parse(iso)
+  if (!Number.isFinite(ms)) return false
+  const now = Date.now()
+  return ms >= now + 60_000 && ms <= now + 24 * 60 * 60 * 1000
+}
 
 export const parkingSessionBodySchema = z
   .object({
     action: parkingSessionActionSchema,
     carNumber: carNumberSchema.optional(),
     zone: zoneCodeSchema.optional(),
+    endsAt: z.string().trim().min(1).optional(),
   })
   .superRefine((val, ctx) => {
-    if (val.action === 'start' || val.action === 'stop') {
+    if (
+      val.action === 'start' ||
+      val.action === 'stop' ||
+      val.action === 'status' ||
+      val.action === 'extend'
+    ) {
       if (!val.carNumber) {
         ctx.addIssue({
           code: 'custom',
@@ -39,6 +58,21 @@ export const parkingSessionBodySchema = z
         path: ['zone'],
         message: 'zone required',
       })
+    }
+    if (val.action === 'extend') {
+      if (!val.endsAt) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['endsAt'],
+          message: 'endsAt required',
+        })
+      } else if (!isValidExtendEndsAt(val.endsAt)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['endsAt'],
+          message: 'endsAt out of range',
+        })
+      }
     }
   })
 

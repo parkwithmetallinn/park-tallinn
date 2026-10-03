@@ -10,7 +10,7 @@
 const UPSTREAM = process.env.N8N_WEBHOOK_URL || ''
 const API_KEY = process.env.N8N_API_KEY || ''
 
-const ALLOWED_ACTIONS = new Set(['start', 'stop', 'status'])
+const ALLOWED_ACTIONS = new Set(['start', 'stop', 'status', 'extend'])
 const MAX_BODY_BYTES = 4_096
 const RATE_WINDOW_MS = 60_000
 const RATE_MAX = 30
@@ -49,6 +49,15 @@ function isValidZone(v) {
   return s.length <= 32 && /^[A-Za-z0-9ÄÖÜÕäöüõ+\-_./ ]*$/.test(s)
 }
 
+/** endsAt ISO, 1 minute–24 hours in the future. */
+function isValidEndsAt(v) {
+  if (typeof v !== 'string' || !v.trim()) return false
+  const ms = Date.parse(v)
+  if (!Number.isFinite(ms)) return false
+  const now = Date.now()
+  return ms >= now + 60_000 && ms <= now + 24 * 60 * 60 * 1000
+}
+
 function validateBody(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { ok: false, message: 'Vigane päring' }
@@ -63,16 +72,26 @@ function validateBody(body) {
   if (!isValidZone(body.zone)) {
     return { ok: false, message: 'Tsoon puudub' }
   }
-  if ((action === 'start' || action === 'stop') && !String(body.carNumber || '').trim()) {
+  if (
+    (action === 'start' ||
+      action === 'stop' ||
+      action === 'status' ||
+      action === 'extend') &&
+    !String(body.carNumber || '').trim()
+  ) {
     return { ok: false, message: 'Sisesta auto number' }
   }
   if (action === 'start' && !String(body.zone || '').trim()) {
     return { ok: false, message: 'Tsoon puudub' }
   }
+  if (action === 'extend' && !isValidEndsAt(body.endsAt)) {
+    return { ok: false, message: 'Vigane päring' }
+  }
   // Strip unknown keys — same shape upstream expects
   const clean = { action }
   if (body.carNumber) clean.carNumber = String(body.carNumber).trim().toUpperCase()
   if (body.zone) clean.zone = String(body.zone).trim()
+  if (body.endsAt) clean.endsAt = String(body.endsAt).trim()
   return { ok: true, body: clean }
 }
 

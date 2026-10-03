@@ -36,7 +36,6 @@ export function ParkingSessionModal({
   onStop,
   onStatus,
   onExtend,
-  onShowAll,
   formatHourlyRate,
   formatSessionInstant,
 }: {
@@ -57,7 +56,6 @@ export function ParkingSessionModal({
   onStop: () => void
   onStatus: () => void
   onExtend: (minutes: number) => void
-  onShowAll: () => void
   formatHourlyRate: (rate?: number) => string | undefined
   formatSessionInstant: (iso?: string) => string | undefined
 }) {
@@ -223,30 +221,17 @@ export function ParkingSessionModal({
             </div>
           )}
 
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={sessionLoading}
-              onClick={(e) => {
-                e.preventDefault()
-                onStatus()
-              }}
-              className={`flex-1 rounded-xl px-3 py-2.5 text-[12px] font-bold ${chip} disabled:opacity-55`}
-            >
-              {sessionAction === 'status' ? '…' : 'Staatus'}
-            </button>
-            <button
-              type="button"
-              disabled={sessionLoading}
-              onClick={(e) => {
-                e.preventDefault()
-                onShowAll()
-              }}
-              className={`flex-1 rounded-xl px-3 py-2.5 text-[12px] font-bold ${chip} disabled:opacity-55`}
-            >
-              Kõik
-            </button>
-          </div>
+          <button
+            type="button"
+            disabled={sessionLoading}
+            onClick={(e) => {
+              e.preventDefault()
+              onStatus()
+            }}
+            className={`w-full rounded-xl px-3 py-2.5 text-[12px] font-bold ${chip} disabled:opacity-55`}
+          >
+            {sessionAction === 'status' ? '…' : 'Staatus'}
+          </button>
         </form>
 
         {sessionNotice ? (

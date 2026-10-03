@@ -9,12 +9,10 @@ import {
 import {
   activeSessionFromDetails,
   checkParkingStatus,
+  extendParkingSession,
   formatHourlyRate,
   formatSessionFeedbackDetail,
   formatSessionInstant,
-  isActiveSessionStatus,
-  listActiveParkingSessions,
-  outcomeToResponse,
   sessionHourlyRate,
   sessionStartIso,
   startParkingSession,
@@ -39,6 +37,8 @@ import type { ParkingSpot } from '../types'
 
 const SYNC_THROTTLE_MS = 15_000
 const DEFAULT_TIMER_LABEL = 'Määra aeg või vali kellaga koht'
+/** Fire local reminder when prepaid remaining ≤ this many seconds. */
+const REMINDER_THRESHOLD_SEC = 10 * 60
 
 export type SessionNotice = {
   kind: 'success' | 'error' | 'info' | 'loading'
@@ -71,16 +71,6 @@ export function useParkingSession(selected: ParkingSpot | null) {
     null,
   )
   const [sessionNotice, setSessionNotice] = useState<SessionNotice>(null)
-  const [sessionsOverviewOpen, setSessionsOverviewOpen] = useState(false)
-  const [activeSessionsList, setActiveSessionsList] = useState<
-    ParkingSessionDetails[]
-  >([])
-  const [activeSessionsCount, setActiveSessionsCount] = useState<
-    number | undefined
-  >()
-  const [activeSessionsMessage, setActiveSessionsMessage] = useState<
-    string | undefined
-  >()
   const [toast, setToast] = useState<ToastState>(null)
   /** Small persistent notice when status sync fails (never clears the session). */
   const [connectionNotice, setConnectionNotice] = useState<string | null>(null)
@@ -89,10 +79,52 @@ export function useParkingSession(selected: ParkingSpot | null) {
   const lastSyncAtRef = useRef(0)
   const syncInFlightRef = useRef(false)
   const notFoundToastShownRef = useRef(false)
+  /** endsAt for which the 10-min reminder already fired (re-arm on new endsAt). */
+  const reminderFiredForEndsAtRef = useRef<string | null>(null)
+  /** Permission prompt only on first "+time" press — never on page load. */
+  const notificationPermissionAskedRef = useRef(false)
   const selectedRef = useRef(selected)
   selectedRef.current = selected
 
   const dismissToast = useCallback(() => setToast(null), [])
+
+  const requestNotificationPermissionOnce = useCallback(() => {
+    if (typeof Notification === 'undefined') return
+    if (notificationPermissionAskedRef.current) return
+    if (Notification.permission !== 'default') return
+    notificationPermissionAskedRef.current = true
+    void Notification.requestPermission()
+  }, [])
+
+  const maybeFirePrepaidReminder = useCallback(
+    (currentEndsAt: string | null, remainingSec: number) => {
+      if (!currentEndsAt) return
+      if (remainingSec <= 0 || remainingSec > REMINDER_THRESHOLD_SEC) return
+      if (reminderFiredForEndsAtRef.current === currentEndsAt) return
+      reminderFiredForEndsAtRef.current = currentEndsAt
+
+      setToast({
+        kind: 'info',
+        title: 'Parkimisaeg lõpeb peagi',
+        detail: 'Jäänud umbes 10 minutit',
+      })
+
+      if (
+        typeof Notification !== 'undefined' &&
+        Notification.permission === 'granted'
+      ) {
+        try {
+          new Notification('Parkimisaeg lõpeb peagi', {
+            body: 'Jäänud umbes 10 minutit',
+            tag: `parking-reminder-${currentEndsAt}`,
+          })
+        } catch {
+          /* Notification constructor can throw on some platforms */
+        }
+      }
+    },
+    [],
+  )
 
   const persistActive = useCallback((session: ActiveParkingSession | null) => {
     setActiveSession(session)
@@ -334,14 +366,25 @@ export function useParkingSession(selected: ParkingSpot | null) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- boot once
   }, [])
 
-  // Focus / visibility sync (throttled ≤1 / 15s)
+  // Focus / visibility sync (throttled ≤1 / 15s) + prepaid reminder recompute
   useEffect(() => {
     const onFocus = () => {
       void syncLocalSessionFromServer()
     }
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        void syncLocalSessionFromServer()
+      if (document.visibilityState !== 'visible') return
+      void syncLocalSessionFromServer()
+      // Mobile browsers throttle timers — recompute remaining from absolute endsAt
+      if (timerMode === 'prepaid' && endsAt) {
+        const remaining = prepaidSecondsRemaining(endsAt)
+        setTimerSeconds(remaining)
+        if (remaining <= 0) {
+          setTimerRunning(false)
+          setTimerLabel('Aeg läbi! Liiguta autot või pikenda')
+        } else {
+          setTimerRunning(true)
+        }
+        maybeFirePrepaidReminder(endsAt, remaining)
       }
     }
     window.addEventListener('focus', onFocus)
@@ -350,7 +393,12 @@ export function useParkingSession(selected: ParkingSpot | null) {
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [syncLocalSessionFromServer])
+  }, [
+    syncLocalSessionFromServer,
+    timerMode,
+    endsAt,
+    maybeFirePrepaidReminder,
+  ])
 
   // Mode 1 — live duration: tick UP from session startTime
   useEffect(() => {
@@ -365,12 +413,13 @@ export function useParkingSession(selected: ParkingSpot | null) {
     return () => clearInterval(id)
   }, [timerMode, activeSession?.startedAt])
 
-  // Mode 2 — prepaid: count DOWN from absolute endsAt
+  // Mode 2 — prepaid: count DOWN from absolute endsAt + 10-min reminder
   useEffect(() => {
     if (timerMode !== 'prepaid' || !timerRunning || !endsAt) return
     const tick = () => {
       const remaining = prepaidSecondsRemaining(endsAt)
       setTimerSeconds(remaining)
+      maybeFirePrepaidReminder(endsAt, remaining)
       if (remaining <= 0) {
         setTimerRunning(false)
         setTimerLabel('Aeg läbi! Liiguta autot või pikenda')
@@ -379,7 +428,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
     tick()
     const id = window.setInterval(tick, 1000)
     return () => clearInterval(id)
-  }, [timerMode, timerRunning, endsAt])
+  }, [timerMode, timerRunning, endsAt, maybeFirePrepaidReminder])
 
   const handleCarNumberChange = useCallback((value: string) => {
     setCarNumber(value)
@@ -582,105 +631,16 @@ export function useParkingSession(selected: ParkingSpot | null) {
     rollbackSessionSnapshot,
   ])
 
-  const loadActiveSessionsOverview = useCallback(async () => {
-    setSessionLoading(true)
-    setSessionAction('status')
-    if (activeSessionsList.length === 0) {
-      setSessionsOverviewOpen(true)
-    }
-
-    const cached = queryClient.getQueryData<{
-      success: boolean
-      activeSessions?: ParkingSessionDetails[]
-      count?: number
-      message?: string
-    }>(parkingQueryKeys.sessions)
-    if (cached?.success && cached.activeSessions) {
-      setActiveSessionsList(cached.activeSessions)
-      setActiveSessionsCount(cached.count ?? cached.activeSessions.length)
-      setActiveSessionsMessage(cached.message)
-      setSessionsOverviewOpen(true)
-    }
-
-    const outcome = await queryClient.fetchQuery({
-      queryKey: parkingQueryKeys.sessions,
-      queryFn: async () => {
-        const o = await listActiveParkingSessions()
-        return outcomeToResponse(o)
-      },
-      staleTime: 15_000,
-    })
-
-    setSessionLoading(false)
-    setSessionAction(null)
-
-    // Re-derive outcome-ish from cached response for UI
-    const list = outcome.activeSessions ?? []
-    if (!outcome.success && list.length === 0) {
-      if (activeSessionsList.length === 0) {
-        showSessionFeedback(
-          'error',
-          'Sessioonide nimekiri ebaõnnestus',
-          outcome.message,
-        )
-      } else {
-        setToast({
-          kind: 'error',
-          title: 'Värskendus ebaõnnestus',
-          detail: outcome.message,
-        })
-      }
-      return
-    }
-
-    const count = outcome.count ?? list.length
-    setActiveSessionsList(list)
-    setActiveSessionsCount(count)
-    setActiveSessionsMessage(outcome.message)
-    setSessionsOverviewOpen(true)
-
-    const plate = (carNumber.trim() || activeSession?.carNumber || '').toUpperCase()
-    if (plate) {
-      const activeMine = list.find(
-        (s) =>
-          String(s.carNumber ?? '').toUpperCase() === plate &&
-          isActiveSessionStatus(s),
-      )
-      if (activeMine) {
-        applyActiveDetails(activeMine, {
-          carNumber: plate,
-          spotName: activeSession?.spotName ?? selectedRef.current?.name,
-        })
-      }
-    }
-
-    showSessionFeedback(
-      'success',
-      'Aktiivsed sessioonid',
-      formatSessionFeedbackDetail({
-        kind: 'NOT_FOUND',
-        message: outcome.message || 'Aktiivseid sessioone pole',
-        activeSessions: list,
-        count,
-      }),
-    )
-  }, [
-    activeSessionsList.length,
-    carNumber,
-    activeSession,
-    showSessionFeedback,
-    applyActiveDetails,
-  ])
-
   /**
    * Status ONLY — show exactly what the server said.
    * No local "taimer jätkub" fallback when server did not confirm ACTIVE.
+   * Server requires carNumber (no session list).
    */
   const refreshParkingStatus = useCallback(async () => {
     const plate = (carNumber.trim() || activeSession?.carNumber || '').trim()
 
     if (!plate) {
-      await loadActiveSessionsOverview()
+      showSessionFeedback('error', 'Sisesta auto number')
       return
     }
 
@@ -752,7 +712,6 @@ export function useParkingSession(selected: ParkingSpot | null) {
     activeSession,
     timerRunning,
     timerMode,
-    loadActiveSessionsOverview,
     showSessionFeedback,
     applyActiveDetails,
     startElapsedTimer,
@@ -760,16 +719,19 @@ export function useParkingSession(selected: ParkingSpot | null) {
   ])
 
   /**
-   * Local prepaid countdown only.
-   * TODO: server "extend" action is not implemented on n8n — do not call webhook.
+   * Prepaid countdown from absolute endsAt + server extend when a session is active.
+   * Offline queue stores endsAt (not minutes). NOT_FOUND → neutral toast, keep local.
    */
   const addPrepaidMinutes = useCallback(
-    (minutes: number) => {
+    async (minutes: number) => {
       if (minutes <= 0) return
+
+      // Permission only on first "+time" press — never on page load
+      requestNotificationPermissionOnce()
 
       const baseMs =
         timerMode === 'prepaid' && endsAt
-          ? Math.max(Date.parse(endsAt), Date.now())
+          ? Math.max(Date.parse(endsAt) || 0, Date.now())
           : Date.now()
       const nextEndsAt = new Date(baseMs + minutes * 60 * 1000).toISOString()
       persistTimer('prepaid', nextEndsAt)
@@ -782,15 +744,63 @@ export function useParkingSession(selected: ParkingSpot | null) {
           : `Ettemaks +${minutes} min`,
       )
 
-      // TODO: n8n has no "extend" action — prepaid time is local-only until the
-      // webhook gains a real extend branch. Do not enqueue or POST extend.
-      showSessionFeedback(
-        'info',
-        `Lisatud ${minutes} min`,
-        activeSession
-          ? `Kohalik taimer · ${activeSession.carNumber}`
-          : 'Kohalik taimer (sessioon puudub)',
-      )
+      if (!activeSession) {
+        showSessionFeedback(
+          'info',
+          `Lisatud ${minutes} min`,
+          'Kohalik taimer (sessioon puudub)',
+        )
+        return
+      }
+
+      const plate = activeSession.carNumber
+
+      if (!isBrowserOnline()) {
+        enqueueOfflineAction('session_extend', {
+          carNumber: plate,
+          endsAt: nextEndsAt,
+        })
+        showSessionFeedback(
+          'info',
+          `Lisatud ${minutes} min`,
+          'Offline — pikendus järjekorras',
+        )
+        return
+      }
+
+      setSessionAction('extend')
+      setSessionLoading(true)
+      const outcome = await extendParkingSession({
+        carNumber: plate,
+        endsAt: nextEndsAt,
+      })
+      setSessionLoading(false)
+      setSessionAction(null)
+
+      if (outcome.kind === 'ACTIVE') {
+        showSessionFeedback(
+          'success',
+          `Lisatud ${minutes} min`,
+          formatSessionFeedbackDetail(outcome),
+        )
+        return
+      }
+
+      if (outcome.kind === 'NOT_FOUND') {
+        // Neutral — local timer already updated and stays
+        setToast({
+          kind: 'info',
+          title: 'Serveris aktiivset sessiooni pole',
+          detail: outcome.message || 'Kohalik taimer jätkub',
+        })
+        return
+      }
+
+      setToast({
+        kind: 'error',
+        title: 'Pikendamine ebaõnnestus',
+        detail: outcome.message || 'Kohalik taimer jätkub',
+      })
     },
     [
       timerMode,
@@ -798,35 +808,8 @@ export function useParkingSession(selected: ParkingSpot | null) {
       activeSession,
       persistTimer,
       showSessionFeedback,
+      requestNotificationPermissionOnce,
     ],
-  )
-
-  const adoptListedSession = useCallback(
-    (details: ParkingSessionDetails) => {
-      const synced = applyActiveDetails(details, {
-        spotName: activeSession?.spotName ?? selectedRef.current?.name,
-      })
-      if (!synced) return
-      startElapsedTimer(
-        synced.startedAt,
-        `Sessioon: ${synced.zone} · ${synced.carNumber}${
-          formatHourlyRate(synced.hourlyRate)
-            ? ` · ${formatHourlyRate(synced.hourlyRate)}`
-            : ''
-        }`,
-      )
-      setSessionsOverviewOpen(false)
-      showSessionFeedback(
-        'success',
-        'Sessioon valitud',
-        `${synced.carNumber} · ${synced.zone}${
-          formatHourlyRate(synced.hourlyRate)
-            ? ` · ${formatHourlyRate(synced.hourlyRate)}`
-            : ''
-        }`,
-      )
-    },
-    [activeSession, applyActiveDetails, startElapsedTimer, showSessionFeedback],
   )
 
   // Offline queue processor — drains FIFO on reconnect
@@ -847,8 +830,24 @@ export function useParkingSession(selected: ParkingSpot | null) {
         return outcome.kind === 'NOT_FOUND' || outcome.kind === 'ACTIVE'
       }
       if (action.type === 'session_extend') {
-        // TODO: server has no extend — drop stale queued extends
-        return true
+        const plate = String(action.payload.carNumber ?? '')
+        const queuedEndsAt = String(action.payload.endsAt ?? '')
+        if (!plate || !queuedEndsAt) return true
+        const ms = Date.parse(queuedEndsAt)
+        const now = Date.now()
+        // Drop stale / out-of-range queued extends (server requires 1 min–24 h)
+        if (
+          !Number.isFinite(ms) ||
+          ms < now + 60_000 ||
+          ms > now + 24 * 60 * 60 * 1000
+        ) {
+          return true
+        }
+        const outcome = await extendParkingSession({
+          carNumber: plate,
+          endsAt: queuedEndsAt,
+        })
+        return outcome.kind === 'ACTIVE' || outcome.kind === 'NOT_FOUND'
       }
       return true
     })
@@ -867,11 +866,6 @@ export function useParkingSession(selected: ParkingSpot | null) {
     sessionAction,
     activeSession,
     sessionNotice,
-    sessionsOverviewOpen,
-    setSessionsOverviewOpen,
-    activeSessionsList,
-    activeSessionsCount,
-    activeSessionsMessage,
     toast,
     setToast,
     dismissToast,
@@ -879,9 +873,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
     beginParkingSession,
     endParkingSession,
     refreshParkingStatus,
-    loadActiveSessionsOverview,
     addPrepaidMinutes,
-    adoptListedSession,
     formatHourlyRate,
     formatSessionInstant,
   }
