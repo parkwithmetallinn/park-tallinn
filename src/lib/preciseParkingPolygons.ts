@@ -9,6 +9,7 @@ import type {
 import { normalizeSpot } from './geojson'
 import { mapLabelForLayer } from './mapLabels'
 import { parkingDisplayName } from './parkingDisplayName'
+import { uniqueParkingFeatureId } from './nearestParking'
 import {
   categoryPaintColor,
   emptyPurgeStats,
@@ -281,6 +282,7 @@ export function featureBounds(geom: PolyGeom): [[number, number], [number, numbe
  */
 export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollection {
   const features: PreciseParkingFeature[] = []
+  const seenIds = new Set<string>()
   const purge = emptyPurgeStats()
   for (const f of raw.features ?? []) {
     if (!f.geometry || (f.geometry.type !== 'Polygon' && f.geometry.type !== 'MultiPolygon')) {
@@ -297,8 +299,18 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
       continue
     }
 
-    // Prefer OSM @id; ignore numeric OSM `layer` (building level) as app layer key
-    const id = str(p['@id'] ?? p.id ?? f.id) || `poly-${features.length}`
+    // Prefer OSM @id; fall back to lat_lng_index so cards never share an id
+    const { lat: cLat, lng: cLng } = featureCentroid(f.geometry)
+    let id = uniqueParkingFeatureId(
+      (p['@id'] ?? p.id ?? f.id) as string | number | null | undefined,
+      cLat,
+      cLng,
+      features.length,
+    )
+    if (seenIds.has(id)) {
+      id = `${id}#${features.length}`
+    }
+    seenIds.add(id)
     const parkingTag = str(p.parking)
     const structureType = asStructureType(parkingTag, str(p.building))
     const floorsRaw = p['building:levels'] ?? p.floors

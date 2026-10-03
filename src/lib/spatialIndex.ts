@@ -47,8 +47,15 @@ export class ParkingSpatialIndex {
   }
 
   insert(spot: ParkingSpot) {
+    const prev = this.byId.get(spot.id)
+    if (prev) {
+      const idx = this.spots.indexOf(prev)
+      if (idx >= 0) this.spots[idx] = spot
+      else this.spots.push(spot)
+    } else {
+      this.spots.push(spot)
+    }
     this.byId.set(spot.id, spot)
-    this.spots.push(spot)
   }
 
   getById(id: string): ParkingSpot | undefined {

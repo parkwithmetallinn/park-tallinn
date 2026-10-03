@@ -7,13 +7,11 @@ import {
   isUnlimitedFreeParking,
 } from '../lib/parkingClassification'
 import { spotDisplayName } from '../lib/parkingDisplayName'
+import type { NearestParkingOption } from '../lib/nearestParking'
 import type { ParkingSpot } from '../types'
 import { InfoSidePanelShell } from './InfoSidePanel'
 
-export type NearestParkingOption = {
-  spot: ParkingSpot
-  distanceM: number
-}
+export type { NearestParkingOption }
 
 type PanelFilter = 'all' | 'free' | 'clock' | 'paid'
 
@@ -158,8 +156,8 @@ export function NearestParkingPanel({
   const previewSpot = useMemo(() => {
     if (!selectedPreviewId) return null
     return (
-      filtered.find((o) => o.spot.id === selectedPreviewId)?.spot ??
-      options.find((o) => o.spot.id === selectedPreviewId)?.spot ??
+      filtered.find((o) => o.optionKey === selectedPreviewId)?.spot ??
+      options.find((o) => o.optionKey === selectedPreviewId)?.spot ??
       null
     )
   }, [selectedPreviewId, filtered, options])
@@ -233,28 +231,28 @@ export function NearestParkingPanel({
             </p>
           ) : (
             <ul className="space-y-1.5" role="listbox" aria-label="Lähimad parklad">
-              {filtered.map(({ spot, distanceM }) => {
-                const active = selectedPreviewId === spot.id
+              {filtered.map(({ spot, distanceM, optionKey }) => {
+                const active = selectedPreviewId === optionKey
                 const badge = parkingPriceBadge(spot)
                 const walk = walkMinutes(distanceM)
                 return (
                   <li
-                    key={spot.id}
+                    key={optionKey}
                     ref={(node) => {
-                      if (node) cardRefs.current.set(spot.id, node)
-                      else cardRefs.current.delete(spot.id)
+                      if (node) cardRefs.current.set(optionKey, node)
+                      else cardRefs.current.delete(optionKey)
                     }}
                   >
                     <div
                       role="option"
                       aria-selected={active}
                       tabIndex={0}
-                      data-testid={`nearest-parking-card-${spot.id}`}
-                      onClick={() => onPreview(spot.id)}
+                      data-testid={`nearest-parking-card-${optionKey}`}
+                      onClick={() => onPreview(optionKey)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault()
-                          onPreview(spot.id)
+                          onPreview(optionKey)
                         }
                       }}
                       className={`tap-scale w-full cursor-pointer rounded-xl border px-3 py-2.5 text-left transition active:scale-[0.99] ${

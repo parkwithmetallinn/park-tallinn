@@ -1,6 +1,7 @@
 import { normalizeSpot } from './geojson'
 import { mapLabelForLayer } from './mapLabels'
 import { parkingDisplayName } from './parkingDisplayName'
+import { uniqueParkingFeatureId } from './nearestParking'
 import {
   emptyPurgeStats,
   extractClockMinutes,
@@ -330,6 +331,7 @@ function lineToLatLng(coords: number[][]): [number, number][] {
  */
 export function prepareStreetParking(raw: RawCollection): StreetParkingCollection {
   const features: StreetParkingFeature[] = []
+  const seenIds = new Set<string>()
   const purge = emptyPurgeStats()
   for (const f of raw.features ?? []) {
     if (!f.geometry) continue
@@ -347,7 +349,15 @@ export function prepareStreetParking(raw: RawCollection): StreetParkingCollectio
     const coords = extractLineCoords(f.geometry)
     if (!coords || coords.length < 2) continue
 
-    const id = str(p['@id'] ?? p.id ?? f.id) || `street-${features.length}`
+    const mid = coords[Math.floor(coords.length / 2)]
+    let id = uniqueParkingFeatureId(
+      (p['@id'] ?? p.id ?? f.id) as string | number | null | undefined,
+      mid[1],
+      mid[0],
+      features.length,
+    )
+    if (seenIds.has(id)) id = `${id}#${features.length}`
+    seenIds.add(id)
     const { rules, layer, free_minutes, price_per_hour, color, verified_free } = classifyRules(p)
     const nameTag = str(p.name)
     const streetAddr = str(p['addr:street'])

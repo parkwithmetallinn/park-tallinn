@@ -22,6 +22,7 @@ import {
   parkingMapPillTone,
   type NearestParkingOption,
 } from './components/NearestParkingPanel'
+import { collectNearestAround } from './lib/nearestParking'
 import { ParkingBottomSheet } from './components/ParkingBottomSheet'
 import { OfflineBanner } from './components/OfflineBanner'
 import { ReportModal, type ReportModalContext } from './components/ReportModal'
@@ -642,23 +643,15 @@ export default function App() {
     setFlyKey((k) => k + 1)
   }
 
-  /** Collect 3–5 nearest roadside/lot spots, expanding radius if needed. */
+  /** Collect 3–5 nearest roadside/lot spots around the SEARCH destination. */
   const collectNearestOptions = useCallback(
     (lat: number, lng: number): NearestParkingOption[] => {
-      const radii = [400, 700, 1100, 1800, 2500]
-      for (const r of radii) {
-        const list = parkingIndex
-          .queryNearbyParkingList(lat, lng, r, {
-            excludeIds: fullSpotIds,
-          })
-          .slice(0, 5)
-        if (list.length >= 3 || r === radii[radii.length - 1]) {
-          return list.slice(0, Math.max(list.length, 0))
-        }
-      }
-      return []
+      return collectNearestAround(allSpots, lat, lng, {
+        excludeIds: fullSpotIds,
+        limit: 5,
+      })
     },
-    [fullSpotIds],
+    [allSpots, fullSpotIds],
   )
 
   /**
@@ -867,6 +860,7 @@ export default function App() {
     setNearestOptions(options)
     setFromNearestPicker(false)
     setNearestPickerOpen(true)
+    setSelectedPreviewId(options[0]?.optionKey ?? null)
 
     // Frame the searched destination (wider so nearby lots are visible)
     setFlyMode('fly')
@@ -899,7 +893,7 @@ export default function App() {
     flyToDestination(geocodeToSearchLocation(item.result))
   }
 
-  /** Instant preview only — no detail panel, no OSRM. */
+  /** Instant preview only — no detail panel, no OSRM. Strict single selection. */
   const handleNearestPreview = useCallback((id: string) => {
     setSelectedPreviewId(id)
   }, [])
@@ -921,33 +915,34 @@ export default function App() {
     setFromNearestPicker(true)
     setNearestPickerOpen(true)
     if (nearestOptions[0]) {
-      setSelectedPreviewId(nearestOptions[0].spot.id)
+      setSelectedPreviewId(nearestOptions[0].optionKey)
     }
   }, [clearRoute, nearestOptions])
 
-  // Refresh nearest list when parking data finishes loading after a search
+  // Refresh nearest list when parking data finishes loading after a search.
+  // Always anchor distances to searchLocation — never keep stale Tallinn rows
+  // after navigating to Tartu / another landmark.
   useEffect(() => {
     if (!nearestPickerOpen || !searchLocation) return
     const next = collectNearestOptions(searchLocation.lat, searchLocation.lng)
-    if (next.length === 0) return
-    setNearestOptions((prev) =>
-      prev.length >= next.length && prev[0]?.spot.id === next[0]?.spot.id
-        ? prev
-        : next,
-    )
+    setNearestOptions(next)
+    setSelectedPreviewId((prev) => {
+      if (prev && next.some((o) => o.optionKey === prev)) return prev
+      return next[0]?.optionKey ?? null
+    })
   }, [allSpots, nearestPickerOpen, searchLocation, collectNearestOptions])
 
   // Prefocus the closest option when the picker opens
   useEffect(() => {
     if (!nearestPickerOpen) return
     if (selectedPreviewId) return
-    if (nearestOptions[0]) setSelectedPreviewId(nearestOptions[0].spot.id)
+    if (nearestOptions[0]) setSelectedPreviewId(nearestOptions[0].optionKey)
   }, [nearestPickerOpen, nearestOptions, selectedPreviewId])
 
   const nearestPills = useMemo(() => {
     if (!nearestPickerOpen) return []
-    return nearestOptions.map(({ spot }) => ({
-      id: spot.id,
+    return nearestOptions.map(({ spot, optionKey }) => ({
+      id: optionKey,
       lat: spot.lat,
       lng: spot.lng,
       label: parkingMapPillLabel(spot),
@@ -958,7 +953,7 @@ export default function App() {
   const previewFocus = useMemo(() => {
     if (!nearestPickerOpen || !searchLocation) return null
     const hit = selectedPreviewId
-      ? nearestOptions.find((o) => o.spot.id === selectedPreviewId)
+      ? nearestOptions.find((o) => o.optionKey === selectedPreviewId)
       : null
     return {
       target: { lat: searchLocation.lat, lng: searchLocation.lng },
