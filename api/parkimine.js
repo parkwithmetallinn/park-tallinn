@@ -12,7 +12,12 @@ const API_KEY = process.env.N8N_API_KEY || ''
 
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*')
+    // Same-origin SPA only — tighten preflight (no wildcard credentials surface)
+    const origin = typeof req.headers.origin === 'string' ? req.headers.origin : ''
+    if (origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin)
+      res.setHeader('Vary', 'Origin')
+    }
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
     res.status(204).end()
