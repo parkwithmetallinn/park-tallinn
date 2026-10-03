@@ -137,8 +137,8 @@ export function isUnlimitedFreeParking(p: FreeClockFields): boolean {
 
 /**
  * Time-limited / parking-clock free parking — "Kellaga" filter.
- * Includes layer=timed, €0 spots with a free window (15/60/120…), KELL/ZONE
- * clock curb, and keyword signals (Parkimiskellaga, Ajapiiranguga, …).
+ * Includes layer=timed, €0 spots with a free window (15/60/120…), KELL
+ * clock curb, and keyword signals (Parkimiskellaga, Ajapiiranguga, maxstay).
  * Paid hourly zones with a short grace period stay under "Tasuline".
  */
 export function isClockLimitedParking(p: FreeClockFields): boolean {
@@ -152,15 +152,83 @@ export function isClockLimitedParking(p: FreeClockFields): boolean {
   // Free (or effectively free) with an explicit clock window
   if (mins > 0 && price <= 0) return true
   if (price > 0) return false
-  if (hasClockKeyword(p.timeLimit, p.badge, p.name, p.desc)) return true
+  if (
+    hasClockKeyword(
+      p.timeLimit,
+      p.badge,
+      p.name,
+      p.desc,
+      p.zone_code,
+    )
+  ) {
+    return true
+  }
   return false
 }
 
 /** Detail-sheet headline for clock-limited free parking. */
 export function clockFreeHeadline(freeMinutes: number): string {
   const mins = Math.max(0, Math.round(freeMinutes))
-  if (mins > 0) return `Parkimiskellaga / Ajapiiranguga · ${mins} min`
-  return 'Parkimiskellaga / Ajapiiranguga'
+  if (mins > 0) return `Kellaga - ${mins} min`
+  return 'Kellaga'
+}
+
+/** Known city / municipal operators (not private yards). */
+export function isKnownCityOperator(operator?: string | null): boolean {
+  const op = String(operator || '')
+    .trim()
+    .toLowerCase()
+  if (!op) return false
+  return (
+    op.includes('tallinna linn') ||
+    op.includes('tallinn') ||
+    op.includes('pärnu linn') ||
+    op.includes('parnu linn') ||
+    op.includes('tartu linn') ||
+    /\blinn\b/.test(op)
+  )
+}
+
+/**
+ * Explicit paid operator zone codes (EP9, X56, SB7, YT…, PKESK…).
+ * Generic ZONE / KELL / FREE are not paid zone codes.
+ */
+export function hasExplicitPaidZoneCode(zoneRaw?: string | null): boolean {
+  const z = String(zoneRaw || '')
+    .trim()
+    .toUpperCase()
+  if (!z) return false
+  if (/^(ZONE|UNKNOWN|KELL|FREE|PAID|P|EV|INVA|LOAD)$/.test(z)) return false
+  if (/^(PKESK|PRAND)$/.test(z)) return true
+  if (/^(EP|X|SB|YT|CP|PK|UT)\d+/i.test(z)) return true
+  if (/^P\+\d+$/i.test(z)) return true
+  // Named municipal zone refs that are not the generic placeholder
+  if (/^[A-ZÄÖÜÕ]{1,4}\d{1,4}[A-ZÄÖÜÕ0-9]*$/i.test(z) && z !== 'ZONE') {
+    return true
+  }
+  return false
+}
+
+/**
+ * Compact category badge for the detail card header.
+ * e.g. "Kellaga - 15 min", "Tasuta", "EP9", "Tasuline".
+ */
+export function categoryBadgeLabel(
+  p: FreeClockFields & { operator?: string; color?: string },
+): string {
+  if (isUnlimitedFreeParking(p)) return 'Tasuta'
+  if (isClockLimitedParking(p)) {
+    const mins = Math.max(0, Math.round(Number(p.free_minutes ?? 0)))
+    return mins > 0 ? `Kellaga - ${mins} min` : 'Kellaga'
+  }
+  const zone = String(p.zone_code || '').trim()
+  const price = Number(p.price_per_hour ?? 0)
+  if (price > 0 || hasExplicitPaidZoneCode(zone)) {
+    if (zone && !/^(ZONE|UNKNOWN|PAID)$/i.test(zone)) return zone
+    return 'Tasuline'
+  }
+  if (zone && !/^(ZONE|UNKNOWN)$/i.test(zone)) return zone
+  return 'ZONE'
 }
 
 const PAID_LAYERS = new Set([
@@ -184,6 +252,7 @@ export function categoryPaintColor(p: FreeClockFields): string {
   const layer = String(p.layer || '')
   const price = Number(p.price_per_hour ?? 0)
   if (price > 0) return PARKING_COLOR_PAID
+  if (hasExplicitPaidZoneCode(p.zone_code)) return PARKING_COLOR_PAID
   if (PAID_LAYERS.has(layer)) {
     // Municipal with no price and no free/clock signal → unclassified gray
     if (
@@ -191,9 +260,14 @@ export function categoryPaintColor(p: FreeClockFields): string {
       isUnclassifiedParking({
         layer,
         price_per_hour: price,
+        free_minutes: p.free_minutes,
         zone_code: p.zone_code,
         verified_free: p.verified_free,
         type: p.type,
+        timeLimit: p.timeLimit,
+        name: p.name,
+        desc: p.desc,
+        badge: p.badge,
       })
     ) {
       return PARKING_COLOR_UNKNOWN
@@ -221,40 +295,63 @@ const KNOWN_OPERATOR_LAYERS = new Set([
 /**
  * Grey / private / unclassified parking — no clear operator pricing.
  * Used by the "Other / Private" filter and detail-panel warning.
+ *
+ * Never marks Kellaga / Tasuta / priced city lots as unclassified —
+ * including Tallinna Linn operator with a clock window (e.g. 15 min).
  */
 export function isUnclassifiedParking(p: {
   layer?: string
   verified_free?: boolean
   price_per_hour?: number
+  free_minutes?: number
   zone_code?: string
   operator?: string
   color?: string
   type?: string
+  timeLimit?: string
+  name?: string
+  desc?: string
+  badge?: string
 }): boolean {
   const layer = String(p.layer || '')
   if (p.verified_free || layer === 'free_street') return false
   if (KNOWN_OPERATOR_LAYERS.has(layer) && layer !== 'municipal') return false
   if (layer === 'timed') return false
-  // Kellaga / clock curb is never "Muud / Era"
+  // Kellaga / clock rules (maxstay, Parkimiskellaga, free_minutes…) never "Muud / Era"
   if (
     isClockLimitedParking({
       layer,
       type: p.type,
+      free_minutes: p.free_minutes,
       price_per_hour: p.price_per_hour,
       zone_code: p.zone_code,
       verified_free: p.verified_free,
+      timeLimit: p.timeLimit,
+      name: p.name,
+      desc: p.desc,
+      badge: p.badge,
     })
   ) {
     return false
   }
-  // Paid with a known hourly rate is classified municipal
+  // Paid rate or explicit paid zone code → Tasuline
   if ((p.price_per_hour ?? 0) > 0) return false
+  if (hasExplicitPaidZoneCode(p.zone_code)) return false
+  // Known city operator with any clock / free-minute signal → not private
+  const mins = Number(p.free_minutes ?? 0)
+  if (isKnownCityOperator(p.operator) && mins > 0) return false
+  if (
+    isKnownCityOperator(p.operator) &&
+    hasClockKeyword(p.timeLimit, p.name, p.desc, p.badge, p.zone_code)
+  ) {
+    return false
+  }
   const zone = String(p.zone_code || '').toUpperCase()
   const op = String(p.operator || '')
   if (p.color === PARKING_COLOR_UNKNOWN) return true
   if (zone === 'ZONE' || zone === '' || zone === 'UNKNOWN') return true
   if (!op || op === 'Unknown') return true
-  // Municipal with no fee tags falls into the grey bucket
+  // Municipal with no fee / clock / price signal falls into the grey bucket
   return layer === 'municipal'
 }
 function str(v: unknown): string {

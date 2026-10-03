@@ -422,9 +422,15 @@ export default function App() {
           isUnclassifiedParking({
             layer: s.layer,
             price_per_hour: s.price_per_hour,
+            free_minutes: s.free_minutes,
             zone_code: s.zone_code,
             operator: s.operator,
             verified_free: s.layer === 'free_street',
+            type: s.type,
+            timeLimit: s.timeLimit,
+            name: s.name,
+            desc: s.desc,
+            badge: s.badge,
           })
         ) {
           return false
@@ -445,9 +451,15 @@ export default function App() {
         isUnclassifiedParking({
           layer: s.layer,
           price_per_hour: s.price_per_hour,
+          free_minutes: s.free_minutes,
           zone_code: s.zone_code,
           operator: s.operator,
           verified_free: s.layer === 'free_street',
+          type: s.type,
+          timeLimit: s.timeLimit,
+          name: s.name,
+          desc: s.desc,
+          badge: s.badge,
         }),
       )
     }

@@ -25,6 +25,7 @@ import type { ParkingSpot } from '../types'
 import { formatFreeUntil } from '../lib/freeRules'
 import { navLinks, openAppleMaps } from '../lib/geocode'
 import {
+  categoryBadgeLabel,
   categoryPaintColor,
   clockFreeHeadline,
   isClockLimitedParking,
@@ -54,7 +55,7 @@ function priceSummary(spot: ParkingSpot): { headline: string; detail: string } {
   // Kellaga: explicit clock-limited free window — never "Määramata ZONE"
   if (isClockLimitedParking(spot)) {
     return {
-      headline: clockFreeHeadline(spot.free_minutes),
+      headline: clockFreeHeadline(spot.free_minutes || 15),
       detail:
         spot.timeLimit && !/Määramata/i.test(spot.timeLimit)
           ? spot.timeLimit
@@ -79,17 +80,6 @@ function priceSummary(spot: ParkingSpot): { headline: string; detail: string } {
     return {
       headline: `${spot.price_per_hour.toFixed(2)} €/h`,
       detail: spot.timeLimit || spot.operator,
-    }
-  }
-  // Last-resort: ZONE / unknown with no paid rate still reads as clock parking
-  if (
-    spot.zone_code === 'ZONE' ||
-    spot.zone_code === 'KELL' ||
-    /kell|ajapiirang|\d+\s*min/i.test(spot.timeLimit || spot.name || '')
-  ) {
-    return {
-      headline: clockFreeHeadline(spot.free_minutes || 15),
-      detail: 'Parkimiskellaga / Ajapiiranguga',
     }
   }
   return {
@@ -163,10 +153,17 @@ export function ParkingBottomSheet({
   const unclassified = isUnclassifiedParking({
     layer: spot.layer,
     price_per_hour: spot.price_per_hour,
+    free_minutes: spot.free_minutes,
     zone_code: spot.zone_code,
     operator: spot.operator,
     verified_free: spot.layer === 'free_street',
+    type: spot.type,
+    timeLimit: spot.timeLimit,
+    name: spot.name,
+    desc: spot.desc,
+    badge: spot.badge,
   })
+  const categoryBadge = categoryBadgeLabel(spot)
   const [touched, setTouched] = useState(false)
   const carOk = carNumber.trim().length >= 2
   const hasActive = Boolean(activeSession?.carNumber && activeSession?.zone)
@@ -322,8 +319,9 @@ export function ParkingBottomSheet({
               <span
                 className="rounded-full px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-white"
                 style={{ backgroundColor: color }}
+                data-testid="category-badge"
               >
-                {spot.zone_code}
+                {categoryBadge}
               </span>
               {distanceLabel ? (
                 <span className="rounded-full bg-[#007AFF]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#007AFF]">

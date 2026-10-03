@@ -505,9 +505,13 @@ function isPaidStreetFeature(p: StreetParkingProps): boolean {
       layer: p.layer,
       verified_free: p.verified_free,
       price_per_hour: p.price_per_hour,
+      free_minutes: p.free_minutes,
       zone_code: p.zone_code,
       operator: p.operator,
       color: p.color,
+      name: p.name,
+      desc: p.desc,
+      badge: p.badge,
     })
   ) {
     return false
@@ -566,9 +570,13 @@ export function filterStreetCollection(
           layer: f.properties.layer,
           verified_free: f.properties.verified_free,
           price_per_hour: f.properties.price_per_hour,
+          free_minutes: f.properties.free_minutes,
           zone_code: f.properties.zone_code,
           operator: f.properties.operator,
           color: f.properties.color,
+          name: f.properties.name,
+          desc: f.properties.desc,
+          badge: f.properties.badge,
         }),
       ),
     }

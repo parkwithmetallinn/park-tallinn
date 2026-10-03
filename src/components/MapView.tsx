@@ -843,7 +843,21 @@ export const MapView = forwardRef<
               : layers === 'clock'
                 ? result.spots.filter((s) => isClockLimitedParking(s))
                 : layers === 'unclassified'
-                  ? result.spots.filter((s) => s.layer === 'municipal')
+                  ? result.spots.filter((s) =>
+                      isUnclassifiedParking({
+                        layer: s.layer,
+                        price_per_hour: s.price_per_hour,
+                        free_minutes: s.free_minutes,
+                        zone_code: s.zone_code,
+                        operator: s.operator,
+                        verified_free: s.layer === 'free_street',
+                        type: s.type,
+                        timeLimit: s.timeLimit,
+                        name: s.name,
+                        desc: s.desc,
+                        badge: s.badge,
+                      }),
+                    )
                   : layers === 'paid'
                     ? result.spots.filter(
                         (s) =>
@@ -854,11 +868,16 @@ export const MapView = forwardRef<
                           !isUnclassifiedParking({
                             layer: s.layer,
                             price_per_hour: s.price_per_hour,
+                            free_minutes: s.free_minutes,
                             zone_code: s.zone_code,
                             operator: s.operator,
                             // free_street already excluded above
                             verified_free: false,
                             type: s.type,
+                            timeLimit: s.timeLimit,
+                            name: s.name,
+                            desc: s.desc,
+                            badge: s.badge,
                           }) &&
                           (s.price_per_hour > 0 ||
                             [
@@ -1507,6 +1526,7 @@ export const MapView = forwardRef<
         ) as Partial<Record<ParkingLayerKey, boolean>>,
       )
     } else if (layers === 'unclassified') {
+      // Muud / Era — grey unclassified only (not all municipal / city Kellaga)
       setParkingLayerVisibility(
         map,
         Object.fromEntries(

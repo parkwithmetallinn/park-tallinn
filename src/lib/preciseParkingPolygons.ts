@@ -16,8 +16,10 @@ import {
   extractClockMinutes,
   getParkingExclusionReason,
   hasClockKeyword,
+  hasExplicitPaidZoneCode,
   isClockLimitedParking,
   isPaidFeeTag,
+  isPublicAccess,
   isUnclassifiedParking,
   isUnlimitedFreeParking,
   isVerifiedFreeParking,
@@ -153,10 +155,13 @@ function layerFromOsm(
   // Clock window without a paid fee → Kellaga (yellow), never Tasuta green
   if (clockMins > 0 && !isPaidFeeTag(fee, charge)) return 'timed'
   if (verifiedFree && clockMins > 0) return 'timed'
+  // fee=no / free → Tasuta (green), unless clock already handled above
   if (verifiedFree) return 'free_street'
+  // Explicit operator zone codes (EP / X / SB / YT…) → paid brand layers above;
+  // remaining fee=yes / charge → Tasuline municipal
+  if (isPaidFeeTag(fee, charge) || hasExplicitPaidZoneCode(zone)) return 'municipal'
   if (op.includes('tallinn') || op.includes('linn')) return 'municipal'
-  if (isPaidFeeTag(fee, charge)) return 'municipal'
-  // Unclassified / generic ZONE — municipal layer (may promote to timed below)
+  // Unclassified / generic — municipal layer (may promote to timed below)
   return 'municipal'
 }
 
@@ -357,13 +362,28 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
     const priceFromCurated = p.price_per_hour
     const freeFromCurated = p.free_minutes
     const maxstayMins =
-      parseMaxstayMinutes(maxstay) || extractClockMinutes(p, maxstay, nameTag)
+      parseMaxstayMinutes(maxstay) ||
+      extractClockMinutes(
+        p,
+        maxstay,
+        nameTag,
+        str(p.description),
+        str(p.desc),
+        str(p.timeLimit),
+      )
     const curatedFreeMins =
       typeof freeFromCurated === 'number' ? freeFromCurated : 0
     const hasClockWindow =
       maxstayMins > 0 ||
       curatedFreeMins > 0 ||
-      hasClockKeyword(p, nameTag, maxstay)
+      hasClockKeyword(
+        p,
+        nameTag,
+        maxstay,
+        str(p.description),
+        str(p.desc),
+        str(p.timeLimit),
+      )
 
     // Promote verified free onto free_street unless clocked (maxstay / free_minutes)
     if (verified_free && (layer === 'municipal' || layer === 'free_street')) {
@@ -373,7 +393,7 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
     if (layer === 'free_street' && hasClockWindow) {
       layer = 'timed'
     }
-    // maxstay / clock keywords without paid fee → Kellaga (fixes missing yellow zones)
+    // maxstay / Parkimiskellaga / Ajapiiranguga without paid fee → Kellaga
     if (
       layer === 'municipal' &&
       hasClockWindow &&
@@ -398,6 +418,27 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
         timed: 2.5,
       }
       price_per_hour = defaults[layer] ?? 2.5
+    }
+    // Explicit paid zone codes without a charge still count as Tasuline
+    if (
+      price_per_hour <= 0 &&
+      hasExplicitPaidZoneCode(zone) &&
+      !verified_free &&
+      !hasClockWindow
+    ) {
+      price_per_hour = 2.5
+      if (layer === 'timed' || layer === 'free_street') layer = 'municipal'
+    }
+    // Public unpaid city lot (Tallinna Linn / access=public) without fee=yes →
+    // Kellaga, never grey ZONE + private warning
+    if (
+      layer === 'municipal' &&
+      !feeIsPaid &&
+      price_per_hour <= 0 &&
+      !verified_free &&
+      isPublicAccess(access)
+    ) {
+      layer = 'timed'
     }
     // Unclassified unknown lots — do not imply free via 0 €/h
     if (price_per_hour <= 0 && !verified_free && layer === 'municipal' && !feeIsPaid) {
@@ -577,14 +618,19 @@ function isPaidParkingFeature(p: {
   layer: ParkingLayerKey
   verified_free?: boolean
   price_per_hour?: number
+  free_minutes?: number
   zone_code?: string
   operator?: string
   color?: string
+  name?: string
+  desc?: string
+  badge?: string
 }): boolean {
   if (p.verified_free || p.layer === 'free_street' || p.layer === 'timed') return false
   if (isUnclassifiedParking(p)) return false
   if (PAID_LAYERS.has(p.layer)) return true
   if (p.layer === 'municipal' && (p.price_per_hour ?? 0) > 0) return true
+  if (hasExplicitPaidZoneCode(p.zone_code)) return true
   return false
 }
 
@@ -636,9 +682,13 @@ export function filterPreciseCollection(
           layer: f.properties.layer,
           verified_free: f.properties.verified_free,
           price_per_hour: f.properties.price_per_hour,
+          free_minutes: f.properties.free_minutes,
           zone_code: f.properties.zone_code,
           operator: f.properties.operator,
           color: f.properties.color,
+          name: f.properties.name,
+          desc: f.properties.desc,
+          badge: f.properties.badge,
         }),
       ),
     }
@@ -651,9 +701,13 @@ export function filterPreciseCollection(
           layer: f.properties.layer,
           verified_free: f.properties.verified_free,
           price_per_hour: f.properties.price_per_hour,
+          free_minutes: f.properties.free_minutes,
           zone_code: f.properties.zone_code,
           operator: f.properties.operator,
           color: f.properties.color,
+          name: f.properties.name,
+          desc: f.properties.desc,
+          badge: f.properties.badge,
         }),
       ),
     }
