@@ -686,23 +686,8 @@ function main() {
     merged = merged.concat(feats)
   }
   merged = merged.concat(curatedParkRideFeatures())
-  // Include zone polygons themselves as municipal reference areas (optional map fill)
-  for (const z of zones.features) {
-    merged.push({
-      type: 'Feature',
-      id: z.id,
-      properties: {
-        ...z.properties,
-        amenity: 'parking',
-        parking: 'surface',
-        fee: 'yes',
-        '@id': z.id,
-        source: 'city_zones',
-        role: 'paid_zone',
-      },
-      geometry: z.geometry,
-    })
-  }
+  // Zone rings stay in city_zones.geojson for point-in-polygon enrichment only.
+  // Do NOT merge them into the map dataset as red district-scale lot fills.
 
   console.log(`[build] merged raw count: ${merged.length}`)
   const deduped = dedupeSpatial(merged)

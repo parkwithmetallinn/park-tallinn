@@ -296,6 +296,12 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
     const p = f.properties ?? {}
     purge.input++
 
+    // District-scale municipal zone footprints (Kesklinn / Südalinn / Vanalinn / …)
+    // must not paint as red lot fills — keep only individual parking polygons.
+    if (str(p.source) === 'city_zones' || str(p.role) === 'paid_zone') {
+      continue
+    }
+
     // Drop private yards / resident-only / phantom underground building parking
     const exclusion = getParkingExclusionReason(p)
     if (exclusion) {
