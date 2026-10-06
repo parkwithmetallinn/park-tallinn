@@ -19,7 +19,6 @@ import {
   hasExplicitPaidZoneCode,
   isClockLimitedParking,
   isPaidFeeTag,
-  isPublicAccess,
   isUnclassifiedParking,
   isUnlimitedFreeParking,
   isVerifiedFreeParking,
@@ -450,18 +449,8 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
       price_per_hour = 2.5
       if (layer === 'timed' || layer === 'free_street') layer = 'municipal'
     }
-    // Public unpaid city lot (Tallinna Linn / access=public) without fee=yes →
-    // Kellaga, never grey ZONE + private warning
-    if (
-      layer === 'municipal' &&
-      !feeIsPaid &&
-      price_per_hour <= 0 &&
-      !verified_free &&
-      isPublicAccess(access)
-    ) {
-      layer = 'timed'
-    }
-    // Unclassified unknown lots — do not imply free via 0 €/h
+    // Unclassified public lots stay municipal/gray — do NOT invent Kellaga.
+    // (Previously promoted access=yes + no fee → timed, which misled drivers.)
     if (price_per_hour <= 0 && !verified_free && layer === 'municipal' && !feeIsPaid) {
       price_per_hour = 0
     }

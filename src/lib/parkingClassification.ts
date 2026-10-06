@@ -443,6 +443,11 @@ export function isVerifiedFreeParking(p: {
   ) {
     return false
   }
+  // Build-time "free_outside_zones" forced fee=no on unmarked lots — that is
+  // NOT verified unlimited free. Leave those gray until OSM/official tags say so.
+  if (enriched === 'free_outside_zones') {
+    return false
+  }
   if (str(p.rules).toLowerCase() === 'paid') return false
 
   const access = str(p.access).toLowerCase()

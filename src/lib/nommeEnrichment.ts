@@ -1,9 +1,11 @@
 /**
- * Nõmme district parking enrichment.
+ * Tallinn + Nõmme parking enrichment.
  *
- * Official Tallinn rule: public streets in Nõmme are unlimited free (Tasuta)
- * unless privately signed. We map that from the road-network GIS extract and
- * keep ONLY allowlisted verified off-street lots (no invented polygons).
+ * 1. Public streets outside municipal paid zones → Tasuta (green) from
+ *    road-network GIS (`tallinn_free_streets.geojson`).
+ * 2. Inside paid zones → keep master curb lines (zone overrides → red/yellow).
+ * 3. Nõmme off-street lots → ONLY allowlisted verified polygons
+ *    (`nomme_verified_lots.geojson`). No invented lots.
  */
 
 import nommeMeta from '../data/nommeDistrictRing.json'
@@ -18,18 +20,19 @@ import {
   type StreetParkingCollection,
   type StreetParkingFeature,
 } from './streetParkingLines'
+import { lookupTallinnPaidZone } from './tallinnZoneEnrichment'
 
-const STREETS_URL = '/data/nomme_free_streets.geojson'
-const LOTS_URL = '/data/nomme_verified_lots.geojson'
+const TALLINN_STREETS_URL = '/data/tallinn_free_streets.geojson'
+const NOMME_LOTS_URL = '/data/nomme_verified_lots.geojson'
+/** Legacy Nõmme-only extract — used as fallback if citywide file missing. */
+const NOMME_STREETS_URL = '/data/nomme_free_streets.geojson'
 
-/** Nõmme outer ring as [lng, lat][] from Tallinn GIS districts. */
 const NOMME_RING: [number, number][] = nommeMeta.ring as [number, number][]
-
 const VERIFIED_LOT_IDS = new Set<string>(nommeMeta.verifiedLotIds as string[])
 const VERIFIED_OSM_WAYS = new Set<string>(nommeMeta.verifiedOsmWays as string[])
 
-let streetsCache: StreetParkingCollection | null = null
-let lotsCache: PreciseParkingCollection | null = null
+let freeStreetsCache: StreetParkingCollection | null = null
+let nommeLotsCache: PreciseParkingCollection | null = null
 let overlayInflight: Promise<void> | null = null
 
 /** Ray-cast PIP — ring is [lng, lat][]. */
@@ -94,7 +97,6 @@ function isVerifiedNommeLot(f: PreciseParkingFeature): boolean {
   if (id.startsWith('lot-nomme-')) return true
   const src = String(f.properties.source ?? '')
   if (src === 'nomme_verified') return true
-  // Match OSM way ids that may appear as w/… or way/…
   for (const way of VERIFIED_OSM_WAYS) {
     const short = way.replace('way/', 'w/')
     if (id === way || id === short || id.includes(way) || id.includes(short)) {
@@ -104,25 +106,23 @@ function isVerifiedNommeLot(f: PreciseParkingFeature): boolean {
   return false
 }
 
-async function loadNommeOverlays(force = false): Promise<void> {
-  if (!force && streetsCache && lotsCache) return
+async function loadOverlays(force = false): Promise<void> {
+  if (!force && freeStreetsCache && nommeLotsCache) return
   if (!force && overlayInflight) return overlayInflight
 
   overlayInflight = (async () => {
-    const [streetsRes, lotsRes] = await Promise.all([
-      fetch(STREETS_URL),
-      fetch(LOTS_URL),
-    ])
-    if (!streetsRes.ok) {
-      throw new Error(`Failed to load Nõmme streets (${streetsRes.status})`)
-    }
+    const streetsRes = await fetch(TALLINN_STREETS_URL)
+    const streetsUrlOk = streetsRes.ok
+    const streetsRaw = streetsUrlOk
+      ? await streetsRes.json()
+      : await (await fetch(NOMME_STREETS_URL)).json()
+
+    const lotsRes = await fetch(NOMME_LOTS_URL)
     if (!lotsRes.ok) {
       throw new Error(`Failed to load Nõmme lots (${lotsRes.status})`)
     }
-    const streetsRaw = await streetsRes.json()
     const lotsRaw = await lotsRes.json()
 
-    // Ensure Laagri is classified as park_ride before prepare
     for (const f of lotsRaw.features ?? []) {
       const p = f.properties ?? {}
       if (p.park_ride === 'yes' || p.parking === 'park_and_ride') {
@@ -133,14 +133,17 @@ async function loadNommeOverlays(force = false): Promise<void> {
       f.properties = p
     }
 
-    streetsCache = prepareStreetParking(streetsRaw)
-    lotsCache = prepareParkingPolygons(lotsRaw)
+    freeStreetsCache = prepareStreetParking(streetsRaw)
+    nommeLotsCache = prepareParkingPolygons(lotsRaw)
 
     if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
-      console.info('[parking] Nõmme overlays', {
-        streets: streetsCache.features.length,
-        lots: lotsCache.features.length,
-        lotIds: lotsCache.features.map((f) => f.id),
+      console.info('[parking] Tallinn free-street overlays', {
+        source: streetsUrlOk ? 'tallinn_free_streets' : 'nomme_free_streets',
+        streets: freeStreetsCache.features.length,
+        nommeLots: nommeLotsCache.features.length,
+        freeVerified: freeStreetsCache.features.filter(
+          (f) => f.properties.verified_free,
+        ).length,
       })
     }
   })().finally(() => {
@@ -151,17 +154,17 @@ async function loadNommeOverlays(force = false): Promise<void> {
 }
 
 /**
- * Strip unverified Nõmme lots + sparse OSM curb lines, inject road-GIS
- * Tasuta streets and allowlisted verified lots.
+ * Apply Tallinn free-street GIS + Nõmme verified-lot allowlist.
+ * Exported name kept for callers (`enrichNommeParking`).
  */
 export async function enrichNommeParking(
   split: MasterParkingSplit,
   force = false,
 ): Promise<MasterParkingSplit> {
-  await loadNommeOverlays(force)
+  await loadOverlays(force)
 
-  const nommeStreets = streetsCache!.features
-  const nommeLots = lotsCache!.features
+  const freeStreets = freeStreetsCache!.features
+  const nommeLots = nommeLotsCache!.features
   const nommeLotIdSet = new Set(nommeLots.map((f) => String(f.id)))
 
   let droppedLots = 0
@@ -173,22 +176,23 @@ export async function enrichNommeParking(
       continue
     }
     if (isVerifiedNommeLot(f) || nommeLotIdSet.has(String(f.id))) {
-      // Prefer our curated verified geometry — skip duplicate OSM copy
       continue
     }
-    // Drop unverified / random OSM lots inside Nõmme
     droppedLots++
   }
 
+  // Outside paid zones: replace sparse OSM curb with road-GIS Tasuta lines.
+  // Inside paid zones: keep master streets (zone overrides → red / yellow).
   let droppedStreets = 0
   const keptStreets: StreetParkingFeature[] = []
   for (const f of split.streets.features) {
     const c = featureCentroidLngLat(f.geometry)
-    if (!c || !pointInNomme(c.lng, c.lat)) {
+    if (!c) continue
+    const inPaid = Boolean(lookupTallinnPaidZone(c.lat, c.lng))
+    if (inPaid) {
       keptStreets.push(f)
       continue
     }
-    // Replace sparse OSM lane fragments with full road-GIS coverage
     droppedStreets++
   }
 
@@ -198,16 +202,17 @@ export async function enrichNommeParking(
   }
   const streets: StreetParkingCollection = {
     type: 'FeatureCollection',
-    features: [...keptStreets, ...nommeStreets],
+    features: [...keptStreets, ...freeStreets],
   }
 
   if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
-    console.info('[parking] Nõmme enrichment', {
+    console.info('[parking] Tallinn enrichment', {
       droppedLots,
-      droppedStreets,
-      injectedLots: nommeLots.length,
-      injectedStreets: nommeStreets.length,
-      freeStreets: nommeStreets.filter((f) => f.properties.verified_free).length,
+      droppedStreetsOutsidePaid: droppedStreets,
+      injectedFreeStreets: freeStreets.length,
+      injectedNommeLots: nommeLots.length,
+      keptPaidZoneStreets: keptStreets.length,
+      freeVerified: freeStreets.filter((f) => f.properties.verified_free).length,
     })
   }
 
@@ -222,8 +227,8 @@ export async function enrichNommeParking(
 
 export function getNommeOverlayStats() {
   return {
-    streets: streetsCache?.features.length ?? 0,
-    lots: lotsCache?.features.length ?? 0,
+    streets: freeStreetsCache?.features.length ?? 0,
+    lots: nommeLotsCache?.features.length ?? 0,
     verifiedLotIds: [...VERIFIED_LOT_IDS],
   }
 }

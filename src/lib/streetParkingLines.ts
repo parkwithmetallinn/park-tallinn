@@ -322,13 +322,14 @@ function classifyRules(p: Record<string, unknown>): {
     }
   }
 
-  // Public curb without fee tags → Kellaga (never unlimited green)
+  // Public curb without verified free / paid / clock tags → Määramata (gray).
+  // Never invent Kellaga minutes or Tasuta green from missing tags.
   return {
-    rules: 'clock',
-    layer: 'timed',
-    free_minutes: curatedFreeMins || 120,
+    rules: 'unknown',
+    layer: 'municipal',
+    free_minutes: 0,
     price_per_hour: 0,
-    color: STREET_COLOR.timed,
+    color: STREET_COLOR.unknown,
     verified_free: false,
   }
 }

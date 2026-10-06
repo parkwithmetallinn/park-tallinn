@@ -11,7 +11,7 @@ import { splitMasterCollection } from '../src/lib/estoniaParkingMaster'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const streetsJson = readFileSync(
-  resolve(ROOT, 'public/data/nomme_free_streets.geojson'),
+  resolve(ROOT, 'public/data/tallinn_free_streets.geojson'),
   'utf8',
 )
 const lotsJson = readFileSync(
@@ -25,7 +25,10 @@ const master = JSON.parse(
 const origFetch = globalThis.fetch
 globalThis.fetch = (async (input: RequestInfo | URL) => {
   const url = String(input)
-  if (url.includes('nomme_free_streets')) {
+  if (
+    url.includes('tallinn_free_streets') ||
+    url.includes('nomme_free_streets')
+  ) {
     return new Response(streetsJson, {
       status: 200,
       headers: { 'Content-Type': 'application/json' },

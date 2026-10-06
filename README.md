@@ -37,7 +37,9 @@ Diagonaalseid “läbi majade” jooni ei joonistata — ainult lühikesed, teel
 
 - `public/data/estonia_parking_master.geojson` — ühtne Eesti OSM-stiilis parkimiskiht (~10.8k feature’t). Laadimisel jagatakse lot-polügoonideks ja teeäärseks (street_side / lane / LineString) kihiks (`src/lib/estoniaParkingMaster.ts`). Vanad `parking_polygons.geojson` / `street_parking.geojson` failid on asendatud.
 - `public/data/nomme_free_streets.geojson` — Nõmme avalike tänavate **Tasuta** curb-jooned (OSM highway võrk, lõigatud Tallinna GIS Nõmme polügooniga). Ehita: `python3 scripts/extract-nomme-parking.py`.
+- `public/data/tallinn_free_streets.geojson` — kogu Tallinna **Tasuta** tänavad väljaspool ametlikke tasulisi tsoone (linnaosad − paid zones). Ehita: `python3 scripts/extract-tallinn-free-streets.py`.
 - `public/data/nomme_verified_lots.geojson` — **ainult** verifitseeritud Nõmme platsid (Laagri P&R, Nõmme–Harku terviseraja parklaid). Juhuslikke OSM-lotte Nõmmel ei kuvata (`src/lib/nommeEnrichment.ts`).
+- Klassifikatsioon: Tasuta = ainult verifitseeritud piiramatu tasuta; Kellaga = kellaga/aegpiirang; Tasuline = tasuline; `free_outside_zones` / märgendita → hall (Määramata), mitte roheline.
 - `public/data/parnu_parking_master.geojson` — Pärnu OSM-parkimine (bbox extract). Tsoonireeglid (`src/data/parnuZones.ts` + `freeRules`) määravad FREE/KELL sildid, hinnad ja „praegu tasuta“. gis.parnu.ee FeatureServer ei olnud build-keskkonnast kättesaadav; ametlik ajakava on parnu.ee/parkimine järgi.
 - `src/data/parnuChargers.ts` — EV seemned (Eleport Niidu 18b 200 kW, Neste 200 kW, Tesla Supercharger).
 - `public/data/districts.geojson` — ametlikud Tallinna 8 linnaosa + Vanalinn (Tallinn GIS → EPSG:4326, ≤5 m simplify, mere mask, topoloogia). Ehita: `npm run build:districts`. Kontrolli: `npm run check:districts`.
