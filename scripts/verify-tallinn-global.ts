@@ -130,14 +130,11 @@ async function main() {
     }
   }
 
-  // ——— Nõmme: free streets + only verified lots ———
+  // ——— Nõmme: NO street-network overlays; only verified lots ———
   const nommeStreets = split.streets.features.filter((f) => {
     const c = centroid(f)
     return c && pointInNomme(c.lng, c.lat)
   })
-  const nommeFree = nommeStreets.filter(
-    (f) => f.properties.verified_free && f.properties.rules === 'free',
-  )
   const nommeLots = split.polygons.features.filter((f) => {
     const c = centroid(f)
     return c && pointInNomme(c.lng, c.lat)
@@ -152,11 +149,6 @@ async function main() {
 
   // ——— free_outside_zones must not be green ———
   let freeOutsideGreen = 0
-  // Check prepared base before enrich for lots still carrying the tag
-  for (const f of base.polygons.features) {
-    // After prepare, enriched_as may not be on props — check via color/layer
-    // Re-check: features that were free_outside should not be unlimited free
-  }
   // Count citywide greens that are NOT from road GIS / free_street verified
   const freeStreets = split.streets.features.filter(
     (f) => f.properties.verified_free && f.properties.layer === 'free_street',
@@ -186,10 +178,11 @@ async function main() {
   for (const raw of lotRaw.features ?? []) {
     const p = raw.properties || {}
     if (p.enriched_as !== 'free_outside_zones') continue
-    // find prepared by id
     const id = String(p['@id'] || raw.id || '')
     const prepared = base.polygons.features.find(
-      (f) => String(f.id).includes(id.replace('way/', 'w/').replace('node/', 'n/')) || String(f.id) === id,
+      (f) =>
+        String(f.id).includes(id.replace('way/', 'w/').replace('node/', 'n/')) ||
+        String(f.id) === id,
     )
     if (!prepared) continue
     if (isUnlimitedFreeParking(prepared.properties)) outsidePreparedGreen++
@@ -201,15 +194,21 @@ async function main() {
     }
   }
 
+  // Non-Nõmme free streets still present (Mustamäe etc. untouched)
+  const freeStreetsOutsideNomme = freeStreets.filter((f) => {
+    const c = centroid(f)
+    return c && !pointInNomme(c.lng, c.lat)
+  })
+
   console.log({
     arenaGreen,
     arenaPLotsRed,
     greensInPaid,
     nommeStreets: nommeStreets.length,
-    nommeFree: nommeFree.length,
     nommeLots: nommeLots.length,
     unverifiedNommeLots: unverifiedNommeLots.length,
     freeStreets: freeStreets.length,
+    freeStreetsOutsideNomme: freeStreetsOutsideNomme.length,
     freeLots: freeLots.length,
     hist,
     outsidePreparedGreen,
@@ -219,9 +218,11 @@ async function main() {
   const checks = {
     arenaGreenZero: arenaGreen === 0,
     greensInPaidZero: greensInPaid === 0,
-    nommeFreeOk: nommeFree.length >= 500,
-    nommeLotsClean: unverifiedNommeLots.length === 0,
-    freeStreetsOk: freeStreets.length >= 2000,
+    /** Nõmme-only: no green street-network overlay */
+    nommeStreetsHidden: nommeStreets.length === 0,
+    nommeLotsClean: unverifiedNommeLots.length === 0 && nommeLots.length === 5,
+    /** Other districts still have free street coverage */
+    freeStreetsOutsideNommeOk: freeStreetsOutsideNomme.length >= 2000,
     outsideNotGreen: outsidePreparedGreen === 0,
     arenaPRedOk: arenaPLotsRed >= 4,
   }

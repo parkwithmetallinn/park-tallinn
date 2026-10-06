@@ -2,9 +2,10 @@
  * Tallinn + Nõmme parking enrichment.
  *
  * 1. Public streets outside municipal paid zones → Tasuta (green) from
- *    road-network GIS (`tallinn_free_streets.geojson`).
+ *    road-network GIS (`tallinn_free_streets.geojson`), **except Nõmme**.
  * 2. Inside paid zones → keep master curb lines (zone overrides → red/yellow).
- * 3. Nõmme off-street lots → ONLY allowlisted verified polygons
+ * 3. **Nõmme-only:** hide green street-network overlays inside the Nõmme
+ *    district polygon; keep allowlisted verified off-street lots only
  *    (`nomme_verified_lots.geojson`). No invented lots.
  */
 
@@ -35,7 +36,7 @@ let freeStreetsCache: StreetParkingCollection | null = null
 let nommeLotsCache: PreciseParkingCollection | null = null
 let overlayInflight: Promise<void> | null = null
 
-/** Ray-cast PIP — ring is [lng, lat][]. */
+/** Ray-cast PIP — ring is [lng, lat][]. Nõmme linnaosa only. */
 export function pointInNomme(lng: number, lat: number): boolean {
   let inside = false
   for (let i = 0, j = NOMME_RING.length - 1; i < NOMME_RING.length; j = i++) {
@@ -155,7 +156,9 @@ async function loadOverlays(force = false): Promise<void> {
 
 /**
  * Apply Tallinn free-street GIS + Nõmme verified-lot allowlist.
- * Exported name kept for callers (`enrichNommeParking`).
+ *
+ * Nõmme-only street rule: do not render green road-network curb overlays
+ * inside the Nõmme district polygon. Verified off-street lots remain.
  */
 export async function enrichNommeParking(
   split: MasterParkingSplit,
@@ -163,10 +166,11 @@ export async function enrichNommeParking(
 ): Promise<MasterParkingSplit> {
   await loadOverlays(force)
 
-  const freeStreets = freeStreetsCache!.features
+  const freeStreetsAll = freeStreetsCache!.features
   const nommeLots = nommeLotsCache!.features
   const nommeLotIdSet = new Set(nommeLots.map((f) => String(f.id)))
 
+  // ——— Nõmme-only: lot allowlist (other districts untouched) ———
   let droppedLots = 0
   const keptLots: PreciseParkingFeature[] = []
   for (const f of split.polygons.features) {
@@ -183,11 +187,18 @@ export async function enrichNommeParking(
 
   // Outside paid zones: replace sparse OSM curb with road-GIS Tasuta lines.
   // Inside paid zones: keep master streets (zone overrides → red / yellow).
+  // Nõmme-only: never keep street-network overlays inside Nõmme.
   let droppedStreets = 0
+  let droppedNommeStreets = 0
   const keptStreets: StreetParkingFeature[] = []
   for (const f of split.streets.features) {
     const c = featureCentroidLngLat(f.geometry)
     if (!c) continue
+    // Explicit Nõmme district gate — hide green street overlay here only
+    if (pointInNomme(c.lng, c.lat)) {
+      droppedNommeStreets++
+      continue
+    }
     const inPaid = Boolean(lookupTallinnPaidZone(c.lat, c.lng))
     if (inPaid) {
       keptStreets.push(f)
@@ -196,23 +207,35 @@ export async function enrichNommeParking(
     droppedStreets++
   }
 
+  // Inject free streets for the rest of Tallinn, but NEVER inside Nõmme
+  const freeStreetsOutsideNomme = freeStreetsAll.filter((f) => {
+    const c = featureCentroidLngLat(f.geometry)
+    if (!c) return false
+    // Nõmme linnaosa: no green street-network overlay
+    if (pointInNomme(c.lng, c.lat)) return false
+    return true
+  })
+
   const polygons: PreciseParkingCollection = {
     type: 'FeatureCollection',
     features: [...keptLots, ...nommeLots],
   }
   const streets: StreetParkingCollection = {
     type: 'FeatureCollection',
-    features: [...keptStreets, ...freeStreets],
+    features: [...keptStreets, ...freeStreetsOutsideNomme],
   }
 
   if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
     console.info('[parking] Tallinn enrichment', {
       droppedLots,
       droppedStreetsOutsidePaid: droppedStreets,
-      injectedFreeStreets: freeStreets.length,
+      droppedNommeStreetOverlays: droppedNommeStreets,
+      injectedFreeStreets: freeStreetsOutsideNomme.length,
+      hiddenNommeFreeStreets: freeStreetsAll.length - freeStreetsOutsideNomme.length,
       injectedNommeLots: nommeLots.length,
       keptPaidZoneStreets: keptStreets.length,
-      freeVerified: freeStreets.filter((f) => f.properties.verified_free).length,
+      freeVerified: freeStreetsOutsideNomme.filter((f) => f.properties.verified_free)
+        .length,
     })
   }
 

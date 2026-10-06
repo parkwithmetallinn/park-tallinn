@@ -73,6 +73,7 @@ async function main() {
     return pointInNomme(sx / n, sy / n)
   })
 
+  // Nõmme-only: street-network overlays hidden; verified lots kept
   const free = nommeStreets.filter(
     (f) => f.properties.verified_free && f.properties.rules === 'free',
   )
@@ -96,20 +97,32 @@ async function main() {
     return true
   })
 
+  // Other districts still receive free streets
+  const outsideNommeFree = split.streets.features.filter((f) => {
+    const c = f.geometry.coordinates[Math.floor(f.geometry.coordinates.length / 2)]
+    return (
+      !pointInNomme(c[0], c[1]) &&
+      f.properties.verified_free &&
+      f.properties.layer === 'free_street'
+    )
+  })
+
   console.log({
     nommeStreets: nommeStreets.length,
-    freeTasuta: free.length,
+    freeTasutaInNomme: free.length,
     badStreet: badStreet.length,
     nommeLots: nommeLots.length,
     lotIds: nommeLots.map((f) => f.id),
     unverifiedLots: unverifiedLots.length,
+    freeStreetsOutsideNomme: outsideNommeFree.length,
   })
 
   const ok =
-    free.length >= 500 &&
-    badStreet.length === 0 &&
+    nommeStreets.length === 0 &&
+    free.length === 0 &&
     nommeLots.length === 5 &&
-    unverifiedLots.length === 0
+    unverifiedLots.length === 0 &&
+    outsideNommeFree.length >= 2000
 
   console.log(ok ? 'INTEGRATION PASS' : 'INTEGRATION FAIL')
   if (!ok) process.exit(1)
