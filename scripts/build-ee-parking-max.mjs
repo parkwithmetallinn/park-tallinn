@@ -421,6 +421,13 @@ function curatedParkRideFeatures() {
       lng: 24.688,
       address: 'Mustamäe',
     },
+    {
+      id: 'pr-laagri',
+      name: 'P&R Laagri',
+      lat: 59.355470837688216,
+      lng: 24.628422968825507,
+      address: 'Pärnu mnt 550, Nõmme',
+    },
   ]
   return seeds.map((s) => ({
     type: 'Feature',

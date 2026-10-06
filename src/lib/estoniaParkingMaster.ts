@@ -6,6 +6,7 @@
  * can keep its dual-layer rendering without the old split files.
  */
 
+import { enrichNommeParking } from './nommeEnrichment'
 import {
   prepareParkingPolygons,
   type PreciseParkingCollection,
@@ -118,13 +119,15 @@ export async function loadEstoniaParkingMaster(
     // Prepare fns own narrower RawCollection types; master features are OSM-mixed.
     const polygons = prepareParkingPolygons(lotRaw as never)
     const streets = prepareStreetParking(streetRaw as never)
-    const split: MasterParkingSplit = {
+    const base: MasterParkingSplit = {
       polygons,
       streets,
       rawCount: raw.features?.length ?? 0,
       lotCount: lotRaw.features?.length ?? 0,
       streetRawCount: streetRaw.features?.length ?? 0,
     }
+    // Nõmme: inject road-GIS Tasuta streets; keep only verified lots
+    const split = await enrichNommeParking(base, force)
     masterMemory = split
     return split
   })().finally(() => {

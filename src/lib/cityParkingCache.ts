@@ -26,6 +26,7 @@ const memory = new Map<CityId, CitySplit>()
 const inflight = new Map<CityId, Promise<CitySplit>>()
 
 async function loadTallinn(force = false): Promise<CitySplit> {
+  // Master loader already applies Nõmme street/lot enrichment
   const split = await loadEstoniaParkingMaster(CITIES.tallinn.parkingUrl, force)
   return { ...split, cityId: 'tallinn' }
 }
