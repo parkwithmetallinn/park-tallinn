@@ -81,20 +81,10 @@ export function useParkingSession(selected: ParkingSpot | null) {
   const notFoundToastShownRef = useRef(false)
   /** endsAt for which the 10-min reminder already fired (re-arm on new endsAt). */
   const reminderFiredForEndsAtRef = useRef<string | null>(null)
-  /** Permission prompt only on first "+time" press — never on page load. */
-  const notificationPermissionAskedRef = useRef(false)
   const selectedRef = useRef(selected)
   selectedRef.current = selected
 
   const dismissToast = useCallback(() => setToast(null), [])
-
-  const requestNotificationPermissionOnce = useCallback(() => {
-    if (typeof Notification === 'undefined') return
-    if (notificationPermissionAskedRef.current) return
-    if (Notification.permission !== 'default') return
-    notificationPermissionAskedRef.current = true
-    void Notification.requestPermission()
-  }, [])
 
   const maybeFirePrepaidReminder = useCallback(
     (currentEndsAt: string | null, remainingSec: number) => {
@@ -726,9 +716,6 @@ export function useParkingSession(selected: ParkingSpot | null) {
     async (minutes: number) => {
       if (minutes <= 0) return
 
-      // Permission only on first "+time" press — never on page load
-      requestNotificationPermissionOnce()
-
       const baseMs =
         timerMode === 'prepaid' && endsAt
           ? Math.max(Date.parse(endsAt) || 0, Date.now())
@@ -808,7 +795,6 @@ export function useParkingSession(selected: ParkingSpot | null) {
       activeSession,
       persistTimer,
       showSessionFeedback,
-      requestNotificationPermissionOnce,
     ],
   )
 
