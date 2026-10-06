@@ -33,6 +33,7 @@ import {
   splitPlaceLabel,
   type SearchSuggestion,
 } from './components/SearchDropdown'
+import { MyPinSheet } from './components/MyPinSheet'
 import { Toast } from './components/Toast'
 import { MapChromeSkeleton } from './components/ui/Skeleton'
 import {
@@ -80,6 +81,19 @@ import {
   type GeocodeResult,
   type SearchLocation,
 } from './lib/geocode'
+import {
+  addMyPin,
+  loadHintSeen,
+  loadMyPins,
+  markHintSeen,
+  markStorageUnavailableToastShown,
+  MY_PINS_MAX,
+  removeMyPin,
+  updateMyPin,
+  wasStorageUnavailableToastShown,
+  type MyPin,
+  type MyPinColor,
+} from './lib/myPins'
 import { normalizeSpot } from './lib/geojson'
 import { useParkingSession } from './hooks/useParkingSession'
 import { clampSearchQuery } from './lib/validation'
@@ -166,6 +180,16 @@ export default function App() {
   const [preciseSpots, setPreciseSpots] = useState<ParkingSpot[]>([])
   const [streetSpots, setStreetSpots] = useState<ParkingSpot[]>([])
   const [mapReady, setMapReady] = useState(false)
+  const [myPins, setMyPins] = useState<MyPin[]>(() => loadMyPins())
+  const [draftPin, setDraftPin] = useState<{
+    lat: number
+    lng: number
+    color: MyPinColor
+  } | null>(null)
+  const [editingPinId, setEditingPinId] = useState<string | null>(null)
+  const [pinDragEnabled, setPinDragEnabled] = useState(false)
+  const [myPinsExpanded, setMyPinsExpanded] = useState(false)
+  const [draftColorPreview, setDraftColorPreview] = useState<MyPinColor>('red')
   const geoAbort = useRef<AbortController | null>(null)
   const mapApiRef = useRef<MapViewHandle | null>(null)
   const routeAbort = useRef<AbortController | null>(null)
@@ -467,10 +491,29 @@ export default function App() {
     return allSpots
   }, [allSpots, filter])
 
-  /** Live search suggestions: parking name hits + geocode places. */
+  /** Live search suggestions: my pins + parking name hits + geocode places. */
   const searchSuggestions = useMemo((): SearchSuggestion[] => {
     const q = query.trim().toLowerCase()
     if (q.length < 3) return []
+
+    const myPinHits: SearchSuggestion[] = myPins
+      .filter((p) => p.name.toLowerCase().includes(q))
+      .map((p) => ({
+        kind: 'mypin' as const,
+        id: p.id,
+        name: p.name,
+        subtitle: p.address || '',
+        lat: p.lat,
+        lng: p.lng,
+        distanceM: distanceMeters(
+          userLocation[0],
+          userLocation[1],
+          p.lat,
+          p.lng,
+        ),
+        pin: p,
+      }))
+      .slice(0, 5)
 
     const parkingHits: SearchSuggestion[] = allSpots
       .filter((s) => {
@@ -533,9 +576,9 @@ export default function App() {
       })
       .sort((a, b) => a.distanceM - b.distanceM)
 
-    // Nearby parking first, then nearest places — keep Estonia-wide but ranked
-    return [...parkingHits, ...places].slice(0, 10)
-  }, [query, allSpots, geoResults, userLocation])
+    // My pins first (instant, local), then parking, then places
+    return [...myPinHits, ...parkingHits, ...places].slice(0, 12)
+  }, [query, allSpots, geoResults, userLocation, myPins])
 
   // Deep-link: /?spot=<id> opens the parking sheet (no map click needed)
   const deepLinkApplied = useRef(false)
@@ -629,7 +672,168 @@ export default function App() {
     setGeoError(null)
     setIsDropdownOpen(false)
     setNoAlternatives(false)
+    setDraftPin(null)
+    setEditingPinId(null)
+    setPinDragEnabled(false)
   }, [clearRoute])
+
+  /** Cross-tab sync for personal pins (localStorage only). */
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'parking.myPins.v1') {
+        setMyPins(loadMyPins())
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
+  /** First-time long-press hint after map is ready. */
+  useEffect(() => {
+    if (!mapReady) return
+    if (loadHintSeen()) return
+    if (myPins.length > 0) {
+      markHintSeen()
+      return
+    }
+    const t = window.setTimeout(() => {
+      setToast({
+        kind: 'info',
+        title: 'Vajuta kaardil pikalt, et lisada oma pin',
+      })
+      markHintSeen()
+    }, 1200)
+    return () => window.clearTimeout(t)
+  }, [mapReady, myPins.length, setToast])
+
+  const notifyStorageIssue = useCallback(() => {
+    if (wasStorageUnavailableToastShown()) return
+    markStorageUnavailableToastShown()
+    setToast({
+      kind: 'info',
+      title: 'Pinne ei saa sellel seadmel salvestada',
+    })
+  }, [setToast])
+
+  const closePinSheet = useCallback(() => {
+    setDraftPin(null)
+    setEditingPinId(null)
+    setPinDragEnabled(false)
+  }, [])
+
+  const handleLongPress = useCallback(
+    (coords: { lat: number; lng: number }) => {
+      setSelected(null)
+      setSelectedEvCharger(null)
+      setSearchSheetOpen(false)
+      setNearestPickerOpen(false)
+      setIsDropdownOpen(false)
+      setGeoResults([])
+      setEditingPinId(null)
+      setDraftColorPreview('red')
+      setDraftPin({ lat: coords.lat, lng: coords.lng, color: 'red' })
+    },
+    [],
+  )
+
+  const handleMyPinClick = useCallback((pin: MyPin) => {
+    setSelected(null)
+    setSelectedEvCharger(null)
+    setSearchSheetOpen(false)
+    setNearestPickerOpen(false)
+    setIsDropdownOpen(false)
+    setDraftPin(null)
+    setEditingPinId(pin.id)
+  }, [])
+
+  const handleCreatePin = useCallback(
+    (payload: {
+      name: string
+      note: string
+      color: MyPinColor
+      lat: number
+      lng: number
+      address?: string
+    }) => {
+      const result = addMyPin({
+        name: payload.name,
+        note: payload.note,
+        color: payload.color,
+        lat: payload.lat,
+        lng: payload.lng,
+        address: payload.address,
+      })
+      if (!result.ok && result.reason === 'quota') {
+        setToast({
+          kind: 'info',
+          title: `Pinne on liiga palju (max ${MY_PINS_MAX})`,
+        })
+        return
+      }
+      setMyPins(result.pins)
+      if (result.ok) {
+        if (result.storageFailed) notifyStorageIssue()
+        setToast({ kind: 'info', title: 'Pin salvestatud' })
+        markHintSeen()
+      }
+      setDraftPin(null)
+      setEditingPinId(null)
+    },
+    [notifyStorageIssue, setToast],
+  )
+
+  const handleUpdatePin = useCallback(
+    (
+      id: string,
+      payload: {
+        name: string
+        note: string
+        color: MyPinColor
+        lat: number
+        lng: number
+        address?: string
+      },
+    ) => {
+      const result = updateMyPin(id, {
+        name: payload.name,
+        note: payload.note,
+        color: payload.color,
+        lat: payload.lat,
+        lng: payload.lng,
+        address: payload.address,
+      })
+      setMyPins(result.pins)
+      if (result.ok) {
+        setToast({ kind: 'info', title: 'Pin salvestatud' })
+      }
+      setEditingPinId(null)
+      setPinDragEnabled(false)
+    },
+    [setToast],
+  )
+
+  const handleDeletePin = useCallback(
+    (id: string) => {
+      const { pins } = removeMyPin(id)
+      setMyPins(pins)
+      setEditingPinId(null)
+      setPinDragEnabled(false)
+      setToast({ kind: 'info', title: 'Pin kustutatud' })
+    },
+    [setToast],
+  )
+
+  const handleMyPinDragEnd = useCallback(
+    (pinId: string, coords: { lat: number; lng: number }) => {
+      const result = updateMyPin(pinId, {
+        lat: coords.lat,
+        lng: coords.lng,
+        address: '', // clear stale reverse-geocode; sheet will refetch
+      })
+      setMyPins(result.pins)
+    },
+    [],
+  )
 
   const clearSearchLocation = useCallback(() => {
     clearRoute()
@@ -917,6 +1121,19 @@ export default function App() {
   }
 
   const selectSearchSuggestion = (item: SearchSuggestion) => {
+    if (item.kind === 'mypin') {
+      setIsDropdownOpen(false)
+      setGeoResults([])
+      setGeoError(null)
+      searchInputRef.current?.blur()
+      setQuery(item.pin.name)
+      setFlyMode('fly')
+      setFlyTarget([item.pin.lat, item.pin.lng])
+      setFlyZoom(16.5)
+      setFlyKey((k) => k + 1)
+      handleMyPinClick(item.pin)
+      return
+    }
     if (item.kind === 'parking') {
       flyToDestination(
         {
@@ -932,6 +1149,18 @@ export default function App() {
       return
     }
     flyToDestination(geocodeToSearchLocation(item.result))
+  }
+
+  const navigateToMyPin = (pin: MyPin) => {
+    closePinSheet()
+    flyToDestination({
+      id: `mypin-${pin.id}`,
+      name: pin.name,
+      label: pin.address || pin.name,
+      lat: pin.lat,
+      lng: pin.lng,
+      kind: 'mypin',
+    })
   }
 
   /** Instant preview only — no detail panel, no OSRM. Strict single selection. */
@@ -1291,9 +1520,26 @@ export default function App() {
               selected ||
                 selectedEvCharger ||
                 (searchSheetOpen && searchLocation) ||
-                nearestPickerOpen,
+                nearestPickerOpen ||
+                draftPin ||
+                editingPinId,
             )}
             cityId={cityId}
+            myPins={myPins}
+            draftPin={
+              draftPin
+                ? {
+                    lat: draftPin.lat,
+                    lng: draftPin.lng,
+                    color: draftColorPreview,
+                  }
+                : null
+            }
+            editingPinId={editingPinId}
+            pinDragEnabled={pinDragEnabled}
+            onLongPress={handleLongPress}
+            onMyPinClick={handleMyPinClick}
+            onMyPinDragEnd={handleMyPinDragEnd}
           />
         </MapErrorBoundary>
         {!mapReady ? <MapChromeSkeleton /> : null}
@@ -1319,10 +1565,13 @@ export default function App() {
                       skipNextGeocode.current = false
                       const v = e.target.value.slice(0, 120)
                       setQuery(v)
-                      setIsDropdownOpen(clampSearchQuery(v).length >= 3)
+                      const qLen = clampSearchQuery(v).length
+                      setIsDropdownOpen(qLen >= 3 || myPins.length > 0)
+                      if (qLen < 3) setMyPinsExpanded(false)
                     }}
                     onFocus={() => {
-                      if (clampSearchQuery(query).length >= 3) setIsDropdownOpen(true)
+                      const q = clampSearchQuery(query).length
+                      if (q >= 3 || myPins.length > 0) setIsDropdownOpen(true)
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') {
@@ -1345,7 +1594,7 @@ export default function App() {
                         setQuery('')
                         setGeoResults([])
                         setGeoError(null)
-                        setIsDropdownOpen(false)
+                        setIsDropdownOpen(myPins.length > 0)
                       }}
                       className={`absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer rounded-full p-1.5 ${muted} bg-black/5`}
                       aria-label="Tühjenda"
@@ -1381,14 +1630,26 @@ export default function App() {
               </div>
             </div>
 
-            {isDropdownOpen && query.trim().length >= 3 ? (
+            {isDropdownOpen &&
+            (clampSearchQuery(query).length >= 3 || myPins.length > 0) ? (
               <div className="absolute inset-x-0 top-[calc(100%+0.4rem)] z-50">
                 <SearchDropdown
-                  loading={geoLoading && searchSuggestions.length === 0}
+                  loading={
+                    geoLoading &&
+                    searchSuggestions.length === 0 &&
+                    clampSearchQuery(query).length >= 3
+                  }
                   error={geoError}
-                  suggestions={searchSuggestions}
+                  suggestions={
+                    clampSearchQuery(query).length >= 3 ? searchSuggestions : []
+                  }
                   dark={dark}
                   onSelect={selectSearchSuggestion}
+                  myPins={
+                    clampSearchQuery(query).length < 3 ? myPins : undefined
+                  }
+                  myPinsExpanded={myPinsExpanded}
+                  onExpandMyPins={() => setMyPinsExpanded(true)}
                 />
               </div>
             ) : null}
@@ -1520,7 +1781,9 @@ export default function App() {
           selected ||
           selectedEvCharger ||
           (searchSheetOpen && searchLocation) ||
-          nearestPickerOpen
+          nearestPickerOpen ||
+          draftPin ||
+          editingPinId
             ? 'bottom-[max(42vh,calc(env(safe-area-inset-bottom)+11rem))] sm:bottom-[max(6.5rem,env(safe-area-inset-bottom))]'
             : 'bottom-[max(6.5rem,env(safe-area-inset-bottom))]'
         }`}
@@ -1716,6 +1979,46 @@ export default function App() {
         />
       ) : null}
 
+      {draftPin || editingPinId ? (
+        <MyPinSheet
+          key={editingPinId ?? `draft-${draftPin?.lat}-${draftPin?.lng}`}
+          mode={editingPinId ? 'edit' : 'create'}
+          draft={draftPin}
+          pin={
+            editingPinId
+              ? myPins.find((p) => p.id === editingPinId) ?? null
+              : null
+          }
+          dark={dark}
+          onClose={closePinSheet}
+          onSave={(payload) => {
+            if (editingPinId) {
+              handleUpdatePin(editingPinId, payload)
+            } else {
+              handleCreatePin(payload)
+            }
+          }}
+          onDelete={
+            editingPinId
+              ? () => handleDeletePin(editingPinId)
+              : undefined
+          }
+          onNavigate={
+            editingPinId
+              ? () => {
+                  const pin = myPins.find((p) => p.id === editingPinId)
+                  if (pin) navigateToMyPin(pin)
+                }
+              : undefined
+          }
+          onColorPreview={(c) => {
+            setDraftColorPreview(c)
+            if (draftPin) setDraftPin({ ...draftPin, color: c })
+          }}
+          onDragRequest={setPinDragEnabled}
+        />
+      ) : null}
+
       <Toast toast={toast} onClose={dismissToast} />
 
       {infoOpen ? (
@@ -1782,6 +2085,15 @@ export default function App() {
               <p>
                 Roheline = kontrollitud tasuta · hall = määramata avalik · värvilised =
                 operaatorid. “+” saadab ettepaneku ülevaatusse (GeoJSON ei muutu otse).
+              </p>
+            </div>
+            <div className="rounded-2xl bg-paper-2 p-3">
+              <h4 className="mb-1 text-sm font-bold text-ink">
+                Minu pinnid ({myPins.length})
+              </h4>
+              <p>
+                Vajuta kaardil pikalt, et lisada isiklik pin. Pinnid salvestatakse ainult
+                sellesse seadmesse — teised kasutajad neid ei näe.
               </p>
             </div>
             <a

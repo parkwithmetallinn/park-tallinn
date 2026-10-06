@@ -326,3 +326,107 @@ export function geocodeToSearchLocation(r: GeocodeResult): SearchLocation {
 export function formatCoords(lat: number, lng: number): string {
   return `${lat.toFixed(5)}, ${lng.toFixed(5)}`
 }
+
+export type ReverseGeocodeResult = {
+  /** Short suggested pin name (road + house, or place name). */
+  suggestedName: string
+  /** Display address line, e.g. "Viru tn 4, Kesklinn". */
+  address: string
+}
+
+const reverseCache = new Map<string, ReverseGeocodeResult>()
+
+function reverseCacheKey(lat: number, lng: number): string {
+  return `${lat.toFixed(5)},${lng.toFixed(5)}`
+}
+
+/**
+ * Reverse-geocode coordinates via Nominatim (same /api/nominatim proxy as search).
+ * Best-effort — callers must tolerate failure. Results cached by 5-decimal coords.
+ */
+export async function reverseGeocode(
+  lat: number,
+  lng: number,
+  signal?: AbortSignal,
+): Promise<ReverseGeocodeResult | null> {
+  const key = reverseCacheKey(lat, lng)
+  const cached = reverseCache.get(key)
+  if (cached) return cached
+
+  const params = new URLSearchParams({
+    format: 'jsonv2',
+    lat: String(lat),
+    lon: String(lng),
+    zoom: '18',
+    'accept-language': 'et',
+    addressdetails: '1',
+  })
+
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 6000)
+  const onOuterAbort = () => controller.abort()
+  signal?.addEventListener('abort', onOuterAbort)
+
+  try {
+    const res = await fetch(`/api/nominatim/reverse?${params}`, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    })
+    if (!res.ok) return null
+    const data = (await res.json()) as {
+      name?: string
+      display_name?: string
+      address?: Record<string, string>
+    }
+    const addr = data.address ?? {}
+    const road =
+      addr.road ||
+      addr.pedestrian ||
+      addr.footway ||
+      addr.path ||
+      addr.cycleway ||
+      ''
+    const house = addr.house_number || ''
+    const neighbourhood =
+      addr.neighbourhood ||
+      addr.suburb ||
+      addr.city_district ||
+      addr.quarter ||
+      ''
+    const city = addr.city || addr.town || addr.village || addr.municipality || ''
+    const placeName =
+      data.name ||
+      addr.amenity ||
+      addr.shop ||
+      addr.tourism ||
+      addr.building ||
+      ''
+
+    const roadLine = [road, house].filter(Boolean).join(' ').trim()
+    const suggestedName =
+      (roadLine || placeName || neighbourhood || city || '').trim().slice(0, 60) ||
+      'Minu pin'
+
+    const addressParts = [
+      roadLine || placeName,
+      neighbourhood && neighbourhood !== city ? neighbourhood : '',
+      city,
+    ].filter(Boolean)
+    const address =
+      addressParts.join(', ').replace(/, Eesti$/i, '').trim() ||
+      stripCountry(String(data.display_name || ''))
+
+    if (!address && !suggestedName) return null
+    const result: ReverseGeocodeResult = {
+      suggestedName,
+      address: address || suggestedName,
+    }
+    reverseCache.set(key, result)
+    return result
+  } catch {
+    return null
+  } finally {
+    window.clearTimeout(timeout)
+    signal?.removeEventListener('abort', onOuterAbort)
+  }
+}

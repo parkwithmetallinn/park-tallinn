@@ -52,6 +52,11 @@ import {
 import { distanceMeters } from '../lib/geo'
 import type { ThemeMode } from '../lib/theme'
 import type { CityId } from '../data/cities'
+import {
+  MY_PIN_COLORS,
+  type MyPin,
+  type MyPinColor,
+} from '../lib/myPins'
 import { createBasemapStyle } from '../map/createBasemapStyle'
 import {
   DISTRICT_FILL_LAYER,
@@ -327,6 +332,79 @@ function makeSearchPinEl(onClick: () => void) {
     onClick()
   })
   return wrap
+}
+
+/**
+ * Personal pins use HTML Markers (same pattern as search / user markers)
+ * so we get a custom teardrop, name label, drag, and click without mixing
+ * into parking GeoJSON symbol layers.
+ */
+function makeMyPinEl(opts: {
+  color: string
+  name: string
+  compact: boolean
+  selected: boolean
+  draft?: boolean
+  dark: boolean
+  onClick?: () => void
+}): HTMLButtonElement {
+  const wrap = document.createElement('button')
+  wrap.type = 'button'
+  wrap.className = [
+    'my-pin-marker',
+    opts.compact ? 'is-compact' : '',
+    opts.selected ? 'is-selected' : '',
+    opts.draft ? 'my-pin-draft' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+  wrap.setAttribute('aria-label', opts.name || 'Minu pin')
+  wrap.innerHTML = `
+    <span class="my-pin-shadow" aria-hidden="true"></span>
+    <span class="my-pin-teardrop" style="background:${opts.color}">
+      <span class="my-pin-inner"></span>
+    </span>
+    <span class="my-pin-label" ${opts.compact ? 'hidden' : ''}>${escapeHtml(opts.name)}</span>
+  `
+  if (opts.dark) wrap.dataset.dark = '1'
+  wrap.addEventListener('click', (e) => {
+    e.stopPropagation()
+    e.preventDefault()
+    opts.onClick?.()
+  })
+  // Long-press on a pin should not start a new draft on the map canvas
+  wrap.addEventListener('pointerdown', (e) => e.stopPropagation())
+  return wrap
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function updateMyPinEl(
+  el: HTMLElement,
+  opts: {
+    color: string
+    name: string
+    compact: boolean
+    selected: boolean
+    dark: boolean
+  },
+) {
+  el.classList.toggle('is-compact', opts.compact)
+  el.classList.toggle('is-selected', opts.selected)
+  el.setAttribute('aria-label', opts.name || 'Minu pin')
+  const tear = el.querySelector('.my-pin-teardrop') as HTMLElement | null
+  if (tear) tear.style.background = opts.color
+  const label = el.querySelector('.my-pin-label') as HTMLElement | null
+  if (label) {
+    label.textContent = opts.name
+    label.hidden = opts.compact
+  }
 }
 
 function makeFullSpotEl() {
@@ -649,6 +727,17 @@ export const MapView = forwardRef<
     infoPanelOpen?: boolean
     /** Active city layer (Tallinn default — keeps existing data path). */
     cityId?: CityId
+    /** Personal pins (local-only). */
+    myPins?: MyPin[]
+    /** Draft pin while naming sheet is open (create flow). */
+    draftPin?: { lat: number; lng: number; color?: MyPinColor } | null
+    /** Currently edited pin id (highlight + optional drag). */
+    editingPinId?: string | null
+    /** Enable drag on the editing pin marker. */
+    pinDragEnabled?: boolean
+    onLongPress?: (coords: { lat: number; lng: number }) => void
+    onMyPinClick?: (pin: MyPin) => void
+    onMyPinDragEnd?: (pinId: string, coords: { lat: number; lng: number }) => void
   }
 >(function MapView(
   {
@@ -683,6 +772,13 @@ export const MapView = forwardRef<
     fullSpotIds,
     infoPanelOpen = false,
     cityId = 'tallinn',
+    myPins = [],
+    draftPin = null,
+    editingPinId = null,
+    pinDragEnabled = false,
+    onLongPress,
+    onMyPinClick,
+    onMyPinDragEnd,
   },
   ref,
 ) {
@@ -693,6 +789,17 @@ export const MapView = forwardRef<
   const parkHandoverMarkerRef = useRef<Marker | null>(null)
   const walkMidMarkerRef = useRef<Marker | null>(null)
   const fullMarkersRef = useRef<Map<string, Marker>>(new Map())
+  /** Personal pin HTML markers — incremental by id (not rebuilt each render). */
+  const myPinMarkersRef = useRef<Map<string, Marker>>(new Map())
+  const draftPinMarkerRef = useRef<Marker | null>(null)
+  const longPressRingRef = useRef<HTMLDivElement | null>(null)
+  const suppressNextClickRef = useRef(false)
+  const myPinsRef = useRef(myPins)
+  const onLongPressRef = useRef(onLongPress)
+  const onMyPinClickRef = useRef(onMyPinClick)
+  const onMyPinDragEndRef = useRef(onMyPinDragEnd)
+  const editingPinIdRef = useRef(editingPinId)
+  const pinDragEnabledRef = useRef(pinDragEnabled)
   const routeAnimatingRef = useRef(false)
   const routeIntroCancelRef = useRef({ cancelled: false })
   const routeDrawRafRef = useRef(0)
@@ -738,6 +845,12 @@ export const MapView = forwardRef<
   onPreciseSpotsLoadedRef.current = onPreciseSpotsLoaded
   onStreetSpotsLoadedRef.current = onStreetSpotsLoaded
   onMapReadyRef.current = onMapReady
+  onLongPressRef.current = onLongPress
+  onMyPinClickRef.current = onMyPinClick
+  onMyPinDragEndRef.current = onMyPinDragEnd
+  myPinsRef.current = myPins
+  editingPinIdRef.current = editingPinId
+  pinDragEnabledRef.current = pinDragEnabled
   filterRef.current = filter
   selectedIdRef.current = selectedId
   pitch3dRef.current = pitch3d
@@ -776,6 +889,164 @@ export const MapView = forwardRef<
     mapRef.current = map
     // Dev/test hook for LOD screenshots & debugging (non-reactive).
     ;(window as unknown as { __parkMap?: typeof map }).__parkMap = map
+
+    // ——— Long-press → personal pin (550 ms, ≤8 px move) ———
+    const HOLD_MS = 550
+    const MOVE_PX = 8
+    const RING_DELAY_MS = 150
+    type PressState = {
+      startX: number
+      startY: number
+      pointerId: number
+      timer: number
+      ringTimer: number
+      lngLat: { lng: number; lat: number }
+    }
+    let press: PressState | null = null
+
+    const removeRing = () => {
+      longPressRingRef.current?.remove()
+      longPressRingRef.current = null
+    }
+
+    const cancelPress = () => {
+      if (!press) return
+      window.clearTimeout(press.timer)
+      window.clearTimeout(press.ringTimer)
+      press = null
+      removeRing()
+    }
+
+    const showRingAt = (clientX: number, clientY: number) => {
+      removeRing()
+      const canvas = map.getCanvasContainer()
+      const rect = canvas.getBoundingClientRect()
+      const el = document.createElement('div')
+      el.className = 'my-pin-longpress-ring'
+      el.style.left = `${clientX - rect.left}px`
+      el.style.top = `${clientY - rect.top}px`
+      el.innerHTML = `<svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
+        <circle class="track" cx="22" cy="22" r="18"/>
+        <circle class="progress" cx="22" cy="22" r="18" style="animation-duration:${HOLD_MS - RING_DELAY_MS}ms"/>
+      </svg>`
+      canvas.appendChild(el)
+      longPressRingRef.current = el
+    }
+
+    const completePress = () => {
+      if (!press) return
+      const { lngLat } = press
+      press = null
+      removeRing()
+      try {
+        navigator.vibrate?.(15)
+      } catch {
+        /* ok */
+      }
+      suppressNextClickRef.current = true
+      window.setTimeout(() => {
+        suppressNextClickRef.current = false
+      }, 350)
+      onLongPressRef.current?.({ lat: lngLat.lat, lng: lngLat.lng })
+    }
+
+    const onPointerDown = (ev: PointerEvent) => {
+      if (routeAnimatingRef.current) return
+      if (ev.pointerType === 'mouse' && ev.button !== 0) return
+      const t = ev.target as HTMLElement | null
+      if (!t) return
+      if (
+        t.closest(
+          '.my-pin-marker, .search-pin, .user-location-wrap, .maplibregl-ctrl, .district-qa-btn, button, a, input, textarea',
+        )
+      ) {
+        return
+      }
+      const canvas = map.getCanvas()
+      if (t !== canvas && !canvas.contains(t)) return
+
+      const rect = canvas.getBoundingClientRect()
+      const lngLat = map.unproject([
+        ev.clientX - rect.left,
+        ev.clientY - rect.top,
+      ])
+
+      cancelPress()
+      const state: PressState = {
+        startX: ev.clientX,
+        startY: ev.clientY,
+        pointerId: ev.pointerId,
+        lngLat: { lng: lngLat.lng, lat: lngLat.lat },
+        ringTimer: window.setTimeout(() => {
+          if (!press || press.pointerId !== state.pointerId) return
+          showRingAt(ev.clientX, ev.clientY)
+        }, RING_DELAY_MS),
+        timer: window.setTimeout(() => {
+          if (!press || press.pointerId !== state.pointerId) return
+          completePress()
+        }, HOLD_MS),
+      }
+      press = state
+    }
+
+    const onPointerMove = (ev: PointerEvent) => {
+      if (!press || press.pointerId !== ev.pointerId) return
+      const dx = ev.clientX - press.startX
+      const dy = ev.clientY - press.startY
+      if (dx * dx + dy * dy > MOVE_PX * MOVE_PX) cancelPress()
+    }
+
+    const onPointerUp = (ev: PointerEvent) => {
+      if (!press || press.pointerId !== ev.pointerId) return
+      cancelPress()
+    }
+
+    const onTouchStartExtra = (ev: TouchEvent) => {
+      if (ev.touches.length > 1) cancelPress()
+    }
+
+    const canvasContainer = map.getCanvasContainer()
+    canvasContainer.style.userSelect = 'none'
+    ;(
+      canvasContainer.style as CSSStyleDeclaration & {
+        webkitUserSelect?: string
+        webkitTouchCallout?: string
+      }
+    ).webkitUserSelect = 'none'
+    ;(
+      canvasContainer.style as CSSStyleDeclaration & {
+        webkitTouchCallout?: string
+      }
+    ).webkitTouchCallout = 'none'
+
+    canvasContainer.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+    window.addEventListener('pointercancel', onPointerUp)
+    canvasContainer.addEventListener('touchstart', onTouchStartExtra, {
+      passive: true,
+    })
+    const onContextMenu = (e: Event) => e.preventDefault()
+    canvasContainer.addEventListener('contextmenu', onContextMenu)
+
+    map.on('dragstart', cancelPress)
+    map.on('zoomstart', cancelPress)
+    map.on('rotatestart', cancelPress)
+    map.on('pitchstart', cancelPress)
+
+    const cleanupLongPress = () => {
+      cancelPress()
+      canvasContainer.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+      window.removeEventListener('pointercancel', onPointerUp)
+      canvasContainer.removeEventListener('touchstart', onTouchStartExtra)
+      canvasContainer.removeEventListener('contextmenu', onContextMenu)
+      map.off('dragstart', cancelPress)
+      map.off('zoomstart', cancelPress)
+      map.off('rotatestart', cancelPress)
+      map.off('pitchstart', cancelPress)
+    }
 
     let setupDone = false
     const parkingHitLayers = [
@@ -1239,6 +1510,10 @@ export const MapView = forwardRef<
     map.on('zoomend', scheduleRefresh)
 
     const onMapClick = (e: MapLayerMouseEvent) => {
+      if (suppressNextClickRef.current) {
+        suppressNextClickRef.current = false
+        return
+      }
       const pad = 12
       const box: [[number, number], [number, number]] = [
         [e.point.x - pad, e.point.y - pad],
@@ -1355,11 +1630,16 @@ export const MapView = forwardRef<
     return () => {
       window.clearTimeout(readyTimer)
       window.clearTimeout(moveTimer)
+      cleanupLongPress()
       ro.disconnect()
       userMarkerRef.current?.remove()
       searchMarkerRef.current?.remove()
+      draftPinMarkerRef.current?.remove()
+      draftPinMarkerRef.current = null
       for (const m of fullMarkersRef.current.values()) m.remove()
       fullMarkersRef.current.clear()
+      for (const m of myPinMarkersRef.current.values()) m.remove()
+      myPinMarkersRef.current.clear()
       map.off('style.load', onStyleLoad)
       map.remove()
       mapRef.current = null
@@ -1580,6 +1860,154 @@ export const MapView = forwardRef<
       searchMarkerRef.current.setLngLat([searchPin.lng, searchPin.lat])
     }
   }, [searchPin, ready])
+
+  /**
+   * Personal pins as HTML Markers (incremental by id).
+   * Kept above parking geometry visually via Marker DOM stacking; search/user
+   * markers are separate and stay independently managed.
+   */
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    const markers = myPinMarkersRef.current
+    const dark = theme === 'dark'
+    const compact = map.getZoom() < 12
+    const showLabel = map.getZoom() >= 15
+    const ids = new Set(myPins.map((p) => p.id))
+
+    for (const [id, marker] of markers) {
+      if (!ids.has(id)) {
+        marker.remove()
+        markers.delete(id)
+      }
+    }
+
+    // Oldest first → newest addTo stacks on top for overlapping pins
+    const ordered = [...myPins].sort((a, b) => a.updatedAt - b.updatedAt)
+    for (const pin of ordered) {
+      const selected = pin.id === editingPinId
+      const color = MY_PIN_COLORS[pin.color]
+      const existing = markers.get(pin.id)
+      if (existing) {
+        existing.setLngLat([pin.lng, pin.lat])
+        const el = existing.getElement()
+        el.dataset.pinId = pin.id
+        updateMyPinEl(el, {
+          color,
+          name: pin.name,
+          compact: compact || !showLabel,
+          selected,
+          dark,
+        })
+        existing.setDraggable(Boolean(pinDragEnabled && selected))
+      } else {
+        const el = makeMyPinEl({
+          color,
+          name: pin.name,
+          compact: compact || !showLabel,
+          selected,
+          dark,
+          onClick: () => {
+            const id = el.dataset.pinId
+            const hit = myPinsRef.current.find((p) => p.id === id)
+            if (hit) onMyPinClickRef.current?.(hit)
+          },
+        })
+        el.dataset.pinId = pin.id
+        const m = new Marker({ element: el, anchor: 'bottom', draggable: false })
+          .setLngLat([pin.lng, pin.lat])
+          .addTo(map)
+        m.setDraggable(Boolean(pinDragEnabled && selected))
+        m.on('dragend', () => {
+          const id = el.dataset.pinId
+          if (!id) return
+          const ll = m.getLngLat()
+          onMyPinDragEndRef.current?.(id, { lat: ll.lat, lng: ll.lng })
+        })
+        markers.set(pin.id, m)
+      }
+    }
+
+    const onZoom = () => {
+      const z = map.getZoom()
+      const c = z < 12
+      const label = z >= 15
+      for (const pin of myPinsRef.current) {
+        const marker = markers.get(pin.id)
+        if (!marker) continue
+        updateMyPinEl(marker.getElement(), {
+          color: MY_PIN_COLORS[pin.color],
+          name: pin.name,
+          compact: c || !label,
+          selected: pin.id === editingPinIdRef.current,
+          dark: themeRef.current === 'dark',
+        })
+      }
+    }
+    map.on('zoom', onZoom)
+    return () => {
+      map.off('zoom', onZoom)
+    }
+  }, [myPins, ready, theme, editingPinId, pinDragEnabled])
+
+  /** Draft pin while naming sheet is open — drop animation on first place. */
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+
+    if (!draftPin) {
+      const existing = draftPinMarkerRef.current
+      if (existing) {
+        const el = existing.getElement()
+        el.classList.add('my-pin-draft-fade')
+        window.setTimeout(() => {
+          existing.remove()
+          if (draftPinMarkerRef.current === existing) {
+            draftPinMarkerRef.current = null
+          }
+        }, 180)
+      }
+      return
+    }
+
+    const color = MY_PIN_COLORS[draftPin.color ?? 'red']
+    const existing = draftPinMarkerRef.current
+    if (existing) {
+      existing.setLngLat([draftPin.lng, draftPin.lat])
+      updateMyPinEl(existing.getElement(), {
+        color,
+        name: 'Uus pin',
+        compact: false,
+        selected: true,
+        dark: theme === 'dark',
+      })
+      return
+    }
+
+    const el = makeMyPinEl({
+      color,
+      name: 'Uus pin',
+      compact: false,
+      selected: true,
+      draft: true,
+      dark: theme === 'dark',
+    })
+    const m = new Marker({ element: el, anchor: 'bottom' })
+      .setLngLat([draftPin.lng, draftPin.lat])
+      .addTo(map)
+    draftPinMarkerRef.current = m
+
+    if (!routeAnimatingRef.current) {
+      const z = map.getZoom()
+      map.easeTo({
+        center: [draftPin.lng, draftPin.lat],
+        zoom: z < 14 ? 16 : z,
+        padding: panelCameraPadding(true),
+        duration: 450,
+        essential: true,
+      })
+    }
+  }, [draftPin, ready, theme])
 
   /** Grey TÄIS badges for crowdsourced full lots. */
   useEffect(() => {
