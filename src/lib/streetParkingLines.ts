@@ -19,6 +19,7 @@ import {
   parseMaxstayMinutes,
   type ParkingPrepPurgeStats,
 } from './parkingClassification'
+import { applyTallinnZoneOverrides } from './tallinnZoneEnrichment'
 
 /** Last prepareStreetParking purge counts (for health checks). */
 let lastStreetPurgeStats: ParkingPrepPurgeStats = emptyPurgeStats()
@@ -204,6 +205,8 @@ function classifyRules(p: Record<string, unknown>): {
     zone: p.zone ?? p.zone_code ?? p.ref,
     charge: p.charge,
     rules: p.rules,
+    enriched_as: p.enriched_as,
+    enriched_from_zone: p.enriched_from_zone,
   })
 
   const curatedFreeMins = Number(p.free_minutes ?? 0)
@@ -258,11 +261,27 @@ function classifyRules(p: Record<string, unknown>): {
     }
   }
 
+  // Tallinn municipal zone / Arena overrides → always Tasuline (red)
+  if (
+    Number(p.price_per_hour) > 0 &&
+    (str(p.enriched_as) === 'tallinn_paid_zone' ||
+      str(p.enriched_as) === 'arena_stadium_paid')
+  ) {
+    return {
+      rules: 'paid',
+      layer: 'municipal',
+      free_minutes: Number(p.free_minutes ?? 0),
+      price_per_hour: Number(p.price_per_hour),
+      color: STREET_COLOR.paid,
+      verified_free: false,
+    }
+  }
+
   if (feeIsPaid) {
     return {
       rules: 'paid',
       layer: 'municipal',
-      free_minutes: 0,
+      free_minutes: Number(p.free_minutes ?? 0),
       price_per_hour: Number(p.price_per_hour ?? 2.5),
       color: STREET_COLOR.paid,
       verified_free: false,
@@ -303,8 +322,7 @@ function classifyRules(p: Record<string, unknown>): {
     }
   }
 
-  // Public curb without fee tags (e.g. Kiriku plats / Old Town plazas) → Kellaga
-  // Never paint these as unlimited green or paid red "Määramata ZONE".
+  // Public curb without fee tags → Kellaga (never unlimited green)
   return {
     rules: 'clock',
     layer: 'timed',
@@ -350,6 +368,8 @@ export function prepareStreetParking(raw: RawCollection): StreetParkingCollectio
     if (!coords || coords.length < 2) continue
 
     const mid = coords[Math.floor(coords.length / 2)]
+    // Override OSM fee=no inside Tallinn paid zones BEFORE classify
+    applyTallinnZoneOverrides(p, mid[1], mid[0])
     let id = uniqueParkingFeatureId(
       (p['@id'] ?? p.id ?? f.id) as string | number | null | undefined,
       mid[1],

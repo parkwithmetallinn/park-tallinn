@@ -65,8 +65,8 @@ function priceSummary(spot: ParkingSpot): { headline: string; detail: string } {
           : 'Parkimiskellaga / Ajapiiranguga',
     }
   }
-  // Tasuta: unlimited free, no clock
-  if (isUnlimitedFreeParking(spot) || (spot.price_per_hour <= 0 && spot.free_minutes <= 0 && spot.layer === 'free_street')) {
+  // Tasuta: unlimited free, no clock — never treat paid/municipal as free
+  if (isUnlimitedFreeParking(spot)) {
     return {
       headline: 'Tasuta',
       detail: spot.timeLimit || 'Piiramatu · kellata',

@@ -26,6 +26,7 @@ import {
   parseMaxstayMinutes,
   type ParkingPrepPurgeStats,
 } from './parkingClassification'
+import { applyTallinnZoneOverrides } from './tallinnZoneEnrichment'
 
 /** Last prepareParkingPolygons purge counts (for health checks). */
 let lastPolygonPurgeStats: ParkingPrepPurgeStats = emptyPurgeStats()
@@ -144,11 +145,21 @@ function layerFromOsm(
   if (op.includes('europark') || op.includes('euro park') || /^ep\d/i.test(zone)) return 'europark'
   if (op.includes('snabb') || /^x\d/i.test(zone) || /^sb\d/i.test(zone)) return 'snabb'
   if (op.includes('citypark') || op.includes('city park')) return 'citypark'
-  if (op.includes('ühisteenused') || op.includes('uhisteenused') || /^yt\d/i.test(zone) || /^p\d+$/i.test(zone)) {
+  // Stadium P1–P6 are NOT Ühisteenused — municipal/paid event lots
+  if (/^p[1-6]$/i.test(zone) && (op.includes('arena') || op.includes('le coq') || !op)) {
+    return 'municipal'
+  }
+  if (
+    op.includes('ühisteenused') ||
+    op.includes('uhisteenused') ||
+    /^yt\d/i.test(zone) ||
+    (/^p\d{2,}$/i.test(zone) && !/^p[1-6]$/i.test(zone))
+  ) {
     return 'uhisteenused'
   }
   if (op.includes('parkit')) return 'parkit'
   if (op.includes('barking')) return 'parkit'
+  if (op.includes('le coq') || op.includes('arena')) return 'municipal'
 
   const verifiedFree = isVerifiedFreeParking({ fee, access, zone, charge })
   const clockMins = extractClockMinutes({ maxstay }, maxstay, zone)
@@ -312,6 +323,8 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
 
     // Prefer OSM @id; fall back to lat_lng_index so cards never share an id
     const { lat: cLat, lng: cLng } = featureCentroid(f.geometry)
+    // Override OSM fee=no inside Tallinn paid zones + Arena P1–P6 BEFORE classify
+    applyTallinnZoneOverrides(p, cLat, cLng)
     let id = uniqueParkingFeatureId(
       (p['@id'] ?? p.id ?? f.id) as string | number | null | undefined,
       cLat,
@@ -349,6 +362,8 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
       charge,
       rules: p.rules,
       zone_code: p.zone_code,
+      enriched_as: p.enriched_as,
+      enriched_from_zone: p.enriched_from_zone,
     })
 
     // Curated schema fallback: explicit `layer` only if it is a known app key

@@ -117,6 +117,7 @@ export function hasClockKeyword(...parts: Array<unknown>): boolean {
 /**
  * Unlimited free public parking — the only features that belong in "Tasuta".
  * Must be free (€0), have no free-minute window, and not be on the timed layer.
+ * Never trust verified_free alone on paid / brand / municipal operator layers.
  */
 export function isUnlimitedFreeParking(p: FreeClockFields): boolean {
   const layer = String(p.layer || '')
@@ -129,8 +130,26 @@ export function isUnlimitedFreeParking(p: FreeClockFields): boolean {
   if (hasClockKeyword(p.timeLimit, p.badge, p.name, p.desc, p.zone_code)) {
     return false
   }
+  // Paid brand / municipal / loading layers are never unlimited free —
+  // even when OSM wrongly sets fee=no (common in Kesklinn / stadium lots).
+  if (
+    layer === 'municipal' ||
+    layer === 'europark' ||
+    layer === 'snabb' ||
+    layer === 'citypark' ||
+    layer === 'uhisteenused' ||
+    layer === 'parkit' ||
+    layer === 'park_ride' ||
+    layer === 'loading'
+  ) {
+    return false
+  }
+  if (hasExplicitPaidZoneCode(p.zone_code)) return false
   if (layer === 'free_street') return true
-  if (p.verified_free) return true
+  // verified_free only counts on an explicitly free layer / type
+  if (p.verified_free && (layer === 'free_street' || p.type === 'free' || !layer)) {
+    return true
+  }
   if (p.type === 'free' && layer !== 'municipal') return true
   return false
 }
@@ -392,7 +411,7 @@ export function isFreeZoneCode(zoneRaw: unknown): boolean {
 }
 
 /**
- * Verified free public parking — the only features allowed to use green (#22C55E).
+ * Verified free public parking — the only features allowed to use green.
  *
  * True when an explicit free signal is present:
  *   - fee === 'no' | 'free'
@@ -401,6 +420,8 @@ export function isFreeZoneCode(zoneRaw: unknown): boolean {
  * and access is not private/customers/restricted.
  *
  * access=yes/public alone is NOT enough (avoids painting paid public lots green).
+ * Callers MUST run Tallinn zone / Arena overrides first — raw OSM fee=no inside
+ * Kesklinn or on stadium P1–P6 is not verified free.
  */
 export function isVerifiedFreeParking(p: {
   fee?: unknown
@@ -410,7 +431,20 @@ export function isVerifiedFreeParking(p: {
   ref?: unknown
   rules?: unknown
   charge?: unknown
+  enriched_as?: unknown
+  enriched_from_zone?: unknown
 }): boolean {
+  // Zone / stadium enrichment already decided this is not unlimited free
+  const enriched = str(p.enriched_as).toLowerCase()
+  if (
+    enriched === 'tallinn_paid_zone' ||
+    enriched === 'arena_stadium_paid' ||
+    str(p.enriched_from_zone)
+  ) {
+    return false
+  }
+  if (str(p.rules).toLowerCase() === 'paid') return false
+
   const access = str(p.access).toLowerCase()
   if (access && BLOCKED_ACCESS.has(access)) return false
 

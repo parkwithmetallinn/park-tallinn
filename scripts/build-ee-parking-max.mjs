@@ -244,6 +244,14 @@ function buildCityZones() {
         [59.43612, 24.73234],
         [59.43248, 24.72329],
         [59.42444, 24.72868],
+        // South-west spur — Asula / Jalgpalli / A. Le Coq Arena + curb lots
+        [59.4225, 24.7265],
+        [59.4205, 24.7258],
+        [59.4180, 24.7265],
+        [59.4172, 24.7310],
+        [59.4170, 24.7380],
+        [59.4175, 24.7480],
+        [59.4188, 24.7600],
         [59.42096, 24.7907],
         [59.42626, 24.7809],
         [59.43342, 24.79029],
@@ -606,11 +614,11 @@ function enrichWithZones(features, zones) {
       }
     }
 
-    if (zoneHit && !hasPaidSignal && !hasFreeSignal) {
-      // Inside paid municipal zone → assign official rates / 15-min clock
+    if (zoneHit && !hasPaidSignal) {
+      // Inside paid municipal zone — override OSM fee=no (unreliable in Kesklinn)
       p.zone = p.zone || zoneHit.zone_code
       p.zone_code = p.zone_code || zoneHit.zone_code
-      p.fee = p.fee || 'yes'
+      p.fee = 'yes'
       p.price_per_hour = p.price_per_hour ?? zoneHit.price_per_hour
       p.free_minutes = p.free_minutes ?? zoneHit.free_minutes
       p.operator = p.operator || zoneHit.operator
@@ -618,6 +626,8 @@ function enrichWithZones(features, zones) {
         p.maxstay ||
         (zoneHit.free_minutes ? `${zoneHit.free_minutes} min` : p.maxstay)
       p.enriched_from_zone = zoneHit.id
+      p.enriched_as = 'tallinn_paid_zone'
+      p.verified_free_hint = false
       insidePaid++
     } else if (!zoneHit && !hasPaidSignal && !hasClock && !hasFreeSignal) {
       // Outside paid zones, no fee=yes → treat as 100% FREE public parking
