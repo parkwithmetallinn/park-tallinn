@@ -311,17 +311,28 @@ export default function App() {
     const filteredStreet = streetSpots.filter((s) => !suppressedIds.has(s.id))
 
     if (cityId === 'parnu') {
+      // Absolute ban: no on-street curb overlays — lots only
+      const isStreetOverlay = (s: ParkingSpot) =>
+        s.featureType === 'on-street-line' ||
+        s.kind === 'street' ||
+        Boolean(s.line)
       // Pärnu EV charger polygons/pins are not shown on the map
       const noEv = (s: ParkingSpot) => s.layer !== 'ev' && s.badge !== 'EV'
       const custom = customSpots
         .map((s) => normalizeSpot(s))
-        .filter((s) => !suppressedIds.has(s.id) && s.cityId !== 'tallinn' && noEv(s))
+        .filter(
+          (s) =>
+            !suppressedIds.has(s.id) &&
+            s.cityId !== 'tallinn' &&
+            noEv(s) &&
+            !isStreetOverlay(s),
+        )
       const overlays = approvedOverlays
         .map((s) => normalizeSpot(s))
-        .filter((s) => !suppressedIds.has(s.id) && noEv(s))
+        .filter((s) => !suppressedIds.has(s.id) && noEv(s) && !isStreetOverlay(s))
       return [
-        ...filteredPrecise.filter(noEv),
-        ...filteredStreet.filter(noEv),
+        ...filteredPrecise.filter((s) => noEv(s) && !isStreetOverlay(s)),
+        ...filteredStreet.filter((s) => noEv(s) && !isStreetOverlay(s)),
         ...custom,
         ...overlays,
       ]
@@ -345,8 +356,15 @@ export default function App() {
     const custom = customSpots.map((s) => normalizeSpot(s))
     const overlays = approvedOverlays.map((s) => normalizeSpot(s))
     // Precise GeoJSON lots / street lines take precedence over stub mocks
+    // Absolute ban: never include on-street curb / road-network features.
+    // Map shows verified off-street lots (polygons + markers) only.
+    const isStreetOverlay = (s: ParkingSpot) =>
+      s.featureType === 'on-street-line' ||
+      s.kind === 'street' ||
+      Boolean(s.line)
     const mockWithoutDupes = mocks.filter((m) => {
       if (suppressedIds.has(m.id)) return false
+      if (isStreetOverlay(m)) return false
       if (m.polygon) {
         return !preciseSpots.some(
           (p) =>
@@ -355,21 +373,15 @@ export default function App() {
             Math.abs(p.lng - m.lng) < 0.001,
         )
       }
-      if (m.featureType === 'on-street-line' || m.kind === 'street') {
-        return !streetSpots.some(
-          (s) =>
-            Math.abs(s.lat - m.lat) < 0.0015 && Math.abs(s.lng - m.lng) < 0.0015,
-        )
-      }
       return true
     })
     return [
-      ...filteredPrecise,
-      ...filteredStreet,
+      ...filteredPrecise.filter((s) => !isStreetOverlay(s)),
+      ...filteredStreet.filter((s) => !isStreetOverlay(s)),
       ...mockWithoutDupes,
-      ...curated.filter((s) => !suppressedIds.has(s.id)),
-      ...custom,
-      ...overlays,
+      ...curated.filter((s) => !suppressedIds.has(s.id) && !isStreetOverlay(s)),
+      ...custom.filter((s) => !isStreetOverlay(s)),
+      ...overlays.filter((s) => !isStreetOverlay(s)),
     ]
   }, [
     cityId,

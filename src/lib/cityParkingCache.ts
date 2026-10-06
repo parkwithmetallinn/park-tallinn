@@ -10,15 +10,12 @@ import {
   splitMasterCollection,
   type MasterParkingSplit,
 } from './estoniaParkingMaster'
-import { enrichParnuPolygons, enrichParnuStreets } from './parnuEnrichment'
+import { enrichParnuPolygons } from './parnuEnrichment'
 import {
   prepareParkingPolygons,
   type PreciseParkingCollection,
 } from './preciseParkingPolygons'
-import {
-  prepareStreetParking,
-  type StreetParkingCollection,
-} from './streetParkingLines'
+import type { StreetParkingCollection } from './streetParkingLines'
 
 type CitySplit = MasterParkingSplit & { cityId: CityId }
 
@@ -26,7 +23,7 @@ const memory = new Map<CityId, CitySplit>()
 const inflight = new Map<CityId, Promise<CitySplit>>()
 
 async function loadTallinn(force = false): Promise<CitySplit> {
-  // Master loader already applies Nõmme street/lot enrichment
+  // Master loader applies Nõmme lot allowlist; streets globally empty
   const split = await loadEstoniaParkingMaster(CITIES.tallinn.parkingUrl, force)
   return { ...split, cityId: 'tallinn' }
 }
@@ -44,19 +41,23 @@ async function loadParnu(_force = false): Promise<CitySplit> {
       geometry?: { type: string; coordinates?: unknown } | null
     }>
   }
-  const { lotRaw, streetRaw } = splitMasterCollection(raw)
+  const { lotRaw } = splitMasterCollection(raw)
   // prepare → enrich (injects Kesklinn/Rand RED paid-zone polygons)
+  // Street polyline overlays are globally disabled
   const polygons = enrichParnuPolygons(
     prepareParkingPolygons(lotRaw as never),
   )
-  const streets = enrichParnuStreets(prepareStreetParking(streetRaw as never))
+  const streets: StreetParkingCollection = {
+    type: 'FeatureCollection',
+    features: [],
+  }
   if (import.meta.env.DEV) {
     const zones = polygons.features.filter((f) =>
       String(f.properties.id).startsWith('parnu-zone-'),
     )
     console.info('[parking] Pärnu enriched', {
       lots: polygons.features.length,
-      streets: streets.features.length,
+      streets: 0,
       paidZones: zones.map((z) => z.properties.id),
     })
   }
@@ -66,7 +67,7 @@ async function loadParnu(_force = false): Promise<CitySplit> {
     streets,
     rawCount: raw.features?.length ?? 0,
     lotCount: polygons.features.length,
-    streetRawCount: streets.features.length,
+    streetRawCount: 0,
   }
 }
 

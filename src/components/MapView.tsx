@@ -33,22 +33,17 @@ import {
   type PreciseParkingFeature,
 } from '../lib/preciseParkingPolygons'
 import {
-  filterStreetCollection,
-  getLastStreetPurgeStats,
   STREET_PARKING_HIT_LAYER,
   STREET_PARKING_LINE_LAYER,
   STREET_PARKING_SOURCE,
-  streetCollectionToSpots,
   streetFeatureToSpot,
   type StreetParkingCollection,
   type StreetParkingFeature,
 } from '../lib/streetParkingLines'
 import {
   getCachedCityPolygons,
-  getCachedCityStreets,
   loadCityParking,
 } from '../lib/cityParkingCache'
-import { dedupeStreetAgainstPolygons } from '../lib/spatialDedupe'
 import { parkingIndex } from '../lib/spatialIndex'
 import {
   routeCoordsToLngLat,
@@ -500,14 +495,8 @@ function applyDualLayerFilter(
       }
     : null
 
-  // Spatial dedupe: drop curb lines that sit in / along lot polygons
-  if (streets && polys) {
-    const deduped = dedupeStreetAgainstPolygons(streets, polys)
-    streets = deduped.collection
-    if (import.meta.env.DEV && deduped.suppressed > 0) {
-      console.info('[parking] spatial dedupe suppressed streets', deduped.suppressed)
-    }
-  }
+  // Absolute ban: never render street-network / curb polyline overlays
+  streets = { type: 'FeatureCollection', features: [] }
 
   if (polys) {
     const src = map.getSource(PRECISE_PARKING_SOURCE) as GeoJSONSource | undefined
@@ -515,7 +504,7 @@ function applyDualLayerFilter(
   }
   if (streets) {
     const src = map.getSource(STREET_PARKING_SOURCE) as GeoJSONSource | undefined
-    src?.setData(filterStreetCollection(streets, layers) as never)
+    src?.setData(streets as never)
   }
 }
 
@@ -1118,7 +1107,7 @@ export const MapView = forwardRef<
         emitZoom(map)
 
         // Dual-layer parking (Tallinn master or Pärnu city extract).
-        // Prep purges private/underground; spatial dedupe prefers polygons.
+        // Street/road polyline overlays are globally disabled — lots only.
         const applyPoly = (fc: PreciseParkingCollection) => {
           preciseFcRef.current = fc
           applyDualLayerFilter(
@@ -1141,50 +1130,26 @@ export const MapView = forwardRef<
           }
         }
 
-        const applyStreet = (fc: StreetParkingCollection) => {
-          streetRawFcRef.current = fc
-          const deduped = preciseFcRef.current
-            ? dedupeStreetAgainstPolygons(
-                {
-                  type: 'FeatureCollection',
-                  features: withoutSuppressed(fc.features, suppressedRef.current),
-                },
-                {
-                  type: 'FeatureCollection',
-                  features: withoutSuppressed(
-                    preciseFcRef.current.features,
-                    suppressedRef.current,
-                  ),
-                },
-              )
-            : {
-                collection: {
-                  type: 'FeatureCollection' as const,
-                  features: withoutSuppressed(fc.features, suppressedRef.current),
-                },
-                suppressed: 0,
-                kept: fc.features.length,
-                suppressedIds: [] as string[],
-              }
-          streetFcRef.current = deduped.collection
+        // Absolute ban: street/road polyline overlays are never applied
+        const applyStreetDisabled = () => {
+          const empty: StreetParkingCollection = {
+            type: 'FeatureCollection',
+            features: [],
+          }
+          streetRawFcRef.current = empty
+          streetFcRef.current = empty
           applyDualLayerFilter(
             map,
             filterRef.current,
             preciseFcRef.current,
-            streetRawFcRef.current,
+            empty,
             suppressedRef.current,
             cityIdRef.current,
           )
-          const spots = streetCollectionToSpots(deduped.collection)
-          for (const s of spots) parkingIndex.insert(s)
-          onStreetSpotsLoadedRef.current?.(spots)
+          onStreetSpotsLoadedRef.current?.([])
           applySelectionHighlight(map, selectedIdRef.current)
           if (import.meta.env.DEV) {
-            console.info('[parking] street purge', getLastStreetPurgeStats())
-            console.info('[parking] spatial dedupe', {
-              suppressed: deduped.suppressed,
-              kept: deduped.kept,
-            })
+            console.info('[parking] street overlays disabled (lots only)')
           }
         }
 
@@ -1192,7 +1157,7 @@ export const MapView = forwardRef<
         setCityDistrictOverlays(map, city)
 
         // Defer parking GeoJSON + EV until basemap tiles have painted —
-        // prevents blue curb lines flashing on a blank white canvas.
+        // prevents colored overlays flashing on a blank white canvas.
         revealOverlaysAfterBasemap(() => {
           if (!mapRef.current) return
           setReady(true)
@@ -1200,15 +1165,14 @@ export const MapView = forwardRef<
           void refreshViewport(map)
 
           const warmPoly = getCachedCityPolygons(city)
-          const warmStreet = getCachedCityStreets(city)
           if (warmPoly) applyPoly(warmPoly)
-          if (warmStreet) applyStreet(warmStreet)
+          applyStreetDisabled()
 
           void loadCityParking(city)
             .then((split) => {
               if (cityIdRef.current !== city) return
               applyPoly(split.polygons)
-              applyStreet(split.streets)
+              applyStreetDisabled()
             })
             .catch((err) => {
               console.warn(`[parking] ${city} master failed to load`, err)
@@ -1435,15 +1399,21 @@ export const MapView = forwardRef<
     onPreciseSpotsLoadedRef.current?.([])
     onStreetSpotsLoadedRef.current?.([])
 
+    const emptyStreets: StreetParkingCollection = {
+      type: 'FeatureCollection',
+      features: [],
+    }
+    streetRawFcRef.current = emptyStreets
+    streetFcRef.current = emptyStreets
+
     const warmPoly = getCachedCityPolygons(cityId)
-    const warmStreet = getCachedCityStreets(cityId)
     if (warmPoly) {
       preciseFcRef.current = warmPoly
       applyDualLayerFilter(
         map,
         filterRef.current,
         warmPoly,
-        streetRawFcRef.current,
+        emptyStreets,
         suppressedRef.current,
         cityIdRef.current,
       )
@@ -1454,31 +1424,19 @@ export const MapView = forwardRef<
       for (const s of spots) parkingIndex.insert(s)
       onPreciseSpotsLoadedRef.current?.(spots)
     }
-    if (warmStreet) {
-      streetRawFcRef.current = warmStreet
-      applyDualLayerFilter(
-        map,
-        filterRef.current,
-        preciseFcRef.current,
-        warmStreet,
-        suppressedRef.current,
-        cityIdRef.current,
-      )
-      const spots = streetCollectionToSpots(warmStreet)
-      for (const s of spots) parkingIndex.insert(s)
-      onStreetSpotsLoadedRef.current?.(spots)
-    }
+    onStreetSpotsLoadedRef.current?.([])
 
     void loadCityParking(cityId)
       .then((split) => {
         if (cityIdRef.current !== cityId || !mapRef.current) return
         preciseFcRef.current = split.polygons
-        streetRawFcRef.current = split.streets
+        streetRawFcRef.current = emptyStreets
+        streetFcRef.current = emptyStreets
         applyDualLayerFilter(
           mapRef.current,
           filterRef.current,
           split.polygons,
-          split.streets,
+          emptyStreets,
           suppressedRef.current,
           cityIdRef.current,
         )
@@ -1486,11 +1444,9 @@ export const MapView = forwardRef<
           type: 'FeatureCollection',
           features: withoutSuppressed(split.polygons.features, suppressedRef.current),
         })
-        const streets = streetCollectionToSpots(split.streets)
         for (const s of lots) parkingIndex.insert(s)
-        for (const s of streets) parkingIndex.insert(s)
         onPreciseSpotsLoadedRef.current?.(lots)
-        onStreetSpotsLoadedRef.current?.(streets)
+        onStreetSpotsLoadedRef.current?.([])
         applySelectionHighlight(mapRef.current, selectedIdRef.current)
       })
       .catch((err) => {

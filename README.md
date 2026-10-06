@@ -26,30 +26,26 @@ Brauserer kutsub ainult same-origin `/api/parkimine` — `VITE_*` n8n võtmeid e
 | Zoom | Vaade | Mis kuvatakse |
 |------|--------|----------------|
 | **&lt; 13** | Linnaosa | Ainult linnaosade märgid (Vanalinn, Kesklinn, Mustamäe, …) |
-| **13–15** | Tsoon | Peamised parklad (EuroPark, Snabb, Citypark) läbipaistva täitega |
-| **≥ 15** | Detail | Teeäärsed jooned, kellaga tsoonid, EV, INVA |
+| **13–15** | Tsoon | Verifitseeritud parkla-polügoonid (Tasuline / Kellaga / Tasuta / hall) |
+| **≥ 15** | Detail | Lotid + märgid, kellaga tsoonid, EV, INVA |
 
 Sildid ei kattu: `text-allow-overlap` / `icon-allow-overlap` on `false`; madalama prioriteediga sildid (INVA, EV) peavad loti-nimedele teed andma.
 
-Diagonaalseid “läbi majade” jooni ei joonistata — ainult lühikesed, teele joondatud lõigud detailvaates.
+**Tänava-/teeäärseid polyline-overlay’sid ei joonistata** — baaskaardi teed jäävad standardseks; kaardil on ainult verifitseeritud off-street parkla polügoonid ja märgid.
 
 ## Andmed
 
-- `public/data/estonia_parking_master.geojson` — ühtne Eesti OSM-stiilis parkimiskiht (~10.8k feature’t). Laadimisel jagatakse lot-polügoonideks ja teeäärseks (street_side / lane / LineString) kihiks (`src/lib/estoniaParkingMaster.ts`). Vanad `parking_polygons.geojson` / `street_parking.geojson` failid on asendatud.
-- `public/data/nomme_free_streets.geojson` — Nõmme avalike tänavate **Tasuta** curb-jooned (OSM highway võrk, lõigatud Tallinna GIS Nõmme polügooniga). Ehita: `python3 scripts/extract-nomme-parking.py`.
-- `public/data/tallinn_free_streets.geojson` — kogu Tallinna **Tasuta** tänavad väljaspool ametlikke tasulisi tsoone (linnaosad − paid zones). Ehita: `python3 scripts/extract-tallinn-free-streets.py`.
+- `public/data/estonia_parking_master.geojson` / `ee_parking_max.geojson` — Eesti OSM-stiilis parkimiskiht. Laadimisel kasutatakse **ainult lot-polügoone**; street_side / curb LineString’id jäetakse tühjaks (`src/lib/estoniaParkingMaster.ts`).
 - `public/data/nomme_verified_lots.geojson` — **ainult** verifitseeritud Nõmme platsid (Laagri P&R, Nõmme–Harku terviseraja parklaid). Juhuslikke OSM-lotte Nõmmel ei kuvata (`src/lib/nommeEnrichment.ts`).
-- Klassifikatsioon: Tasuta = ainult verifitseeritud piiramatu tasuta; Kellaga = kellaga/aegpiirang; Tasuline = tasuline; `free_outside_zones` / märgendita → hall (Määramata), mitte roheline.
+- Klassifikatsioon (ainult lotid): **Tasuta** = roheline (ainult verifitseeritud piiramatu 24/7 tasuta); **Kellaga** = kollane (kellaga / aegpiirang); **Tasuline** = punane; märgendita / unknown → **hall** (mitte roheline).
 - `public/data/parnu_parking_master.geojson` — Pärnu OSM-parkimine (bbox extract). Tsoonireeglid (`src/data/parnuZones.ts` + `freeRules`) määravad FREE/KELL sildid, hinnad ja „praegu tasuta“. gis.parnu.ee FeatureServer ei olnud build-keskkonnast kättesaadav; ametlik ajakava on parnu.ee/parkimine järgi.
 - `src/data/parnuChargers.ts` — EV seemned (Eleport Niidu 18b 200 kW, Neste 200 kW, Tesla Supercharger).
 - `public/data/districts.geojson` — ametlikud Tallinna 8 linnaosa + Vanalinn (Tallinn GIS → EPSG:4326, ≤5 m simplify, mere mask, topoloogia). Ehita: `npm run build:districts`. Kontrolli: `npm run check:districts`.
-- Lotid: täide operaatori/tsooni värviga (opacity 0.35), 2px ääris; klõps avab bottom sheet’i (operaator, hind, tasuta minutid + Waze / Google / Apple).
-- Teeäär: curb-jooned (zoom ≥ 12). Roheline = tasuta, punane = tasuline, sinine = kellaga. Filtrid rakenduvad mõlemale kihile; otsingu Destination Interceptor suunab ≤400 m lähima parkla tsentroidile.
+- Lotid: täide klassifikatsiooni värviga (punane / kollane / roheline / hall), 2px ääris; klõps avab bottom sheet’i (operaator, hind, tasuta minutid + Waze / Google / Apple). Otsingu Destination Interceptor suunab ≤400 m lähima parkla tsentroidile.
 
 ## Funktsioonid
 
 - **Viewport bbox** — ainult ekraanil nähtavad kohad
-- **Road-snapped jooned** — lühikesed teeäärsed LineString’id (Viru, Harju, Vene, Liivalaia, …)
 - **Nominatim otsing** — `/api/nominatim` proxy (Vite / Vercel)
 - **Bottom sheet** — Waze, Google Maps, Apple Maps navigeerimine
 - **Floating glass UI** — ümarad paneelid + backdrop-blur

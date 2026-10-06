@@ -1442,7 +1442,8 @@ export function setDistrictHover(
   }
 }
 
-/** When false, parking geom/line overlays stay hidden to avoid pre-basemap flash. */
+/** When false, parking geom overlays stay hidden to avoid pre-basemap flash. */
+/** Street/road polyline overlay layer ids — kept permanently hidden. */
 const LINE_OVERLAY_LAYER_IDS = [
   STREET_PARKING_CASING_LAYER,
   STREET_PARKING_LINE_LAYER,
@@ -1453,6 +1454,7 @@ const LINE_OVERLAY_LAYER_IDS = [
   'parking-street-lines-hit',
 ] as const
 
+/** Lot polygon / label layers only — never includes street polylines. */
 const GEOM_LAYER_IDS = [
   PARKING_LOTS_FILL_LAYER,
   PARKING_LOTS_OUTLINE_LAYER,
@@ -1464,12 +1466,11 @@ const GEOM_LAYER_IDS = [
   PRECISE_OUTLINE_UNDERGROUND_LAYER,
   PRECISE_LABEL_LAYER,
   PRECISE_MULTISTOREY_BADGE_LAYER,
-  ...LINE_OVERLAY_LAYER_IDS,
 ] as const
 
 /**
- * Hide parking polygons + curb lines until the basemap has finished its first
- * paint. Prevents blue/colored line flash on a blank white canvas.
+ * Hide parking polygons until the basemap has finished its first paint.
+ * Street/road polyline overlays stay permanently disabled.
  */
 export function setParkingOverlaysRevealed(
   map: MapLibreMapType,
@@ -1483,6 +1484,16 @@ export function setParkingOverlaysRevealed(
         map.setLayoutProperty(id, 'visibility', vis)
       } catch {
         /* layer may be mid-remove during setStyle */
+      }
+    }
+  }
+  // Absolute ban: never show street-network / curb polyline overlays
+  for (const id of LINE_OVERLAY_LAYER_IDS) {
+    if (map.getLayer(id)) {
+      try {
+        map.setLayoutProperty(id, 'visibility', 'none')
+      } catch {
+        /* ok */
       }
     }
   }
@@ -1548,6 +1559,11 @@ export function setParkingLayerVisibility(
         'visibility',
         parkingOverlaysRevealed ? 'visible' : 'none',
       )
+    }
+  }
+  for (const id of LINE_OVERLAY_LAYER_IDS) {
+    if (map.getLayer(id)) {
+      map.setLayoutProperty(id, 'visibility', 'none')
     }
   }
 }

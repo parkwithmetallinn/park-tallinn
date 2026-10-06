@@ -11,10 +11,7 @@ import {
   prepareParkingPolygons,
   type PreciseParkingCollection,
 } from './preciseParkingPolygons'
-import {
-  prepareStreetParking,
-  type StreetParkingCollection,
-} from './streetParkingLines'
+import type { StreetParkingCollection } from './streetParkingLines'
 
 export const ESTONIA_PARKING_MASTER_URL = '/data/ee_parking_max.geojson'
 
@@ -116,17 +113,17 @@ export async function loadEstoniaParkingMaster(
     }
     const raw = (await res.json()) as RawCollection
     const { lotRaw, streetRaw } = splitMasterCollection(raw)
-    // Prepare fns own narrower RawCollection types; master features are OSM-mixed.
+    // Prepare lots only — street/road polyline overlays are globally disabled.
     const polygons = prepareParkingPolygons(lotRaw as never)
-    const streets = prepareStreetParking(streetRaw as never)
+    void streetRaw // kept for split stats; curb lines are not rendered
     const base: MasterParkingSplit = {
       polygons,
-      streets,
+      streets: { type: 'FeatureCollection', features: [] },
       rawCount: raw.features?.length ?? 0,
       lotCount: lotRaw.features?.length ?? 0,
-      streetRawCount: streetRaw.features?.length ?? 0,
+      streetRawCount: 0,
     }
-    // Nõmme: inject road-GIS Tasuta streets; keep only verified lots
+    // Nõmme verified lots allowlist; streets stay empty
     const split = await enrichNommeParking(base, force)
     masterMemory = split
     return split
