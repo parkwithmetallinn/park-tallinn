@@ -4,6 +4,7 @@ import {
   CircleHelp,
   Clock3,
   Footprints,
+  Loader2,
   LocateFixed,
   Map as MapIcon,
   Moon,
@@ -12,7 +13,7 @@ import {
   Sun,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { MapErrorBoundary } from './components/MapErrorBoundary'
 import { MapView, type MapViewHandle } from './components/MapView'
 import { ModalShell } from './components/ModalShell'
@@ -31,6 +32,7 @@ import { ReportModal, type ReportModalContext } from './components/ReportModal'
 import {
   SearchDropdown,
   splitPlaceLabel,
+  suggestionOptionId,
   type SearchSuggestion,
 } from './components/SearchDropdown'
 import { MyPinSheet } from './components/MyPinSheet'
@@ -76,9 +78,6 @@ import {
 } from './lib/routing'
 import {
   geocodeToSearchLocation,
-  searchAddress,
-  viewboxForQuery,
-  type GeocodeResult,
   type SearchLocation,
 } from './lib/geocode'
 import {
@@ -96,6 +95,7 @@ import {
 } from './lib/myPins'
 import { normalizeSpot } from './lib/geojson'
 import { useParkingSession } from './hooks/useParkingSession'
+import { useSearchGeocode } from './hooks/useSearchGeocode'
 import { clampSearchQuery } from './lib/validation'
 import { track } from './lib/analytics'
 
@@ -136,12 +136,13 @@ export default function App() {
   const [cityId, setCityId] = useState<CityId>(() => getInitialCity())
   const [filter, setFilter] = useState<FilterId>('all')
   const [query, setQuery] = useState('')
-  const [geoResults, setGeoResults] = useState<GeocodeResult[]>([])
-  const [geoLoading, setGeoLoading] = useState(false)
-  const [geoError, setGeoError] = useState<string | null>(null)
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const [activeIndex, setActiveIndex] = useState(0)
   const skipNextGeocode = useRef(false)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const selectSearchSuggestionRef = useRef<(item: SearchSuggestion) => void>(
+    () => {},
+  )
   const [fullSpotIds, setFullSpotIds] = useState<Set<string>>(() => loadFullSpotIds())
   const [alternatives, setAlternatives] = useState<AlternativeParking[]>([])
   const [noAlternatives, setNoAlternatives] = useState(false)
@@ -190,7 +191,6 @@ export default function App() {
   const [pinDragEnabled, setPinDragEnabled] = useState(false)
   const [myPinsExpanded, setMyPinsExpanded] = useState(false)
   const [draftColorPreview, setDraftColorPreview] = useState<MyPinColor>('red')
-  const geoAbort = useRef<AbortController | null>(null)
   const mapApiRef = useRef<MapViewHandle | null>(null)
   const routeAbort = useRef<AbortController | null>(null)
   const routeRunId = useRef(0)
@@ -199,6 +199,22 @@ export default function App() {
   const [routeSummaryReady, setRouteSummaryReady] = useState(false)
   const [, setRouteLoading] = useState(false)
   const [, setRouteError] = useState<string | null>(null)
+
+  const {
+    geoResults,
+    resultsQuery,
+    geoLoading,
+    geoError,
+    pendingEnterSelect,
+    cancelPendingEnter,
+    armPendingEnter,
+    clearGeo,
+  } = useSearchGeocode({
+    query,
+    biasLat: userLocation[0],
+    biasLng: userLocation[1],
+    skipNextGeocodeRef: skipNextGeocode,
+  })
 
   const {
     carNumber,
@@ -247,55 +263,7 @@ export default function App() {
     return () => navigator.geolocation.clearWatch(id)
   }, [])
 
-  // Nominatim geocoding — Estonia-wide, soft-biased to current map location
-  const searchBiasKey = `${userLocation[0].toFixed(2)},${userLocation[1].toFixed(2)}`
-  useEffect(() => {
-    // After picking a suggestion we set the query to the place name —
-    // skip the rebound geocode so the dropdown stays closed.
-    if (skipNextGeocode.current) {
-      skipNextGeocode.current = false
-      setGeoResults([])
-      setGeoError(null)
-      setGeoLoading(false)
-      return
-    }
-    const q = clampSearchQuery(query)
-    if (q.length < 3) {
-      setGeoResults([])
-      setGeoError(null)
-      setGeoLoading(false)
-      return
-    }
-    setGeoLoading(true)
-    setGeoError(null)
-    geoAbort.current?.abort()
-    const ac = new AbortController()
-    geoAbort.current = ac
-    const [biasLat, biasLng] = searchBiasKey.split(',').map(Number) as [
-      number,
-      number,
-    ]
-    const t = window.setTimeout(async () => {
-      try {
-        const results = await searchAddress(
-          q,
-          ac.signal,
-          viewboxForQuery(q, biasLat, biasLng),
-        )
-        if (!ac.signal.aborted) setGeoResults(results)
-      } catch (e) {
-        if ((e as Error).name === 'AbortError') return
-        setGeoError('Aadressi otsing ebaõnnestus')
-        setGeoResults([])
-      } finally {
-        if (!ac.signal.aborted) setGeoLoading(false)
-      }
-    }, 400)
-    return () => {
-      window.clearTimeout(t)
-      ac.abort()
-    }
-  }, [query, searchBiasKey])
+  // Nominatim geocoding owned by useSearchGeocode (debounce + pending Enter)
 
   // Prune expired "full" marks periodically
   useEffect(() => {
@@ -491,9 +459,10 @@ export default function App() {
     return allSpots
   }, [allSpots, filter])
 
-  /** Live search suggestions: my pins + parking name hits + geocode places. */
+  /** Live search suggestions: my pins + parking + geocode (only fresh results). */
   const searchSuggestions = useMemo((): SearchSuggestion[] => {
-    const q = query.trim().toLowerCase()
+    const qRaw = clampSearchQuery(query)
+    const q = qRaw.toLowerCase()
     if (q.length < 3) return []
 
     const myPinHits: SearchSuggestion[] = myPins
@@ -554,31 +523,73 @@ export default function App() {
       .sort((a, b) => a.distanceM - b.distanceM)
       .slice(0, 4)
 
-    const places: SearchSuggestion[] = geoResults
-      .map((r) => {
-        const { name, subtitle } = splitPlaceLabel(r.label)
-        const distanceM = distanceMeters(
-          userLocation[0],
-          userLocation[1],
-          r.lat,
-          r.lng,
-        )
-        return {
-          kind: 'place' as const,
-          id: r.id,
-          name: r.name || name,
-          subtitle: r.kind && r.kind !== 'place' ? `${subtitle || r.kind}` : subtitle,
-          lat: r.lat,
-          lng: r.lng,
-          distanceM,
-          result: r,
-        }
-      })
-      .sort((a, b) => a.distanceM - b.distanceM)
+    // Only attach Nominatim rows when they belong to the current query
+    const places: SearchSuggestion[] =
+      resultsQuery === qRaw
+        ? geoResults
+            .map((r) => {
+              const { name, subtitle } = splitPlaceLabel(r.label)
+              const distanceM = distanceMeters(
+                userLocation[0],
+                userLocation[1],
+                r.lat,
+                r.lng,
+              )
+              return {
+                kind: 'place' as const,
+                id: r.id,
+                name: r.name || name,
+                subtitle:
+                  r.kind && r.kind !== 'place'
+                    ? `${subtitle || r.kind}`
+                    : subtitle,
+                lat: r.lat,
+                lng: r.lng,
+                distanceM,
+                result: r,
+              }
+            })
+            .sort((a, b) => a.distanceM - b.distanceM)
+        : []
 
-    // My pins first (instant, local), then parking, then places
     return [...myPinHits, ...parkingHits, ...places].slice(0, 12)
-  }, [query, allSpots, geoResults, userLocation, myPins])
+  }, [query, allSpots, geoResults, resultsQuery, userLocation, myPins])
+
+  // Keep keyboard highlight on the top row when the list changes
+  useEffect(() => {
+    setActiveIndex(0)
+  }, [searchSuggestions])
+
+  /**
+   * Pending Enter: when results for the armed query arrive, pick the top
+   * suggestion automatically (same path as a click).
+   */
+  useEffect(() => {
+    if (!pendingEnterSelect) return
+    const q = clampSearchQuery(query)
+    if (pendingEnterSelect !== q) return
+
+    // Local hits (pins/parking) can resolve immediately without Nominatim
+    if (searchSuggestions.length > 0) {
+      const item = searchSuggestions[0]
+      cancelPendingEnter()
+      selectSearchSuggestionRef.current(item)
+      return
+    }
+
+    // Still loading fresh geocode for this query
+    if (geoLoading || resultsQuery !== q) return
+
+    // Fresh empty / error result — clear pending, show empty/error UI
+    cancelPendingEnter()
+  }, [
+    pendingEnterSelect,
+    query,
+    searchSuggestions,
+    geoLoading,
+    resultsQuery,
+    cancelPendingEnter,
+  ])
 
   // Deep-link: /?spot=<id> opens the parking sheet (no map click needed)
   const deepLinkApplied = useRef(false)
@@ -668,14 +679,13 @@ export default function App() {
     setNearestPickerOpen(false)
     setSelectedPreviewId(null)
     setFromNearestPicker(false)
-    setGeoResults([])
-    setGeoError(null)
+    clearGeo()
     setIsDropdownOpen(false)
     setNoAlternatives(false)
     setDraftPin(null)
     setEditingPinId(null)
     setPinDragEnabled(false)
-  }, [clearRoute])
+  }, [clearRoute, clearGeo])
 
   /** Cross-tab sync for personal pins (localStorage only). */
   useEffect(() => {
@@ -728,12 +738,12 @@ export default function App() {
       setSearchSheetOpen(false)
       setNearestPickerOpen(false)
       setIsDropdownOpen(false)
-      setGeoResults([])
+      clearGeo()
       setEditingPinId(null)
       setDraftColorPreview('red')
       setDraftPin({ lat: coords.lat, lng: coords.lng, color: 'red' })
     },
-    [],
+    [clearGeo],
   )
 
   const handleMyPinClick = useCallback((pin: MyPin) => {
@@ -844,12 +854,11 @@ export default function App() {
     setSelectedPreviewId(null)
     setFromNearestPicker(false)
     setQuery('')
-    setGeoResults([])
-    setGeoError(null)
+    clearGeo()
     setIsDropdownOpen(false)
     setAlternatives([])
     setNoAlternatives(false)
-  }, [clearRoute])
+  }, [clearRoute, clearGeo])
 
   const visibleIdSet = useMemo(
     () => new Set(visibleSpots.map((s) => s.id)),
@@ -1079,10 +1088,7 @@ export default function App() {
     ensureCityForCoords(loc.lat, loc.lng)
 
     skipNextGeocode.current = true
-    geoAbort.current?.abort()
-    setGeoLoading(false)
-    setGeoResults([])
-    setGeoError(null)
+    clearGeo()
     setIsDropdownOpen(false)
     searchInputRef.current?.blur()
 
@@ -1121,10 +1127,11 @@ export default function App() {
   }
 
   const selectSearchSuggestion = (item: SearchSuggestion) => {
+    cancelPendingEnter()
     if (item.kind === 'mypin') {
+      skipNextGeocode.current = true
+      clearGeo()
       setIsDropdownOpen(false)
-      setGeoResults([])
-      setGeoError(null)
       searchInputRef.current?.blur()
       setQuery(item.pin.name)
       setFlyMode('fly')
@@ -1149,6 +1156,68 @@ export default function App() {
       return
     }
     flyToDestination(geocodeToSearchLocation(item.result))
+  }
+  selectSearchSuggestionRef.current = selectSearchSuggestion
+
+  const handleSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    const composing =
+      e.nativeEvent.isComposing ||
+      (e as unknown as { keyCode?: number }).keyCode === 229
+    const q = clampSearchQuery(query)
+    const suggestions = q.length >= 3 ? searchSuggestions : []
+    const listOpen = isDropdownOpen && (q.length >= 3 || myPins.length > 0)
+
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      cancelPendingEnter()
+      setIsDropdownOpen(false)
+      searchInputRef.current?.blur()
+      return
+    }
+
+    if (e.key === 'Tab') {
+      cancelPendingEnter()
+      setIsDropdownOpen(false)
+      return
+    }
+
+    if (e.key === 'ArrowDown' && listOpen && suggestions.length > 0) {
+      e.preventDefault()
+      setActiveIndex((i) => (i + 1) % suggestions.length)
+      return
+    }
+
+    if (e.key === 'ArrowUp' && listOpen && suggestions.length > 0) {
+      e.preventDefault()
+      setActiveIndex(
+        (i) => (i - 1 + suggestions.length) % suggestions.length,
+      )
+      return
+    }
+
+    if (e.key !== 'Enter') return
+    if (composing) return
+    if (q.length < 3) return
+    e.preventDefault()
+
+    // After a selection the dropdown stays closed — second Enter is a no-op
+    if (!isDropdownOpen && !pendingEnterSelect) return
+
+    setIsDropdownOpen(true)
+
+    // Combined list only includes fresh Nominatim rows (resultsQuery match),
+    // so any non-empty list is safe to pick from immediately.
+    if (suggestions.length > 0) {
+      const idx = Math.min(
+        Math.max(activeIndex, 0),
+        suggestions.length - 1,
+      )
+      selectSearchSuggestion(suggestions[idx])
+      return
+    }
+
+    // Still loading / stale / empty pending → skip debounce and wait
+    armPendingEnter(q)
   }
 
   const navigateToMyPin = (pin: MyPin) => {
@@ -1554,15 +1623,39 @@ export default function App() {
             <div className={panel}>
               <div className="flex min-w-0 items-center gap-1 px-2 py-1.5">
                 <div className="relative min-w-0 flex-1">
-                  <Search
-                    className={`pointer-events-none absolute top-1/2 left-3 h-[18px] w-[18px] -translate-y-1/2 ${muted}`}
-                    strokeWidth={2.2}
-                  />
+                  {(geoLoading || pendingEnterSelect) &&
+                  clampSearchQuery(query).length >= 3 ? (
+                    <Loader2
+                      className={`pointer-events-none absolute top-1/2 left-3 h-[18px] w-[18px] -translate-y-1/2 animate-spin ${muted}`}
+                      strokeWidth={2.2}
+                      aria-hidden
+                    />
+                  ) : (
+                    <Search
+                      className={`pointer-events-none absolute top-1/2 left-3 h-[18px] w-[18px] -translate-y-1/2 ${muted}`}
+                      strokeWidth={2.2}
+                    />
+                  )}
                   <input
                     ref={searchInputRef}
+                    role="combobox"
+                    aria-expanded={isDropdownOpen}
+                    aria-controls="search-suggestions"
+                    aria-autocomplete="list"
+                    aria-activedescendant={
+                      isDropdownOpen &&
+                      clampSearchQuery(query).length >= 3 &&
+                      searchSuggestions[activeIndex]
+                        ? suggestionOptionId(
+                            searchSuggestions[activeIndex],
+                            activeIndex,
+                          )
+                        : undefined
+                    }
                     value={query}
                     onChange={(e) => {
                       skipNextGeocode.current = false
+                      cancelPendingEnter()
                       const v = e.target.value.slice(0, 120)
                       setQuery(v)
                       const qLen = clampSearchQuery(v).length
@@ -1573,13 +1666,7 @@ export default function App() {
                       const q = clampSearchQuery(query).length
                       if (q >= 3 || myPins.length > 0) setIsDropdownOpen(true)
                     }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') {
-                        e.preventDefault()
-                        setIsDropdownOpen(false)
-                        searchInputRef.current?.blur()
-                      }
-                    }}
+                    onKeyDown={handleSearchKeyDown}
                     placeholder="Otsi aadressi või kohta Eestis"
                     aria-label="Otsi aadressi või kohta"
                     className={`w-full rounded-2xl border-0 bg-transparent py-3 pr-10 pl-10 text-[16px] font-sans outline-none ${text} placeholder:text-[#8E8E93]`}
@@ -1591,9 +1678,9 @@ export default function App() {
                       type="button"
                       onClick={() => {
                         skipNextGeocode.current = false
+                        cancelPendingEnter()
                         setQuery('')
-                        setGeoResults([])
-                        setGeoError(null)
+                        clearGeo()
                         setIsDropdownOpen(myPins.length > 0)
                       }}
                       className={`absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer rounded-full p-1.5 ${muted} bg-black/5`}
@@ -1635,7 +1722,7 @@ export default function App() {
               <div className="absolute inset-x-0 top-[calc(100%+0.4rem)] z-50">
                 <SearchDropdown
                   loading={
-                    geoLoading &&
+                    (geoLoading || Boolean(pendingEnterSelect)) &&
                     searchSuggestions.length === 0 &&
                     clampSearchQuery(query).length >= 3
                   }
@@ -1645,6 +1732,8 @@ export default function App() {
                   }
                   dark={dark}
                   onSelect={selectSearchSuggestion}
+                  activeIndex={activeIndex}
+                  onActiveIndexChange={setActiveIndex}
                   myPins={
                     clampSearchQuery(query).length < 3 ? myPins : undefined
                   }
