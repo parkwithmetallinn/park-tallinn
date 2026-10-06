@@ -6,6 +6,7 @@
 import pointOnFeature from '@turf/point-on-feature'
 import { polygon as turfPolygon, lineString as turfLine } from '@turf/helpers'
 import type { ParkingSpot } from '../types'
+import { apiUrl } from './apiBase'
 import { getCachedAddress, setCachedAddress } from './addressCache'
 import { isRealAddress } from './isRealAddress'
 import { wgs84ToLest97 } from './lest97'
@@ -152,7 +153,7 @@ async function reverseInaks(
   await throttle(signal)
   // Prefer same-origin proxy (Vite/Vercel injects User-Agent). Direct URL as fallback.
   const urls = [
-    `/api/inaks/gazetteer?${params}`,
+    apiUrl(`/api/inaks/gazetteer?${params}`),
     `https://aks.geoportaal.ee/inaks/inaadress/gazetteer?${params}`,
   ]
   let data: { addresses?: InaksAddress[]; error?: string } | null = null
@@ -234,7 +235,7 @@ async function reverseNominatim(
     zoom: '18',
   })
   await throttle(signal)
-  const res = await fetch(`/api/nominatim/reverse?${params}`, {
+  const res = await fetch(apiUrl(`/api/nominatim/reverse?${params}`), {
     signal,
     headers: { Accept: 'application/json' },
   })

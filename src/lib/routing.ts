@@ -11,6 +11,7 @@
  */
 
 import { distanceMeters } from './geo'
+import { apiUrl } from './apiBase'
 
 export type LonLat = [number, number]
 
@@ -206,7 +207,9 @@ export async function snapToWalkNetwork(
   if (hit) return hit
 
   const [lat, lng] = point
-  const path = `/api/route-foot/nearest/v1/foot/${lng},${lat}?number=1`
+  const path = apiUrl(
+    `/api/route-foot/nearest/v1/foot/${lng},${lat}?number=1`,
+  )
   const { signal: timed, clear } = withTimeoutSignal(signal)
   try {
     const res = await fetch(path, {
@@ -303,12 +306,12 @@ export async function fetchRoute(
 
   if (mode === 'walking') {
     // Path segment name is ignored by the OSM foot instance; keep `foot` for clarity.
-    const url = `/api/route-foot/route/v1/foot/${coords}?${qs}`
+    const url = apiUrl(`/api/route-foot/route/v1/foot/${coords}?${qs}`)
     result = await fetchOsrmRoute(url, signal)
     result = { ...result, profile: 'foot' }
   } else {
-    const primary = `/api/route-car/route/v1/driving/${coords}?${qs}`
-    const fallback = `/api/osrm/route/v1/driving/${coords}?${qs}`
+    const primary = apiUrl(`/api/route-car/route/v1/driving/${coords}?${qs}`)
+    const fallback = apiUrl(`/api/osrm/route/v1/driving/${coords}?${qs}`)
     try {
       result = await fetchOsrmRoute(primary, signal)
     } catch (e) {

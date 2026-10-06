@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node scripts/sync-robots.mjs && vite",
     "prebuild": "node scripts/sync-robots.mjs",
-  "fetch:parking-max": "node scripts/fetch-ee-parking-max.mjs",
+    "fetch:parking-max": "node scripts/fetch-ee-parking-max.mjs",
     "build:parking-max": "node scripts/build-ee-parking-max.mjs",
     "rebuild:parking-max": "node scripts/fetch-ee-parking-max.mjs && node scripts/build-ee-parking-max.mjs",
     "build": "tsc -b && vite build",
@@ -16,9 +16,15 @@
     "check:districts": "node scripts/check-districts.mjs",
     "test:districts": "node scripts/check-districts.mjs",
     "test:address": "node scripts/test-is-real-address.mjs",
-    "precompute:addresses": "node scripts/precompute-addresses.mjs"
+    "precompute:addresses": "node scripts/precompute-addresses.mjs",
+    "cap:sync": "npm run build && npx cap sync",
+    "cap:ios": "npm run build && npx cap sync ios && npx cap open ios",
+    "cap:copy": "npx cap copy",
+    "build:mobile": "tsc -b && vite build --mode mobile"
   },
   "dependencies": {
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
     "@tanstack/react-query": "^5.104.0",
     "@turf/area": "^7.4.0",
     "@turf/bbox": "^7.4.0",
@@ -40,6 +46,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",

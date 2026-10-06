@@ -1,8 +1,8 @@
-# Park Tallinn
+# Park Tallinn / Parkimine
 
 Puhas 3D parkimiskaart Tallinnale ja Pärnule (MapLibre). Tänavaäärsed tsoonid on teedega joondatud jooned; eraparklad on polügoonid. Linna vahetus otsinguribal (Tallinn | Pärnu).
 
-## Käivitamine
+## Käivitamine (veeb)
 
 ```bash
 cp .env.example .env   # täida N8N_WEBHOOK_URL ja N8N_API_KEY (server only)
@@ -14,12 +14,72 @@ Ava [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
 ### Keskkonnamuutujad
 
-| Muutuja | Kirjeldus |
-|---------|-----------|
-| `N8N_WEBHOOK_URL` | n8n webhook URL (ainult server / Vite proxy / Vercel `api/`) |
-| `N8N_API_KEY` | Header Auth väärtus päisele `X-N8N-API-KEY` (ainult server) |
+| Muutuja | Kus | Kirjeldus |
+|---------|-----|-----------|
+| `N8N_WEBHOOK_URL` | **Server only** (Vite proxy, Vercel `api/`) | n8n webhook URL — ei kuulu Capaciitori bundlisse |
+| `N8N_API_KEY` | **Server only** | Header Auth väärtus päisele `X-N8N-API-KEY` |
+| `VITE_API_BASE_URL` | Client / **nõutav native buildis** | Absoluutne API host (nt `https://parkimine.ee`) Capaciitori WebView jaoks |
+| `VITE_SITE_URL` | Client | Canonical / OG URL (ilma lõpuslashita) |
+| `VITE_ALLOW_INDEXING` | Client | `true` lubab indekseerimise; vaikimisi `false` |
+| `VITE_CF_WEB_ANALYTICS_TOKEN` / `VITE_PLAUSIBLE_DOMAIN` | Client | Valikuline analüütika |
 
-Brauserer kutsub ainult same-origin `/api/parkimine` — `VITE_*` n8n võtmeid ei kasutata. Ära commit’i `.env` faili — ainult `.env.example`.
+Brauserer / native klient kutsub ainult `/api/*` (või `VITE_API_BASE_URL` + `/api/*`). Ära commit’i `.env` faili — ainult `.env.example` / `.env.mobile.example`.
+
+## iOS (Capacitor)
+
+App ID: `ee.parkimine.app` · nimi: **Parkimine** · `webDir`: `dist` (`capacitor.config.json`).
+
+### Eeltingimused
+
+1. macOS + Xcode + CocoaPods (`sudo gem install cocoapods`).
+2. Tootmisveeb peab olema üleval (Vercel vms), sest native shellil **ei ole** Vite/Vercel `/api` proxy’t.
+3. Seadista native buildi jaoks API host:
+
+```bash
+cp .env.mobile.example .env.mobile
+# Muuda VITE_API_BASE_URL oma live hostiks, nt https://parkimine.ee
+```
+
+Või ekspordi CI-s:
+
+```bash
+export VITE_API_BASE_URL=https://parkimine.ee
+export VITE_SITE_URL=https://parkimine.ee
+```
+
+### Ehitus ja Xcode
+
+```bash
+npm install
+# Esimene kord (ios/ kaust):
+npx cap add ios
+
+# Iga web-muudatuse järel:
+npm run build:mobile   # või: VITE_API_BASE_URL=… npm run build
+npx cap sync ios
+npx cap open ios       # avab Xcode
+```
+
+Lühike alias: `npm run cap:ios` (build + sync + open; kasuta `build:mobile` kui vajad `.env.mobile` / mode `mobile`).
+
+Vite `mode=mobile` loeb `.env.mobile` (ja `.env`). Veendu, et `VITE_API_BASE_URL` on seatud **enne** `vite build`, muidu API päringud lähevad `capacitor://localhost` peale.
+
+### Serveri (tootmise) muutujad
+
+Native app ei näe `N8N_*` võtmeid. Need peavad olema seadistatud **hostingus**, mida `VITE_API_BASE_URL` sihib:
+
+| Muutuja | Hosting (Vercel / Node) |
+|---------|-------------------------|
+| `N8N_WEBHOOK_URL` | Jah — `/api/parkimine` proxy |
+| `N8N_API_KEY` | Jah — süstitakse `X-N8N-API-KEY` päisesse |
+
+CORS: kui API on teisel domeenil kui Capaciitori origin, peab backend lubama Capaciitori skeme / App Transport. Lihtsaim tee: kasuta sama tootmisdomeeni (`VITE_API_BASE_URL=https://your-vercel-app`) ja Verceli olemasolevaid `/api/*` rewrite’e.
+
+### Info.plist / õigused (Xcode)
+
+Lisa asukoha kasutus (kaart + GPS):
+
+- `NSLocationWhenInUseUsageDescription` — nt „Kasutame asukohta lähimate parklate ja marsruudi jaoks.“
 
 ## Zoom LOD (tasemed)
 

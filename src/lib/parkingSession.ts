@@ -1,5 +1,5 @@
 /**
- * Parking session API — same-origin `/api/parkimine` only.
+ * Parking session API — same-origin `/api/parkimine` (or VITE_API_BASE_URL on native).
  *
  * The browser never sees n8n credentials. The Vite / Vercel proxy reads
  * N8N_WEBHOOK_URL + N8N_API_KEY (server env) and injects X-N8N-API-KEY.
@@ -9,6 +9,8 @@
  * - extend: { action: "extend", carNumber, endsAt } — endsAt ISO, 1 min–24 h ahead
  * - "ei leitud aktiivset" → NOT_FOUND (normal, never ERROR)
  */
+
+import { apiUrl } from './apiBase'
 
 /** Same-origin proxy — the only client endpoint. */
 const PARKING_WEBHOOK_PROXY = '/api/parkimine'
@@ -632,7 +634,7 @@ export async function sendParkingSession(
     endsAt: input.endsAt?.trim() || undefined,
   }
 
-  return postSession(PARKING_WEBHOOK_PROXY, body, signal)
+  return postSession(apiUrl(PARKING_WEBHOOK_PROXY), body, signal)
 }
 
 export function startParkingSession(

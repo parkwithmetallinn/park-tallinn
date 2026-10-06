@@ -4,6 +4,8 @@
  * Photon is called directly (CORS-enabled) as a POI-friendly complement.
  */
 
+import { apiUrl } from './apiBase'
+
 export type GeocodeResult = {
   id: string
   /** Short display name (POI / street) */
@@ -141,7 +143,7 @@ async function searchNominatim(
     bounded: '0',
   })
 
-  const res = await fetch(`/api/nominatim/search?${params}`, {
+  const res = await fetch(apiUrl(`/api/nominatim/search?${params}`), {
     signal,
     headers: { Accept: 'application/json' },
   })
@@ -368,7 +370,7 @@ export async function reverseGeocode(
   signal?.addEventListener('abort', onOuterAbort)
 
   try {
-    const res = await fetch(`/api/nominatim/reverse?${params}`, {
+    const res = await fetch(apiUrl(`/api/nominatim/reverse?${params}`), {
       signal: controller.signal,
       headers: { Accept: 'application/json' },
     })

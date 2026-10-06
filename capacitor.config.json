@@ -1,0 +1,12 @@
+{
+  "appId": "ee.parkimine.app",
+  "appName": "Parkimine",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "ios": {
+    "contentInset": "automatic",
+    "preferredContentMode": "mobile"
+  }
+}

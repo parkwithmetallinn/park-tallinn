@@ -28,6 +28,7 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.mobile.example
 
 # Intermediate nationwide parking extract (rebuild: npm run fetch:parking-max)
 public/data/ee_parking_max.raw.geojson
@@ -36,3 +37,19 @@ public/data/ee_parking_max.raw.geojson
 uploads/
 agent-tools/
 .tmp/
+
+# Capacitor / native
+ios/App/Pods
+ios/App/Podfile.lock
+ios/App/App/public
+ios/DerivedData
+ios/App/build
+*.xcworkspace/xcuserdata
+*.xcodeproj/xcuserdata
+*.xcuserstate
+android/.gradle
+android/app/build
+android/build
+android/capacitor-cordova-android-plugins
+.capacitor
+
