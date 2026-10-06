@@ -4,9 +4,10 @@
  * The browser never sees n8n credentials. The Vite / Vercel proxy reads
  * N8N_WEBHOOK_URL + N8N_API_KEY (server env) and injects X-N8N-API-KEY.
  *
- * Body:  { action: "start"|"stop"|"status"|"extend", carNumber?, zone?, endsAt? }
+ * Body:  { action: "start"|"stop"|"status"|"extend"|"notify", carNumber?, zone?, endsAt?, pushSubscription?, email? }
  * - status REQUIRES carNumber (server no longer lists sessions)
  * - extend: { action: "extend", carNumber, endsAt } — endsAt ISO, 1 min–24 h ahead
+ * - notify: { action: "notify", carNumber, pushSubscription?, email? } — reminder channel
  * - "ei leitud aktiivset" → NOT_FOUND (normal, never ERROR)
  */
 
@@ -22,7 +23,12 @@ function webhookHeaders(): Headers {
 }
 
 /** Server-supported actions. */
-export type ParkingSessionAction = 'start' | 'stop' | 'status' | 'extend'
+export type ParkingSessionAction =
+  | 'start'
+  | 'stop'
+  | 'status'
+  | 'extend'
+  | 'notify'
 
 export type ParkingSessionRequest = {
   action: ParkingSessionAction
@@ -30,6 +36,10 @@ export type ParkingSessionRequest = {
   zone?: string
   /** ISO timestamp — required for extend */
   endsAt?: string
+  /** Web Push subscription JSON — notify action */
+  pushSubscription?: PushSubscriptionJSON
+  /** Email fallback — notify action */
+  email?: string
 }
 
 export type ParkingSessionDetails = {
@@ -103,6 +113,11 @@ function defaultMessage(action: ParkingSessionAction, success: boolean): string 
   }
   if (action === 'extend') {
     return success ? 'Parkimisaega pikendatud' : 'Pikendamine ebaõnnestus'
+  }
+  if (action === 'notify') {
+    return success
+      ? 'Meeldetuletus salvestatud'
+      : 'Meeldetuletuse salvestamine ebaõnnestus'
   }
   return success ? 'Parkimissessioon alustatud' : 'Sessiooni alustamine ebaõnnestus'
 }
@@ -384,6 +399,16 @@ export function toSessionOutcome(
     }
   }
 
+  // Successful notify with no active details → treat as soft success (NOT_FOUND shape)
+  if (response.success && action === 'notify' && !activeDetails) {
+    return {
+      kind: 'NOT_FOUND',
+      message: response.message || defaultMessage(action, true),
+      activeSessions: list,
+      count,
+    }
+  }
+
   // Successful stop / status / extend with no active session → NOT_FOUND (normal)
   if (
     response.success &&
@@ -428,7 +453,7 @@ export function toSessionOutcome(
   }
 }
 
-function buildPayload(body: ParkingSessionRequest): Record<string, string> {
+function buildPayload(body: ParkingSessionRequest): Record<string, unknown> {
   const action = body.action
 
   if (action === 'status') {
@@ -445,7 +470,21 @@ function buildPayload(body: ParkingSessionRequest): Record<string, string> {
     }
   }
 
-  const payload: Record<string, string> = { action }
+  if (action === 'notify') {
+    const plate = body.carNumber?.trim() ?? ''
+    const payload: Record<string, unknown> = {
+      action: 'notify',
+      carNumber: plate.toUpperCase(),
+    }
+    if (body.pushSubscription && typeof body.pushSubscription === 'object') {
+      payload.pushSubscription = body.pushSubscription
+    }
+    const email = body.email?.trim()
+    if (email) payload.email = email
+    return payload
+  }
+
+  const payload: Record<string, unknown> = { action }
   const plate = body.carNumber?.trim()
   if (plate) payload.carNumber = plate.toUpperCase()
   const zone = body.zone?.trim()
@@ -591,6 +630,8 @@ function validateRequest(input: ParkingSessionRequest): string | null {
     carNumber: input.carNumber?.trim() || undefined,
     zone: input.zone?.trim() || undefined,
     endsAt: input.endsAt?.trim() || undefined,
+    pushSubscription: input.pushSubscription,
+    email: input.email?.trim() || undefined,
   })
   if (!parsed) {
     // Reuse existing error strings — no new UX copy
@@ -604,6 +645,12 @@ function validateRequest(input: ParkingSessionRequest): string | null {
       return 'Vigane päring'
     }
     if (input.action === 'extend') {
+      return 'Vigane päring'
+    }
+    if (input.action === 'notify') {
+      if (!input.pushSubscription && !input.email?.trim()) {
+        return 'Vigane päring'
+      }
       return 'Vigane päring'
     }
     if (input.action === 'stop' && !input.zone?.trim()) {
@@ -632,6 +679,8 @@ export async function sendParkingSession(
     carNumber: input.carNumber?.trim() || undefined,
     zone: input.zone?.trim() || undefined,
     endsAt: input.endsAt?.trim() || undefined,
+    pushSubscription: input.pushSubscription,
+    email: input.email?.trim() || undefined,
   }
 
   return postSession(apiUrl(PARKING_WEBHOOK_PROXY), body, signal)

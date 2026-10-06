@@ -20,6 +20,7 @@ export const parkingSessionActionSchema = z.enum([
   'stop',
   'status',
   'extend',
+  'notify',
 ])
 
 /** endsAt must be ISO and 1 minute–24 hours ahead of now. */
@@ -30,19 +31,37 @@ function isValidExtendEndsAt(iso: string): boolean {
   return ms >= now + 60_000 && ms <= now + 24 * 60 * 60 * 1000
 }
 
+const pushSubscriptionSchema = z
+  .object({
+    endpoint: z.string().url().max(2048),
+    expirationTime: z.number().nullable().optional(),
+    keys: z
+      .object({
+        p256dh: z.string().min(1).max(512),
+        auth: z.string().min(1).max(256),
+      })
+      .optional(),
+  })
+  .passthrough()
+
+const emailSchema = z.string().trim().email().max(254)
+
 export const parkingSessionBodySchema = z
   .object({
     action: parkingSessionActionSchema,
     carNumber: carNumberSchema.optional(),
     zone: zoneCodeSchema.optional(),
     endsAt: z.string().trim().min(1).optional(),
+    pushSubscription: pushSubscriptionSchema.optional(),
+    email: emailSchema.optional(),
   })
   .superRefine((val, ctx) => {
     if (
       val.action === 'start' ||
       val.action === 'stop' ||
       val.action === 'status' ||
-      val.action === 'extend'
+      val.action === 'extend' ||
+      val.action === 'notify'
     ) {
       if (!val.carNumber) {
         ctx.addIssue({
@@ -71,6 +90,15 @@ export const parkingSessionBodySchema = z
           code: 'custom',
           path: ['endsAt'],
           message: 'endsAt out of range',
+        })
+      }
+    }
+    if (val.action === 'notify') {
+      if (!val.pushSubscription && !val.email) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['pushSubscription'],
+          message: 'pushSubscription or email required',
         })
       }
     }

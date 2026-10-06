@@ -1,6 +1,13 @@
 import { X } from 'lucide-react'
-import type { FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import type { ActiveParkingSession } from '../lib/parkingSession'
+import {
+  enableEmailNotify,
+  enablePush,
+  isPushSupported,
+  needsIosHomeScreenHint,
+  notificationPermissionState,
+} from '../lib/notifications'
 import { formatHMS } from '../lib/parking'
 import {
   canStartParkingSession,
@@ -14,6 +21,9 @@ const TIME_EXTEND_OPTIONS = [
   { minutes: 60, label: '+1h' },
   { minutes: 120, label: '+2h' },
 ] as const
+
+const EMAIL_CONSENT_LABEL =
+  'Nõustun, et saadetakse meeldetuletus 10 min enne lõppu; aadress kustutatakse sessiooni lõppedes'
 
 /**
  * Isolated floating parking-session modal (clock FAB).
@@ -71,6 +81,23 @@ export function ParkingSessionModal({
     ? 'border-white/10 bg-[#1C1C1E]/88 text-[#F5F5F7]'
     : 'border-white/60 bg-white/90 text-[#1C1C1E]'
 
+  const [perm, setPerm] = useState<NotificationPermission | 'unsupported'>(
+    () => notificationPermissionState(),
+  )
+  const [pushBusy, setPushBusy] = useState(false)
+  const [notifyMsg, setNotifyMsg] = useState<{
+    kind: 'success' | 'error' | 'info'
+    text: string
+  } | null>(null)
+  const [email, setEmail] = useState('')
+  const [emailConsent, setEmailConsent] = useState(false)
+  const [emailBusy, setEmailBusy] = useState(false)
+  const [showIosHint] = useState(() => needsIosHomeScreenHint())
+
+  const pushOk = isPushSupported() && perm === 'granted'
+  const useEmailFallback =
+    !isPushSupported() || perm === 'denied' || perm === 'unsupported'
+
   const canStart =
     Boolean(selectedSpot) &&
     carNumber.trim().length >= 2 &&
@@ -81,6 +108,54 @@ export function ParkingSessionModal({
     e.preventDefault()
     e.stopPropagation()
     onStatus()
+  }
+
+  const onEnablePush = async () => {
+    setNotifyMsg(null)
+    setPushBusy(true)
+    try {
+      const outcome = await enablePush(carNumber || activeSession?.carNumber || '')
+      setPerm(notificationPermissionState())
+      if (outcome.kind === 'ERROR') {
+        setNotifyMsg({ kind: 'error', text: outcome.message })
+      } else {
+        setNotifyMsg({
+          kind: 'success',
+          text: outcome.message || 'Teavitused lubatud',
+        })
+      }
+    } catch {
+      setNotifyMsg({ kind: 'error', text: 'Teavituste lubamine ebaõnnestus' })
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
+  const onSendEmail = async () => {
+    setNotifyMsg(null)
+    if (!emailConsent) {
+      setNotifyMsg({ kind: 'error', text: 'Nõustu meeldetuletuse saatmisega' })
+      return
+    }
+    setEmailBusy(true)
+    try {
+      const outcome = await enableEmailNotify(
+        carNumber || activeSession?.carNumber || '',
+        email,
+      )
+      if (outcome.kind === 'ERROR') {
+        setNotifyMsg({ kind: 'error', text: outcome.message })
+      } else {
+        setNotifyMsg({
+          kind: 'success',
+          text: outcome.message || 'E-posti meeldetuletus salvestatud',
+        })
+      }
+    } catch {
+      setNotifyMsg({ kind: 'error', text: 'E-posti salvestamine ebaõnnestus' })
+    } finally {
+      setEmailBusy(false)
+    }
   }
 
   return (
@@ -233,6 +308,92 @@ export function ParkingSessionModal({
             {sessionAction === 'status' ? '…' : 'Staatus'}
           </button>
         </form>
+
+        {activeSession ? (
+          <div className="mt-3 flex flex-col gap-2" data-testid="session-notify">
+            {showIosHint ? (
+              <p className={`text-[11px] font-medium leading-snug ${muted}`}>
+                iPhone’is: lisa rakendus avakuvale (Jaga → Lisa avakuvale), et
+                saada veebiteavitusi.
+              </p>
+            ) : null}
+
+            {!useEmailFallback && !pushOk ? (
+              <button
+                type="button"
+                disabled={pushBusy || sessionLoading}
+                onClick={() => void onEnablePush()}
+                className={`w-full rounded-xl px-3 py-2.5 text-[12px] font-bold ${chip} disabled:opacity-55`}
+              >
+                {pushBusy ? 'Luban…' : 'Luba teavitused'}
+              </button>
+            ) : null}
+
+            {pushOk ? (
+              <p className="rounded-2xl bg-[#34C759]/12 p-3 text-[12px] font-medium text-[#248A3D]">
+                Teavitused on lubatud — meeldetuletus ~10 min enne lõppu.
+              </p>
+            ) : null}
+
+            {useEmailFallback ? (
+              <div className="flex flex-col gap-2">
+                <label className={`block text-[10px] font-semibold ${muted}`}>
+                  E-post (meeldetuletus)
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="nimi@email.ee"
+                  autoComplete="email"
+                  disabled={emailBusy || sessionLoading}
+                  className={`w-full rounded-xl border px-3 py-2.5 text-[13px] font-medium outline-none focus:ring-2 focus:ring-[#34C759]/30 ${field}`}
+                />
+                <label
+                  className={`flex cursor-pointer items-start gap-2 text-[11px] font-medium leading-snug ${ink}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={emailConsent}
+                    onChange={(e) => setEmailConsent(e.target.checked)}
+                    disabled={emailBusy || sessionLoading}
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border accent-[#34C759]"
+                  />
+                  <span>{EMAIL_CONSENT_LABEL}</span>
+                </label>
+                <button
+                  type="button"
+                  disabled={
+                    emailBusy ||
+                    sessionLoading ||
+                    !email.trim() ||
+                    !emailConsent
+                  }
+                  onClick={() => void onSendEmail()}
+                  className={`w-full rounded-xl px-3 py-2.5 text-[12px] font-bold ${chip} disabled:opacity-55`}
+                >
+                  {emailBusy ? 'Saadan…' : 'Saada meeldetuletus e-postile'}
+                </button>
+              </div>
+            ) : null}
+
+            {notifyMsg ? (
+              <p
+                className={`rounded-2xl p-3 text-[12px] font-medium leading-snug ${
+                  notifyMsg.kind === 'success'
+                    ? 'bg-[#34C759]/12 text-[#248A3D]'
+                    : notifyMsg.kind === 'error'
+                      ? 'bg-[#FF3B30]/10 text-[#D70015]'
+                      : dark
+                        ? 'bg-[#0A84FF]/15 text-[#64D2FF]'
+                        : 'bg-[#007AFF]/10 text-[#007AFF]'
+                }`}
+              >
+                {notifyMsg.text}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         {sessionNotice ? (
           <p

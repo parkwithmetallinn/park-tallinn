@@ -10,8 +10,8 @@
 const UPSTREAM = process.env.N8N_WEBHOOK_URL || ''
 const API_KEY = process.env.N8N_API_KEY || ''
 
-const ALLOWED_ACTIONS = new Set(['start', 'stop', 'status', 'extend'])
-const MAX_BODY_BYTES = 4_096
+const ALLOWED_ACTIONS = new Set(['start', 'stop', 'status', 'extend', 'notify'])
+const MAX_BODY_BYTES = 8_192
 const RATE_WINDOW_MS = 60_000
 const RATE_MAX = 30
 
@@ -58,6 +58,27 @@ function isValidEndsAt(v) {
   return ms >= now + 60_000 && ms <= now + 24 * 60 * 60 * 1000
 }
 
+function isValidEmail(v) {
+  if (v == null || v === '') return true
+  if (typeof v !== 'string') return false
+  const s = v.trim()
+  return s.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
+}
+
+/** Minimal PushSubscriptionJSON shape (endpoint + optional keys). */
+function isValidPushSubscription(v) {
+  if (v == null) return true
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return false
+  if (typeof v.endpoint !== 'string' || !v.endpoint.trim()) return false
+  if (v.endpoint.length > 2048) return false
+  if (v.keys != null) {
+    if (typeof v.keys !== 'object' || Array.isArray(v.keys)) return false
+    if (v.keys.p256dh != null && typeof v.keys.p256dh !== 'string') return false
+    if (v.keys.auth != null && typeof v.keys.auth !== 'string') return false
+  }
+  return true
+}
+
 function validateBody(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { ok: false, message: 'Vigane päring' }
@@ -72,11 +93,18 @@ function validateBody(body) {
   if (!isValidZone(body.zone)) {
     return { ok: false, message: 'Tsoon puudub' }
   }
+  if (!isValidEmail(body.email)) {
+    return { ok: false, message: 'Vigane päring' }
+  }
+  if (!isValidPushSubscription(body.pushSubscription)) {
+    return { ok: false, message: 'Vigane päring' }
+  }
   if (
     (action === 'start' ||
       action === 'stop' ||
       action === 'status' ||
-      action === 'extend') &&
+      action === 'extend' ||
+      action === 'notify') &&
     !String(body.carNumber || '').trim()
   ) {
     return { ok: false, message: 'Sisesta auto number' }
@@ -87,11 +115,24 @@ function validateBody(body) {
   if (action === 'extend' && !isValidEndsAt(body.endsAt)) {
     return { ok: false, message: 'Vigane päring' }
   }
+  if (action === 'notify') {
+    const hasPush = body.pushSubscription != null
+    const hasEmail = Boolean(String(body.email || '').trim())
+    if (!hasPush && !hasEmail) {
+      return { ok: false, message: 'Vigane päring' }
+    }
+  }
   // Strip unknown keys — same shape upstream expects
   const clean = { action }
   if (body.carNumber) clean.carNumber = String(body.carNumber).trim().toUpperCase()
   if (body.zone) clean.zone = String(body.zone).trim()
   if (body.endsAt) clean.endsAt = String(body.endsAt).trim()
+  if (action === 'notify' && body.pushSubscription) {
+    clean.pushSubscription = body.pushSubscription
+  }
+  if (action === 'notify' && body.email) {
+    clean.email = String(body.email).trim()
+  }
   return { ok: true, body: clean }
 }
 
