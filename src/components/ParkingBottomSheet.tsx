@@ -45,6 +45,8 @@ export type PanelRouteSummary = {
   driveDurationS: number
   walkDistanceM?: number
   walkDurationS?: number
+  walkIsFallback?: boolean
+  longWalk?: boolean
 }
 
 function blockNav(e: MouseEvent | FormEvent) {
@@ -266,51 +268,65 @@ export function ParkingBottomSheet({
         {routeSummary ? (
           <div
             data-testid="route-summary"
-            className={`mb-2.5 flex items-start gap-2 rounded-xl px-3 py-2.5 ${blockBg}`}
+            className={`mb-2.5 rounded-xl px-3 py-2.5 ${blockBg}`}
             role="status"
             aria-live="polite"
           >
-            <div className="min-w-0 flex-1">
-              <p className={`truncate text-[12px] font-bold ${ink}`}>
-                {routeSummary.label}
-              </p>
-              <p
-                className={`mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-medium ${muted}`}
-              >
-                <span className="inline-flex items-center gap-1">
-                  <span
-                    className="inline-block h-1.5 w-3 rounded-full bg-[#007AFF]"
-                    aria-hidden
-                  />
-                  Sõida {formatDistance(routeSummary.driveDistanceM)}
-                  {' · '}
-                  {formatDuration(routeSummary.driveDurationS)}
-                </span>
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1 space-y-1">
+                <p className={`truncate text-[12px] font-bold ${ink}`}>
+                  {routeSummary.label}
+                </p>
+                {routeSummary.driveDistanceM > 0 ||
+                routeSummary.driveDurationS > 0 ? (
+                  <p className="text-[11px] font-semibold text-[#007AFF]">
+                    Autoga · {formatDistance(routeSummary.driveDistanceM)}
+                    {' · '}
+                    {formatDuration(routeSummary.driveDurationS)}
+                  </p>
+                ) : null}
                 {routeSummary.walkDistanceM != null &&
                 routeSummary.walkDurationS != null ? (
-                  <span className="inline-flex items-center gap-1">
-                    <span
-                      className="inline-block h-1.5 w-3 rounded-full border border-dashed border-[#059669] bg-[#059669]/30"
-                      aria-hidden
-                    />
-                    Jalgsi {formatDistance(routeSummary.walkDistanceM)}
-                    {' · '}
-                    {formatDuration(routeSummary.walkDurationS)}
-                  </span>
+                  <p
+                    className={`flex flex-wrap items-center gap-1.5 text-[11px] font-semibold ${
+                      routeSummary.walkIsFallback ? muted : 'text-[#FF9500]'
+                    }`}
+                  >
+                    <span>
+                      {routeSummary.walkIsFallback
+                        ? 'Ligikaudne jalutuskäik'
+                        : 'Jalgsi'}{' '}
+                      · {formatDistance(routeSummary.walkDistanceM)}
+                      {' · '}
+                      {formatDuration(routeSummary.walkDurationS)}
+                    </span>
+                    {routeSummary.longWalk ? (
+                      <span className="rounded-md bg-[#FF9500]/15 px-1.5 py-0.5 text-[10px] font-bold text-[#C93400]">
+                        Pikk jalutuskäik
+                      </span>
+                    ) : null}
+                  </p>
                 ) : null}
-              </p>
+                <p className={`text-[10px] font-medium ${muted}`}>
+                  Kokku ~{' '}
+                  {formatDuration(
+                    routeSummary.driveDurationS +
+                      (routeSummary.walkDurationS ?? 0),
+                  )}
+                </p>
+              </div>
+              {onClearRoute ? (
+                <button
+                  type="button"
+                  onClick={onClearRoute}
+                  className={`tap-scale flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${chipBg} ${muted}`}
+                  aria-label="Peida marsruut"
+                  title="Peida marsruut"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
             </div>
-            {onClearRoute ? (
-              <button
-                type="button"
-                onClick={onClearRoute}
-                className={`tap-scale flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${chipBg} ${muted}`}
-                aria-label="Peida marsruut"
-                title="Peida marsruut"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            ) : null}
           </div>
         ) : null}
 

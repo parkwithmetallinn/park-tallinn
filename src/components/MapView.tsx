@@ -54,6 +54,7 @@ import {
   routeCoordsToLngLat,
   type RouteResult,
 } from '../lib/routing'
+import { distanceMeters } from '../lib/geo'
 import type { ThemeMode } from '../lib/theme'
 import type { CityId } from '../data/cities'
 import { createBasemapStyle } from '../map/createBasemapStyle'
@@ -64,6 +65,7 @@ import {
   orderParkingOverlayStack,
   ROUTE_SOURCE,
   WALK_ROUTE_CASING,
+  WALK_ROUTE_GLOW,
   WALK_ROUTE_LINE,
   WALK_ROUTE_SOURCE,
   setCityDistrictOverlays,
@@ -379,9 +381,9 @@ function delay(ms: number, signal?: { cancelled: boolean }): Promise<void> {
 /** Imperative camera API for the auto-route intro (avoids fighting flyTarget). */
 export type MapViewHandle = {
   /**
-   * Zoom out from the house → pause → zoom in to parking + house.
-   * Driving route is user → parking; walking route is parking → house.
-   * Opens the info sheet via onBeforeFitBounds before the zoom-in.
+   * Zoom in on parking → pause → fitBounds over both legs.
+   * Driving route is user → parking; walking route is parking → destination.
+   * Opens the info sheet via onBeforeFitBounds before the zoom-out.
    */
   playRouteIntro: (args: {
     /** Final destination (house / address) [lat, lng] */
@@ -394,7 +396,7 @@ export type MapViewHandle = {
     waitForWalkRoute?: Promise<RouteResult | null>
     routeWaitMs?: number
     onBeforeFitBounds?: (
-      drive: RouteResult,
+      drive: RouteResult | null,
       walk: RouteResult | null,
     ) => void
     onFailed?: () => void
@@ -699,6 +701,8 @@ export const MapView = forwardRef<
   const mapRef = useRef<MapLibreMapType | null>(null)
   const userMarkerRef = useRef<Marker | null>(null)
   const searchMarkerRef = useRef<Marker | null>(null)
+  const parkHandoverMarkerRef = useRef<Marker | null>(null)
+  const walkMidMarkerRef = useRef<Marker | null>(null)
   const fullMarkersRef = useRef<Map<string, Marker>>(new Map())
   const routeAnimatingRef = useRef(false)
   const routeIntroCancelRef = useRef({ cancelled: false })
@@ -1014,7 +1018,10 @@ export const MapView = forwardRef<
             features: [
               {
                 type: 'Feature',
-                properties: { kind: 'walk' },
+                properties: {
+                  kind: 'walk',
+                  fallback: Boolean(w.isFallback),
+                },
                 geometry: {
                   type: 'LineString',
                   coordinates: routeCoordsToLngLat(w.coords),
@@ -1808,17 +1815,26 @@ export const MapView = forwardRef<
 
     const empty = { type: 'FeatureCollection' as const, features: [] as never[] }
 
-    if (!route || !navigating) {
+    const clearHandoverMarkers = () => {
+      parkHandoverMarkerRef.current?.remove()
+      parkHandoverMarkerRef.current = null
+      walkMidMarkerRef.current?.remove()
+      walkMidMarkerRef.current = null
+    }
+
+    if ((!route && !walkRoute) || !navigating) {
       source.setData(empty)
       walkSource?.setData(empty)
+      clearHandoverMarkers()
       return
     }
 
-    const full = routeCoordsToLngLat(route.coords)
+    const full = route && route.coords.length >= 2 ? routeCoordsToLngLat(route.coords) : null
     const walkFull =
       walkRoute && walkRoute.coords.length >= 2
         ? routeCoordsToLngLat(walkRoute.coords)
         : null
+    const walkFallback = Boolean(walkRoute?.isFallback)
 
     const setDriveSlice = (coords: [number, number][]) => {
       source.setData({
@@ -1836,9 +1852,9 @@ export const MapView = forwardRef<
       })
     }
 
-    const setWalkFull = () => {
+    const setWalkSlice = (coords: [number, number][] | null) => {
       if (!walkSource) return
-      if (!walkFull) {
+      if (!coords || coords.length < 2) {
         walkSource.setData(empty)
         return
       }
@@ -1847,11 +1863,47 @@ export const MapView = forwardRef<
         features: [
           {
             type: 'Feature',
-            properties: { kind: 'walk' },
-            geometry: { type: 'LineString', coordinates: walkFull },
+            properties: { kind: 'walk', fallback: walkFallback },
+            geometry: { type: 'LineString', coordinates: coords },
           },
         ],
       })
+    }
+
+    // Parking "P" handover + mid-walk footprints (zoom ≥ 15)
+    clearHandoverMarkers()
+    if (walkFull && walkFull.length >= 2) {
+      const parkLngLat = walkFull[0]
+      const pEl = document.createElement('div')
+      pEl.className = 'park-handover-marker'
+      pEl.setAttribute('aria-hidden', 'true')
+      pEl.innerHTML =
+        '<div style="width:28px;height:28px;border-radius:9999px;background:#FF9500;color:#fff;font:700 13px/28px system-ui,sans-serif;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.28);border:2px solid #fff">P</div>'
+      parkHandoverMarkerRef.current = new Marker({ element: pEl, anchor: 'center' })
+        .setLngLat(parkLngLat as [number, number])
+        .addTo(map)
+
+      const midIdx = Math.floor(walkFull.length / 2)
+      const mid = walkFull[midIdx] ?? walkFull[0]
+      const midEl = document.createElement('div')
+      midEl.className = 'walk-mid-marker'
+      midEl.setAttribute('aria-hidden', 'true')
+      midEl.style.display = map.getZoom() >= 15 ? 'block' : 'none'
+      midEl.innerHTML =
+        '<div style="width:26px;height:26px;border-radius:9999px;background:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.22);border:1.5px solid #FF9500"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FF9500" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1"/><path d="m9 20 3-6 3 6"/><path d="m6 8 6 2 6-2"/><path d="M12 10v4"/></svg></div>'
+      walkMidMarkerRef.current = new Marker({ element: midEl, anchor: 'center' })
+        .setLngLat(mid as [number, number])
+        .addTo(map)
+
+      const onZoom = () => {
+        if (walkMidMarkerRef.current) {
+          const el = walkMidMarkerRef.current.getElement()
+          el.style.display = map.getZoom() >= 15 ? 'block' : 'none'
+        }
+      }
+      map.on('zoom', onZoom)
+      // cleanup via effect return below — stash on element
+      ;(midEl as HTMLElement & { __onZoom?: () => void }).__onZoom = onZoom
     }
 
     try {
@@ -1866,6 +1918,7 @@ export const MapView = forwardRef<
           map.moveLayer('nav-route-outline', beforeId)
         }
         if (map.getLayer('nav-route-line')) map.moveLayer('nav-route-line', beforeId)
+        if (map.getLayer(WALK_ROUTE_GLOW)) map.moveLayer(WALK_ROUTE_GLOW, beforeId)
         if (map.getLayer(WALK_ROUTE_CASING)) map.moveLayer(WALK_ROUTE_CASING, beforeId)
         if (map.getLayer(WALK_ROUTE_LINE)) map.moveLayer(WALK_ROUTE_LINE, beforeId)
         if (map.getLayer('nav-walk-route-label')) {
@@ -1876,24 +1929,48 @@ export const MapView = forwardRef<
       /* ok */
     }
 
-    // Show walk path immediately (short leg); animate the drive line
-    setWalkFull()
-
-    if (prefersReducedMotion() || full.length < 2) {
-      setDriveSlice(full)
-      return
+    if (prefersReducedMotion()) {
+      if (full) setDriveSlice(full)
+      else setDriveSlice([])
+      setWalkSlice(walkFull)
+      return () => {
+        clearHandoverMarkers()
+      }
     }
 
-    const duration = 1400
+    // Animate drive first, then walk (~1.6–2 s total)
+    setWalkSlice(null)
+    if (full) setDriveSlice([full[0], full[0]])
+    else setDriveSlice([])
+
+    const driveMs = full ? 1100 : 0
+    const walkMs = walkFull ? 700 : 0
     const started = performance.now()
+
     const tick = (now: number) => {
-      const t = Math.min(1, (now - started) / duration)
-      const eased = 1 - (1 - t) ** 3
-      const n = Math.max(2, Math.floor(1 + eased * (full.length - 1)))
-      setDriveSlice(full.slice(0, n) as [number, number][])
-      if (t < 1) {
+      const elapsed = now - started
+      if (full && elapsed < driveMs) {
+        const t = Math.min(1, elapsed / driveMs)
+        const eased = 1 - (1 - t) ** 3
+        const n = Math.max(2, Math.floor(1 + eased * (full.length - 1)))
+        setDriveSlice(full.slice(0, n) as [number, number][])
+        setWalkSlice(null)
+      } else {
+        if (full) setDriveSlice(full)
+        if (walkFull) {
+          const tw = Math.min(1, Math.max(0, (elapsed - driveMs) / Math.max(1, walkMs)))
+          const eased = 1 - (1 - tw) ** 3
+          const n = Math.max(2, Math.floor(1 + eased * (walkFull.length - 1)))
+          setWalkSlice(walkFull.slice(0, n) as [number, number][])
+        } else {
+          setWalkSlice(null)
+        }
+      }
+      if (elapsed < driveMs + walkMs) {
         routeDrawRafRef.current = requestAnimationFrame(tick)
       } else {
+        if (full) setDriveSlice(full)
+        setWalkSlice(walkFull)
         routeDrawRafRef.current = 0
       }
     }
@@ -1904,6 +1981,11 @@ export const MapView = forwardRef<
         cancelAnimationFrame(routeDrawRafRef.current)
         routeDrawRafRef.current = 0
       }
+      const midEl = walkMidMarkerRef.current?.getElement() as
+        | (HTMLElement & { __onZoom?: () => void })
+        | undefined
+      if (midEl?.__onZoom) map.off('zoom', midEl.__onZoom)
+      clearHandoverMarkers()
     }
   }, [route, walkRoute, navigating, ready])
 
@@ -1963,8 +2045,6 @@ export const MapView = forwardRef<
         const houseCenter: [number, number] = [house[1], house[0]]
         const parkingCenter: [number, number] = [parking[1], parking[0]]
         const easeOutCubic = (t: number) => 1 - (1 - t) ** 3
-        const easeInOutCubic = (t: number) =>
-          t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
 
         const fitPaddingForPanel = () => {
           const panelOpen = infoPanelOpenRef.current
@@ -1983,7 +2063,7 @@ export const MapView = forwardRef<
 
         /** Final camera: parking + house (+ origin when not far away). */
         const buildArrivalBounds = (
-          drive: RouteResult,
+          drive: RouteResult | null,
           walk: RouteResult | null,
         ) => {
           const bounds = new LngLatBounds()
@@ -1992,19 +2072,20 @@ export const MapView = forwardRef<
           if (walk) {
             for (const [lat, lng] of walk.coords) bounds.extend([lng, lat])
           }
+          if (drive) {
+            for (const [lat, lng] of drive.coords) bounds.extend([lng, lat])
+          }
           if (origin) {
-            const dPark = Math.hypot(
-              origin[0] - parking[0],
-              origin[1] - parking[1],
+            const dPark = distanceMeters(
+              origin[0],
+              origin[1],
+              parking[0],
+              parking[1],
             )
-            // ~1.2 km in degrees ≈ 0.011 — keep start in frame when nearby
-            if (dPark < 0.012) {
+            if (dPark < 1200) {
               bounds.extend([origin[1], origin[0]])
             }
           }
-          // Nudge with the last stretch of the drive so the approach isn't clipped
-          const tail = drive.coords.slice(-8)
-          for (const [lat, lng] of tail) bounds.extend([lng, lat])
           return bounds
         }
 
@@ -2012,22 +2093,30 @@ export const MapView = forwardRef<
           const reduced = prefersReducedMotion()
           const walkPromise = waitForWalkRoute ?? Promise.resolve(null)
 
-          if (reduced) {
+          const awaitLegs = async () => {
             const [drive, walk] = await Promise.all([
               Promise.race([
                 waitForRoute,
-                delay(routeWaitMs).then(() => null),
+                delay(routeWaitMs, signal).then(() => null),
               ]),
               Promise.race([
                 walkPromise,
-                delay(routeWaitMs).then(() => null),
+                delay(routeWaitMs, signal).then(() => null),
               ]),
             ])
+            return { drive, walk }
+          }
+
+          if (reduced) {
+            const { drive, walk } = await awaitLegs()
             if (signal.cancelled) return 'cancelled'
-            if (!drive || drive.coords.length < 2) {
+            if (
+              (!drive || drive.coords.length < 2) &&
+              (!walk || walk.coords.length < 2)
+            ) {
               onFailed?.()
               map.jumpTo({
-                center: houseCenter,
+                center: parkingCenter,
                 zoom: 16.5,
                 pitch: pitch3dRef.current ? NAV_PITCH : 0,
               })
@@ -2045,68 +2134,49 @@ export const MapView = forwardRef<
             return 'fitted'
           }
 
-          // ——— Step 0: land on the house (final destination stays fixed) ———
+          // ——— Step 1: zoom in on the parking spot (drive target) ———
           map.flyTo({
-            center: houseCenter,
-            zoom: 17.2,
+            center: parkingCenter,
+            zoom: 17.0,
             pitch: pitch3dRef.current ? NAV_PITCH : 0,
-            duration: 1200,
+            duration: 1100,
             essential: true,
             easing: easeOutCubic,
           })
-          await waitMoveEnd(map, 1800)
+          await waitMoveEnd(map, 1600)
           if (signal.cancelled) return 'cancelled'
 
-          // ——— Step 1: zoom OUT to reveal surrounding parking ———
-          map.easeTo({
-            center: houseCenter,
-            zoom: 14.1,
-            pitch: Math.min(40, pitch3dRef.current ? NAV_PITCH : 0),
-            duration: 1400,
-            essential: true,
-            easing: easeInOutCubic,
-          })
-          await waitMoveEnd(map, 2000)
+          // ——— Step 2: short pause ———
+          await delay(700, signal)
           if (signal.cancelled) return 'cancelled'
 
-          // Brief hold so the user can scan nearby lots
-          await delay(1200, signal)
+          const { drive, walk } = await awaitLegs()
           if (signal.cancelled) return 'cancelled'
 
-          // Wait for drive (+ walk) routes
-          const [drive, walk] = await Promise.all([
-            Promise.race([
-              waitForRoute,
-              delay(routeWaitMs, signal).then(() => null),
-            ]),
-            Promise.race([
-              walkPromise,
-              delay(routeWaitMs, signal).then(() => null),
-            ]),
-          ])
-          if (signal.cancelled) return 'cancelled'
-
-          if (!drive || drive.coords.length < 2) {
+          if (
+            (!drive || drive.coords.length < 2) &&
+            (!walk || walk.coords.length < 2)
+          ) {
             onFailed?.()
             return 'failed'
           }
 
-          // Reveal sheet + draw routes (via React state), then zoom IN
+          // Reveal sheet + draw routes (via React state), then fit both legs
           onBeforeFitBounds?.(drive, walk)
           await delay(50, signal)
           if (signal.cancelled) return 'cancelled'
 
-          // ——— Step 2: zoom IN to parking + house (balanced frame) ———
+          // ——— Step 3: zoom out fitting both legs ———
           map.fitBounds(buildArrivalBounds(drive, walk), {
             padding: fitPaddingForPanel(),
             maxZoom: 16.8,
-            duration: 1800,
+            duration: 1600,
             pitch: 0,
             bearing: 0,
             essential: true,
             easing: easeOutCubic,
           })
-          await waitMoveEnd(map, 2400)
+          await waitMoveEnd(map, 2200)
           return signal.cancelled ? 'cancelled' : 'fitted'
         } finally {
           finish()

@@ -1,7 +1,9 @@
 import {
   Box,
+  Car,
   CircleHelp,
   Clock3,
+  Footprints,
   LocateFixed,
   Map as MapIcon,
   Moon,
@@ -67,11 +69,9 @@ import {
 } from './lib/parkingClassification'
 import { spotDisplayName } from './lib/parkingDisplayName'
 import {
-  fetchRoute,
-  fetchWalkingRoute,
+  fetchRoutePlan,
   formatDuration,
   type NavRouteBundle,
-  type RouteResult,
 } from './lib/routing'
 import {
   geocodeToSearchLocation,
@@ -171,7 +171,7 @@ export default function App() {
   const routeAbort = useRef<AbortController | null>(null)
   const routeRunId = useRef(0)
   const gpsRouteToastShown = useRef(false)
-  const [routeData, setRouteData] = useState<NavRouteBundle | null>(null)
+  const [routePlan, setRoutePlan] = useState<NavRouteBundle | null>(null)
   const [routeSummaryReady, setRouteSummaryReady] = useState(false)
   const [, setRouteLoading] = useState(false)
   const [, setRouteError] = useState<string | null>(null)
@@ -287,7 +287,7 @@ export default function App() {
     routeAbort.current?.abort()
     routeAbort.current = null
     mapApiRef.current?.cancelRouteIntro()
-    setRouteData(null)
+    setRoutePlan(null)
     setRouteError(null)
     setRouteLoading(false)
     setRouteSummaryReady(false)
@@ -679,7 +679,7 @@ export default function App() {
       routeRunId.current = runId
       routeAbort.current?.abort()
       mapApiRef.current?.cancelRouteIntro()
-      setRouteData(null)
+      setRoutePlan(null)
       setRouteError(null)
       setRouteLoading(false)
       setRouteSummaryReady(false)
@@ -749,10 +749,17 @@ export default function App() {
       setRouteError(null)
       const timeout = window.setTimeout(() => ac.abort(), 8000)
 
-      const waitForRoute = fetchRoute(userLocation, parking, ac.signal)
-        .then((result) => {
+      let resolvedPlan: Awaited<ReturnType<typeof fetchRoutePlan>> | null = null
+      const planPromise = fetchRoutePlan({
+        from: userLocation,
+        parking,
+        destination: sameAsHouse ? null : house,
+        signal: ac.signal,
+      })
+        .then((plan) => {
           if (ac.signal.aborted || routeRunId.current !== runId) return null
-          return result
+          resolvedPlan = plan
+          return plan
         })
         .catch((e) => {
           if ((e as Error).name === 'AbortError') return null
@@ -775,17 +782,17 @@ export default function App() {
           }
         })
 
-      const waitForWalkRoute: Promise<RouteResult | null> = sameAsHouse
-        ? Promise.resolve(null)
-        : fetchWalkingRoute(parking, house, ac.signal)
-            .then((result) => {
-              if (ac.signal.aborted || routeRunId.current !== runId) return null
-              return result
-            })
-            .catch((e) => {
-              if ((e as Error).name === 'AbortError') return null
-              return null
-            })
+      const waitForRoute = planPromise.then((p) => p?.drive ?? null)
+      const waitForWalkRoute = planPromise.then((p) => {
+        if (p?.walkFailed && routeRunId.current === runId) {
+          setToast({
+            kind: 'info',
+            title: 'Jalgsi marsruuti ei leitud',
+            detail: 'Näitan ligikaudset teekonda',
+          })
+        }
+        return p?.walk ?? null
+      })
 
       void mapApiRef.current
         ?.playRouteIntro({
@@ -797,12 +804,22 @@ export default function App() {
           routeWaitMs: 3000,
           onBeforeFitBounds: (drive, walk) => {
             if (routeRunId.current !== runId) return
-            setRouteData({
+            if (!drive && walk) {
+              setToast({
+                kind: 'info',
+                title: 'Autosõitu ei leitud',
+                detail: 'Näitan ainult jalgsi lõiku',
+              })
+            }
+            setRoutePlan({
               drive,
               walk,
               parking,
+              destination: sameAsHouse ? null : house,
               house,
               label,
+              longWalk: resolvedPlan?.longWalk ?? false,
+              walkFailed: resolvedPlan?.walkFailed ?? Boolean(walk?.isFallback),
             })
             openInfoSheet()
           },
@@ -838,7 +855,7 @@ export default function App() {
 
     routeAbort.current?.abort()
     mapApiRef.current?.cancelRouteIntro()
-    setRouteData(null)
+    setRoutePlan(null)
     setRouteError(null)
     setRouteLoading(false)
     setRouteSummaryReady(false)
@@ -984,7 +1001,7 @@ export default function App() {
       routeRunId.current = runId
       routeAbort.current?.abort()
       mapApiRef.current?.cancelRouteIntro()
-      setRouteData(null)
+      setRoutePlan(null)
       setRouteError(null)
       setRouteLoading(false)
       setRouteSummaryReady(false)
@@ -1026,10 +1043,18 @@ export default function App() {
       routeAbort.current = ac
       setRouteLoading(true)
       const timeout = window.setTimeout(() => ac.abort(), 8000)
-      const waitForRoute = fetchRoute(userLocation, parking, ac.signal)
-        .then((result) => {
+
+      let resolvedPlan: Awaited<ReturnType<typeof fetchRoutePlan>> | null = null
+      const planPromise = fetchRoutePlan({
+        from: userLocation,
+        parking,
+        destination: sameAsHouse ? null : house,
+        signal: ac.signal,
+      })
+        .then((plan) => {
           if (ac.signal.aborted || routeRunId.current !== runId) return null
-          return result
+          resolvedPlan = plan
+          return plan
         })
         .catch((e) => {
           if ((e as Error).name === 'AbortError') return null
@@ -1049,17 +1074,17 @@ export default function App() {
           }
         })
 
-      const waitForWalkRoute: Promise<RouteResult | null> = sameAsHouse
-        ? Promise.resolve(null)
-        : fetchWalkingRoute(parking, house, ac.signal)
-            .then((result) => {
-              if (ac.signal.aborted || routeRunId.current !== runId) return null
-              return result
-            })
-            .catch((e) => {
-              if ((e as Error).name === 'AbortError') return null
-              return null
-            })
+      const waitForRoute = planPromise.then((p) => p?.drive ?? null)
+      const waitForWalkRoute = planPromise.then((p) => {
+        if (p?.walkFailed && routeRunId.current === runId) {
+          setToast({
+            kind: 'info',
+            title: 'Jalgsi marsruuti ei leitud',
+            detail: 'Näitan ligikaudset teekonda',
+          })
+        }
+        return p?.walk ?? null
+      })
 
       void mapApiRef.current
         ?.playRouteIntro({
@@ -1071,12 +1096,15 @@ export default function App() {
           routeWaitMs: 3000,
           onBeforeFitBounds: (drive, walk) => {
             if (routeRunId.current !== runId) return
-            setRouteData({
+            setRoutePlan({
               drive,
               walk,
               parking,
+              destination: sameAsHouse ? null : house,
               house,
               label,
+              longWalk: resolvedPlan?.longWalk ?? false,
+              walkFailed: resolvedPlan?.walkFailed ?? Boolean(walk?.isFallback),
             })
           },
           onFailed: () => {
@@ -1235,9 +1263,9 @@ export default function App() {
                 : null
             }
             onSearchPinClick={openSearchSheet}
-            route={routeData?.drive ?? null}
-            walkRoute={routeData?.walk ?? null}
-            navigating={Boolean(routeData)}
+            route={routePlan?.drive ?? null}
+            walkRoute={routePlan?.walk ?? null}
+            navigating={Boolean(routePlan)}
             onNavigate={openSheet}
             onEvChargerSelect={openEvCharger}
             onBackgroundClick={dismissMapOverlays}
@@ -1388,51 +1416,87 @@ export default function App() {
           ) : null}
 
           {/* Below filters only when detail panel is closed — never overlays pills */}
-          {routeSummaryReady && routeData && !selected ? (
+          {routeSummaryReady && routePlan && !selected ? (
             <div
               data-testid="route-summary"
-              className={`pointer-events-auto flex w-full animate-fade-in items-center gap-3 px-3 py-2.5 ${panel}`}
+              className={`pointer-events-auto w-full animate-fade-in px-3 py-2.5 ${panel}`}
               role="status"
               aria-live="polite"
             >
-              <div className="min-w-0 flex-1">
-                <p className={`truncate text-[13px] font-semibold ${text}`}>
-                  {routeData.label}
-                </p>
-                <p
-                  className={`mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] font-medium ${muted}`}
-                >
-                  <span className="inline-flex items-center gap-1">
-                    <span
-                      className="inline-block h-1.5 w-3 rounded-full bg-[#007AFF]"
-                      aria-hidden
-                    />
-                    Sõida {formatDistance(routeData.drive.distanceMeters)}
-                    {' · '}
-                    {formatDuration(routeData.drive.durationSeconds)}
-                  </span>
-                  {routeData.walk ? (
-                    <span className="inline-flex items-center gap-1">
-                      <span
-                        className="inline-block h-1.5 w-3 rounded-full border border-dashed border-[#059669] bg-[#059669]/30"
-                        aria-hidden
-                      />
-                      Jalgsi {formatDistance(routeData.walk.distanceMeters)}
-                      {' · '}
-                      {formatDuration(routeData.walk.durationSeconds)}
-                    </span>
+              <div className="flex items-start gap-3">
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <p className={`truncate text-[13px] font-semibold ${text}`}>
+                    {routePlan.label}
+                  </p>
+                  {routePlan.drive ? (
+                    <p
+                      className={`flex items-center gap-1.5 text-[12px] font-semibold ${
+                        dark ? 'text-[#64D2FF]' : 'text-[#007AFF]'
+                      }`}
+                    >
+                      <Car className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      <span>Autoga</span>
+                      <span className={muted}>
+                        {formatDistance(routePlan.drive.distanceMeters)}
+                        {' · '}
+                        {formatDuration(routePlan.drive.durationSeconds)}
+                      </span>
+                    </p>
                   ) : null}
-                </p>
+                  {routePlan.walk ? (
+                    <p
+                      className={`flex flex-wrap items-center gap-1.5 text-[12px] font-semibold ${
+                        routePlan.walk.isFallback
+                          ? muted
+                          : dark
+                            ? 'text-[#FF9F0A]'
+                            : 'text-[#FF9500]'
+                      }`}
+                    >
+                      <Footprints className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      <span>
+                        {routePlan.walk.isFallback
+                          ? 'Ligikaudne jalutuskäik'
+                          : 'Jalgsi'}
+                      </span>
+                      <span className={muted}>
+                        {formatDistance(routePlan.walk.distanceMeters)}
+                        {' · '}
+                        {formatDuration(routePlan.walk.durationSeconds)}
+                      </span>
+                      {routePlan.longWalk ? (
+                        <span
+                          className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
+                            dark
+                              ? 'bg-[#FF9F0A]/20 text-[#FF9F0A]'
+                              : 'bg-[#FF9500]/15 text-[#C93400]'
+                          }`}
+                        >
+                          Pikk jalutuskäik
+                        </span>
+                      ) : null}
+                    </p>
+                  ) : null}
+                  {routePlan.drive || routePlan.walk ? (
+                    <p className={`text-[11px] font-medium ${muted}`}>
+                      Kokku ~{' '}
+                      {formatDuration(
+                        (routePlan.drive?.durationSeconds ?? 0) +
+                          (routePlan.walk?.durationSeconds ?? 0),
+                      )}
+                    </p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={clearRoute}
+                  className={`tap-scale flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${chip} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#007AFF]`}
+                  aria-label="Peida marsruut"
+                  title="Peida marsruut"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={clearRoute}
-                className={`tap-scale flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${chip} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#007AFF]`}
-                aria-label="Peida marsruut"
-                title="Peida marsruut"
-              >
-                <X className="h-4 w-4" />
-              </button>
             </div>
           ) : null}
         </div>
@@ -1559,17 +1623,19 @@ export default function App() {
           activeSession={activeSession}
           sessionNotice={sessionNotice}
           routeSummary={
-            routeSummaryReady && routeData
+            routeSummaryReady && routePlan
               ? {
-                  label: routeData.label,
-                  driveDistanceM: routeData.drive.distanceMeters,
-                  driveDurationS: routeData.drive.durationSeconds,
-                  walkDistanceM: routeData.walk?.distanceMeters,
-                  walkDurationS: routeData.walk?.durationSeconds,
+                  label: routePlan.label,
+                  driveDistanceM: routePlan.drive?.distanceMeters ?? 0,
+                  driveDurationS: routePlan.drive?.durationSeconds ?? 0,
+                  walkDistanceM: routePlan.walk?.distanceMeters,
+                  walkDurationS: routePlan.walk?.durationSeconds,
+                  walkIsFallback: routePlan.walk?.isFallback,
+                  longWalk: routePlan.longWalk,
                 }
               : null
           }
-          onClearRoute={routeData ? clearRoute : undefined}
+          onClearRoute={routePlan ? clearRoute : undefined}
           dark={dark}
           onClose={() => {
             setFromNearestPicker(false)

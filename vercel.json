@@ -58,6 +58,14 @@
       "destination": "https://router.project-osrm.org/:path*"
     },
     {
+      "source": "/api/route-car/:path*",
+      "destination": "https://routing.openstreetmap.de/routed-car/:path*"
+    },
+    {
+      "source": "/api/route-foot/:path*",
+      "destination": "https://routing.openstreetmap.de/routed-foot/:path*"
+    },
+    {
       "source": "/admin",
       "destination": "/index.html"
     },

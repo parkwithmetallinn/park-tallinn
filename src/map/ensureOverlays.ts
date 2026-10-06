@@ -1096,9 +1096,10 @@ export function ensureParkingOverlaySources(
   }
   const routeMain = mode === 'dark' ? '#0A84FF' : '#007AFF'
   const routeOutline = mode === 'dark' ? '#0B1220' : '#FFFFFF'
-  /** Walking path — distinct teal, dashed */
-  const walkMain = mode === 'dark' ? '#34D399' : '#059669'
-  const walkCasing = mode === 'dark' ? '#0B1220' : '#FFFFFF'
+  /** Walking path — orange dotted footsteps */
+  const walkMain = '#FF9500'
+  const walkCasing = mode === 'dark' ? '#1C1C1E' : '#FFFFFF'
+  const walkFallback = mode === 'dark' ? '#8E8E93' : '#AEAEB2'
   const routeWidthMain = [
     'interpolate',
     ['linear'],
@@ -1185,7 +1186,28 @@ export function ensureParkingOverlaySources(
     map.setPaintProperty('nav-route-line', 'line-width', routeWidthMain)
   }
 
-  // Walking leg — dashed teal (parking → house)
+  // Walking leg glow (under casing)
+  if (!map.getLayer('nav-walk-route-glow')) {
+    map.addLayer({
+      id: 'nav-walk-route-glow',
+      type: 'line',
+      source: WALK_ROUTE_SOURCE,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': walkMain,
+        'line-width': 12,
+        'line-opacity': 0.3,
+        'line-blur': 6,
+      },
+      filter: ['!=', ['get', 'fallback'], true],
+    })
+  } else {
+    map.setPaintProperty('nav-walk-route-glow', 'line-color', walkMain)
+    map.setPaintProperty('nav-walk-route-glow', 'line-opacity', 0.3)
+    map.setPaintProperty('nav-walk-route-glow', 'line-blur', 6)
+  }
+
+  // Walking leg — orange dotted (parking → destination); grey when fallback
   if (!map.getLayer(WALK_ROUTE_CASING)) {
     map.addLayer({
       id: WALK_ROUTE_CASING,
@@ -1193,14 +1215,25 @@ export function ensureParkingOverlaySources(
       source: WALK_ROUTE_SOURCE,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': walkCasing,
-        'line-width': 7,
-        'line-opacity': 0.9,
-        'line-dasharray': [0.4, 1.6],
+        'line-color': [
+          'case',
+          ['==', ['get', 'fallback'], true],
+          walkFallback,
+          walkCasing,
+        ],
+        'line-width': ['case', ['==', ['get', 'fallback'], true], 4, 8],
+        'line-opacity': 0.95,
+        'line-dasharray': [0.1, 2],
       },
     })
   } else {
-    map.setPaintProperty(WALK_ROUTE_CASING, 'line-color', walkCasing)
+    map.setPaintProperty(WALK_ROUTE_CASING, 'line-color', [
+      'case',
+      ['==', ['get', 'fallback'], true],
+      walkFallback,
+      walkCasing,
+    ])
+    map.setPaintProperty(WALK_ROUTE_CASING, 'line-dasharray', [0.1, 2])
   }
   if (!map.getLayer(WALK_ROUTE_LINE)) {
     map.addLayer({
@@ -1209,14 +1242,25 @@ export function ensureParkingOverlaySources(
       source: WALK_ROUTE_SOURCE,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': walkMain,
-        'line-width': 4,
+        'line-color': [
+          'case',
+          ['==', ['get', 'fallback'], true],
+          walkFallback,
+          walkMain,
+        ],
+        'line-width': ['case', ['==', ['get', 'fallback'], true], 2.5, 5],
         'line-opacity': 1,
-        'line-dasharray': [0.4, 1.6],
+        'line-dasharray': [0.1, 2],
       },
     })
   } else {
-    map.setPaintProperty(WALK_ROUTE_LINE, 'line-color', walkMain)
+    map.setPaintProperty(WALK_ROUTE_LINE, 'line-color', [
+      'case',
+      ['==', ['get', 'fallback'], true],
+      walkFallback,
+      walkMain,
+    ])
+    map.setPaintProperty(WALK_ROUTE_LINE, 'line-dasharray', [0.1, 2])
   }
   // Soft label along the walk path
   if (!map.getLayer('nav-walk-route-label')) {
@@ -1226,7 +1270,12 @@ export function ensureParkingOverlaySources(
       source: WALK_ROUTE_SOURCE,
       layout: {
         'symbol-placement': 'line-center',
-        'text-field': 'Jalgsi',
+        'text-field': [
+          'case',
+          ['==', ['get', 'fallback'], true],
+          'Ligikaudne jalutuskäik',
+          'Jalgsi',
+        ],
         'text-font': ['Noto Sans Bold'],
         'text-size': 11,
         'text-allow-overlap': false,
@@ -1234,13 +1283,23 @@ export function ensureParkingOverlaySources(
         'text-padding': 4,
       },
       paint: {
-        'text-color': walkMain,
+        'text-color': [
+          'case',
+          ['==', ['get', 'fallback'], true],
+          walkFallback,
+          walkMain,
+        ],
         'text-halo-color': walkCasing,
         'text-halo-width': 1.6,
       },
     })
   } else {
-    map.setPaintProperty('nav-walk-route-label', 'text-color', walkMain)
+    map.setPaintProperty('nav-walk-route-label', 'text-color', [
+      'case',
+      ['==', ['get', 'fallback'], true],
+      walkFallback,
+      walkMain,
+    ])
     map.setPaintProperty('nav-walk-route-label', 'text-halo-color', walkCasing)
   }
 
@@ -1494,3 +1553,4 @@ export function setParkingLayerVisibility(
 }
 
 export { ROUTE_SOURCE, WALK_ROUTE_SOURCE, WALK_ROUTE_LINE, WALK_ROUTE_CASING }
+export const WALK_ROUTE_GLOW = 'nav-walk-route-glow'
