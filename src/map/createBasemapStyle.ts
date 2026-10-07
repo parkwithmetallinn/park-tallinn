@@ -274,6 +274,8 @@ function buildInlineStyle(mode: ThemeMode): StyleSpecification {
           'text-color': p.label,
           'text-halo-color': p.labelHalo,
           'text-halo-width': 1.4,
+          'icon-opacity-transition': { duration: 0, delay: 0 },
+          'text-opacity-transition': { duration: 0, delay: 0 },
         },
       },
     ],

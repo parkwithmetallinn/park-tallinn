@@ -45,6 +45,7 @@ import {
   PARKING_LOTS_OUTLINE_LAYER,
   PARKING_LOTS_SOURCE,
 } from './streetLineTheme'
+import { disableSymbolLayerFades } from './symbolFade'
 import { ZOOM } from './zoom'
 
 const ROUTE_SOURCE = 'nav-route'
@@ -1306,6 +1307,8 @@ export function ensureParkingOverlaySources(
   syncLodZoomLimits(map)
   syncCollisionProps(map)
   applyOverlayThemePaints(map, mode)
+  // Kill symbol opacity fades (mobile pan stutter)
+  disableSymbolLayerFades(map)
   // Fresh style/layers start hidden — MapView reveals after basemap idle.
   parkingOverlaysRevealed = false
   setParkingOverlaysRevealed(map, false)

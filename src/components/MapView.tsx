@@ -12,6 +12,7 @@ import {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from 'react'
@@ -86,6 +87,10 @@ import {
   PARKING_LOTS_LABEL_LAYER,
   PARKING_LOTS_SOURCE,
 } from '../map/streetLineTheme'
+import {
+  disableSymbolLayerFades,
+  SYMBOL_NO_FADE_PAINT,
+} from '../map/symbolFade'
 import { NAV_PITCH } from '../map/theme'
 import { ZOOM } from '../map/zoom'
 import {
@@ -253,6 +258,7 @@ function ensureNearestPricePillLayers(map: MapLibreMapType) {
         ],
         'text-halo-color': '#FFFFFF',
         'text-halo-width': 1.2,
+        ...SYMBOL_NO_FADE_PAINT,
       },
     })
   }
@@ -409,10 +415,23 @@ function updateMyPinEl(
 
 function makeFullSpotEl() {
   const wrap = document.createElement('div')
-  wrap.className = 'full-spot-badge'
-  wrap.setAttribute('aria-label', 'Parkla on täis')
-  wrap.textContent = 'TÄIS'
+  wrap.className = 'full-spot-badge is-community'
+  wrap.setAttribute('aria-label', 'TÄIS (Kogukond)')
+  const pulse = document.createElement('span')
+  pulse.className = 'full-spot-pulse'
+  pulse.setAttribute('aria-hidden', 'true')
+  const label = document.createElement('span')
+  label.className = 'full-spot-label'
+  label.textContent = 'TÄIS (Kogukond)'
+  wrap.append(pulse, label)
   return wrap
+}
+
+/** Stable marker payloads — memoized so pan/zoom does not rebuild HTML markers. */
+type FullAlertMarker = {
+  id: string
+  lat: number
+  lng: number
 }
 
 function prefersReducedMotion() {
@@ -492,13 +511,15 @@ function filterToLayers(
   | 'clock'
   | 'unclassified'
   | 'paid'
-  | 'ev' {
+  | 'ev'
+  | 'alerts' {
   if (filter === 'all') return 'all'
   if (filter === 'free_street') return 'verified_free'
   if (filter === 'timed') return 'clock'
   if (filter === 'paid') return 'paid'
   if (filter === 'other') return 'unclassified'
   if (filter === 'ev') return 'ev'
+  if (filter === 'alerts') return 'alerts'
   return 'all'
 }
 
@@ -531,6 +552,7 @@ function applyDualLayerFilter(
   streetFc: StreetParkingCollection | null,
   suppressedIds: Set<string> = new Set(),
   cityId: CityId = 'tallinn',
+  alertIds: Set<string> = new Set(),
 ) {
   const layers = filterToLayers(filter)
 
@@ -549,6 +571,41 @@ function applyDualLayerFilter(
     )
     ;(map.getSource(STREET_PARKING_SOURCE) as GeoJSONSource | undefined)?.setData(
       empty,
+    )
+    return
+  }
+
+  // Community alerts only — keep lots/streets that have an active isFull report
+  if (layers === 'alerts') {
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    const keep = (id: string) => alertIds.has(id)
+    const polysAlerts: PreciseParkingCollection = preciseFc
+      ? {
+          type: 'FeatureCollection',
+          features: withoutParnuEvFeatures(
+            withoutSuppressed(preciseFc.features, suppressedIds).filter((f) =>
+              keep(f.properties.id),
+            ),
+            cityId,
+          ),
+        }
+      : empty
+    const streetsAlerts: StreetParkingCollection = streetFc
+      ? {
+          type: 'FeatureCollection',
+          features: withoutParnuEvFeatures(
+            withoutSuppressed(streetFc.features, suppressedIds).filter((f) =>
+              keep(f.properties.id),
+            ),
+            cityId,
+          ),
+        }
+      : empty
+    ;(map.getSource(PRECISE_PARKING_SOURCE) as GeoJSONSource | undefined)?.setData(
+      polysAlerts as never,
+    )
+    ;(map.getSource(STREET_PARKING_SOURCE) as GeoJSONSource | undefined)?.setData(
+      streetsAlerts as never,
     )
     return
   }
@@ -832,8 +889,30 @@ export const MapView = forwardRef<
   const routeRef = useRef(route)
   const navigatingRef = useRef(navigating)
   const suppressedRef = useRef<Set<string>>(new Set())
+  /** Active community isFull alert ids (for Hoiatusega filter + markers). */
+  const alertIdsRef = useRef<Set<string>>(new Set())
   const loadGenRef = useRef(0)
   const [ready, setReady] = useState(false)
+
+  const alertMarkerSpecs = useMemo((): FullAlertMarker[] => {
+    const ids = new Set(
+      fullSpotIds instanceof Set
+        ? fullSpotIds
+        : Array.isArray(fullSpotIds)
+          ? fullSpotIds
+          : [],
+    )
+    alertIdsRef.current = ids
+    if (ids.size === 0) return []
+    const byId = new Map(spots.map((s) => [s.id, s]))
+    const out: FullAlertMarker[] = []
+    for (const id of ids) {
+      const spot = byId.get(id) ?? parkingIndex.getById(id)
+      if (!spot) continue
+      out.push({ id, lat: spot.lat, lng: spot.lng })
+    }
+    return out
+  }, [fullSpotIds, spots])
 
   onNavigateRef.current = onNavigate
   onEvChargerSelectRef.current = onEvChargerSelect
@@ -870,6 +949,9 @@ export const MapView = forwardRef<
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
 
+    const coarsePointer =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(pointer: coarse)').matches
     const map = new MapLibreMap({
       container: containerRef.current,
       style: createBasemapStyle(themeRef.current),
@@ -878,11 +960,20 @@ export const MapView = forwardRef<
       pitch: pitch3dRef.current ? NAV_PITCH : 0,
       bearing: pitch3dRef.current ? -22 : 0,
       maxPitch: 70,
+      // Zero label fade — removes opacity animation stutter on mobile pan
+      fadeDuration: 0,
+      // Cap DPR on phones — full 3x canvases tank pan FPS
+      pixelRatio: Math.min(
+        typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
+        coarsePointer ? 2 : 2.5,
+      ),
       attributionControl: { compact: true },
       canvasContextAttributes: {
-        antialias: true,
+        // MSAA is expensive on mobile GPUs during pan
+        antialias: !coarsePointer,
         failIfMajorPerformanceCaveat: false,
-        preserveDrawingBuffer: true,
+        // preserveDrawingBuffer forces a full buffer copy every frame — stutter
+        preserveDrawingBuffer: false,
       },
     })
 
@@ -1102,64 +1193,66 @@ export const MapView = forwardRef<
       const visibleSpots =
         layers === 'ev'
           ? []
-          : layers === 'all'
-            ? result.spots
-            : layers === 'verified_free'
-              ? result.spots.filter((s) => isUnlimitedFreeParking(s))
-              : layers === 'clock'
-                ? result.spots.filter((s) => isClockLimitedParking(s))
-                : layers === 'unclassified'
-                  ? result.spots.filter((s) =>
-                      isUnclassifiedParking({
-                        layer: s.layer,
-                        price_per_hour: s.price_per_hour,
-                        free_minutes: s.free_minutes,
-                        zone_code: s.zone_code,
-                        operator: s.operator,
-                        verified_free: s.layer === 'free_street',
-                        type: s.type,
-                        timeLimit: s.timeLimit,
-                        name: s.name,
-                        desc: s.desc,
-                        badge: s.badge,
-                      }),
-                    )
-                  : layers === 'paid'
-                    ? result.spots.filter(
-                        (s) =>
-                          s.layer !== 'free_street' &&
-                          s.layer !== 'timed' &&
-                          s.layer !== 'ev' &&
-                          !isClockLimitedParking(s) &&
-                          !isUnclassifiedParking({
-                            layer: s.layer,
-                            price_per_hour: s.price_per_hour,
-                            free_minutes: s.free_minutes,
-                            zone_code: s.zone_code,
-                            operator: s.operator,
-                            // free_street already excluded above
-                            verified_free: false,
-                            type: s.type,
-                            timeLimit: s.timeLimit,
-                            name: s.name,
-                            desc: s.desc,
-                            badge: s.badge,
-                          }) &&
-                          (s.price_per_hour > 0 ||
-                            [
-                              'europark',
-                              'snabb',
-                              'citypark',
-                              'uhisteenused',
-                              'parkit',
-                              'park_ride',
-                              'loading',
-                              'municipal',
-                            ].includes(s.layer)),
+          : layers === 'alerts'
+            ? result.spots.filter((s) => alertIdsRef.current.has(s.id))
+            : layers === 'all'
+              ? result.spots
+              : layers === 'verified_free'
+                ? result.spots.filter((s) => isUnlimitedFreeParking(s))
+                : layers === 'clock'
+                  ? result.spots.filter((s) => isClockLimitedParking(s))
+                  : layers === 'unclassified'
+                    ? result.spots.filter((s) =>
+                        isUnclassifiedParking({
+                          layer: s.layer,
+                          price_per_hour: s.price_per_hour,
+                          free_minutes: s.free_minutes,
+                          zone_code: s.zone_code,
+                          operator: s.operator,
+                          verified_free: s.layer === 'free_street',
+                          type: s.type,
+                          timeLimit: s.timeLimit,
+                          name: s.name,
+                          desc: s.desc,
+                          badge: s.badge,
+                        }),
                       )
-                    : Array.isArray(layers)
-                      ? result.spots.filter((s) => layers.includes(s.layer))
-                      : result.spots
+                    : layers === 'paid'
+                      ? result.spots.filter(
+                          (s) =>
+                            s.layer !== 'free_street' &&
+                            s.layer !== 'timed' &&
+                            s.layer !== 'ev' &&
+                            !isClockLimitedParking(s) &&
+                            !isUnclassifiedParking({
+                              layer: s.layer,
+                              price_per_hour: s.price_per_hour,
+                              free_minutes: s.free_minutes,
+                              zone_code: s.zone_code,
+                              operator: s.operator,
+                              // free_street already excluded above
+                              verified_free: false,
+                              type: s.type,
+                              timeLimit: s.timeLimit,
+                              name: s.name,
+                              desc: s.desc,
+                              badge: s.badge,
+                            }) &&
+                            (s.price_per_hour > 0 ||
+                              [
+                                'europark',
+                                'snabb',
+                                'citypark',
+                                'uhisteenused',
+                                'parkit',
+                                'park_ride',
+                                'loading',
+                                'municipal',
+                              ].includes(s.layer)),
+                        )
+                      : Array.isArray(layers)
+                        ? result.spots.filter((s) => layers.includes(s.layer))
+                        : result.spots
 
       const empty = { type: 'FeatureCollection' as const, features: [] }
       let geo =
@@ -1237,7 +1330,9 @@ export const MapView = forwardRef<
         streetRawFcRef.current ?? streetFcRef.current,
         suppressedRef.current,
         cityIdRef.current,
+        alertIdsRef.current,
       )
+      disableSymbolLayerFades(map)
       applySelectionHighlight(map, selectedIdRef.current)
       setDistrictDebugVisible(map, districtDebugRef.current)
       setNearestPricePillData(
@@ -1388,6 +1483,7 @@ export const MapView = forwardRef<
             streetRawFcRef.current,
             suppressedRef.current,
             cityIdRef.current,
+            alertIdsRef.current,
           )
           const spots = preciseCollectionToSpots({
             type: 'FeatureCollection',
@@ -1416,6 +1512,7 @@ export const MapView = forwardRef<
             empty,
             suppressedRef.current,
             cityIdRef.current,
+            alertIdsRef.current,
           )
           onStreetSpotsLoadedRef.current?.([])
           applySelectionHighlight(map, selectedIdRef.current)
@@ -1696,6 +1793,7 @@ export const MapView = forwardRef<
         emptyStreets,
         suppressedRef.current,
         cityIdRef.current,
+        alertIdsRef.current,
       )
       const spots = preciseCollectionToSpots({
         type: 'FeatureCollection',
@@ -1719,6 +1817,7 @@ export const MapView = forwardRef<
           emptyStreets,
           suppressedRef.current,
           cityIdRef.current,
+          alertIdsRef.current,
         )
         const lots = preciseCollectionToSpots({
           type: 'FeatureCollection',
@@ -1747,8 +1846,8 @@ export const MapView = forwardRef<
         map,
         Object.fromEntries(PARKING_PROVIDERS.map((p) => [p, true])),
       )
-    } else if (layers === 'ev') {
-      // Elektriautolaadijad — hide parking pins; EV source owns the map
+    } else if (layers === 'ev' || layers === 'alerts') {
+      // Elektriautolaadijad / Hoiatusega — hide pin layers; lots/alerts own the view
       setParkingLayerVisibility(
         map,
         Object.fromEntries(
@@ -1810,6 +1909,7 @@ export const MapView = forwardRef<
       streetRawFcRef.current ?? streetFcRef.current,
       suppressedRef.current,
       cityIdRef.current,
+      alertIdsRef.current,
     )
     // EV chargers: show under Kõik + Elektriautolaadijad
     if (evFcRef.current) {
@@ -2009,43 +2109,50 @@ export const MapView = forwardRef<
     }
   }, [draftPin, ready, theme])
 
-  /** Grey TÄIS badges for crowdsourced full lots. */
+  /** Pulsating community TÄIS markers — driven by memoized specs (not pan/zoom). */
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
-    const ids = new Set(
-      fullSpotIds instanceof Set
-        ? fullSpotIds
-        : Array.isArray(fullSpotIds)
-          ? fullSpotIds
-          : [],
-    )
-    const byId = new Map(spots.map((s) => [s.id, s]))
     const markers = fullMarkersRef.current
+    const nextIds = new Set(alertMarkerSpecs.map((m) => m.id))
 
     for (const [id, marker] of markers) {
-      if (!ids.has(id)) {
+      if (!nextIds.has(id)) {
         marker.remove()
         markers.delete(id)
       }
     }
-    for (const id of ids) {
-      const spot = byId.get(id) ?? parkingIndex.getById(id)
-      if (!spot) continue
-      const existing = markers.get(id)
+    for (const spec of alertMarkerSpecs) {
+      const existing = markers.get(spec.id)
       if (existing) {
-        existing.setLngLat([spot.lng, spot.lat])
+        existing.setLngLat([spec.lng, spec.lat])
       } else {
         const m = new Marker({
           element: makeFullSpotEl(),
           anchor: 'center',
         })
-          .setLngLat([spot.lng, spot.lat])
+          .setLngLat([spec.lng, spec.lat])
           .addTo(map)
-        markers.set(id, m)
+        markers.set(spec.id, m)
       }
     }
-  }, [fullSpotIds, spots, ready])
+
+    // Re-apply alerts-only geometry when the remote set changes
+    if (filterRef.current === 'alerts') {
+      applyDualLayerFilter(
+        map,
+        'alerts',
+        preciseFcRef.current,
+        streetRawFcRef.current ?? streetFcRef.current,
+        suppressedRef.current,
+        cityIdRef.current,
+        alertIdsRef.current,
+      )
+      void (
+        map as MapLibreMapType & { __refreshViewport?: () => void }
+      ).__refreshViewport?.()
+    }
+  }, [alertMarkerSpecs, ready])
 
   useEffect(() => {
     const map = mapRef.current

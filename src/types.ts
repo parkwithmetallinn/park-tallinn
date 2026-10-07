@@ -156,6 +156,8 @@ export type FilterId =
   | 'paid'
   | 'other'
   | 'ev'
+  /** Community isFull alerts only */
+  | 'alerts'
 
 /** Legacy UI type labels (report form / older filters) */
 export type SpotType = NonNullable<ParkingSpot['type']>

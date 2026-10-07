@@ -60,6 +60,12 @@ import {
   type AlternativeParking,
 } from './lib/alternatives'
 import { distanceMeters, formatDistance } from './lib/geo'
+import {
+  COMMUNITY_REPORTS_POLL_MS,
+  communityReportIds,
+  fetchCommunityReports,
+  postCommunityFullReport,
+} from './lib/communityReports'
 import { loadFullSpotIds, markSpotFull } from './lib/fullSpots'
 import {
   isClockLimitedParking,
@@ -120,6 +126,7 @@ const FILTERS: { id: FilterId; label: string; color?: string }[] = [
   { id: 'paid', label: 'Tasuline', color: PARKING_COLOR_PAID },
   { id: 'ev', label: 'Elektriautolaadijad', color: EV_COLOR_CYAN },
   { id: 'other', label: 'Muud / Era', color: PARKING_COLOR_UNKNOWN },
+  { id: 'alerts', label: '⚠️ Hoiatusega', color: '#FF3B30' },
 ]
 
 /** Marker click does not auto-start a route (search selection does). */
@@ -265,13 +272,38 @@ export default function App() {
 
   // Nominatim geocoding owned by useSearchGeocode (debounce + pending Enter)
 
-  // Prune expired "full" marks periodically
+  // Local TTL prune + live community reports (GET /api/reports every 30s)
   useEffect(() => {
+    let cancelled = false
+    const mergeFullIds = (remoteIds: Set<string>) => {
+      const local = loadFullSpotIds()
+      const next = new Set<string>([...local, ...remoteIds])
+      setFullSpotIds(next)
+    }
+
+    const refresh = async (signal?: AbortSignal) => {
+      const reports = await fetchCommunityReports(signal)
+      if (cancelled) return
+      mergeFullIds(communityReportIds(reports))
+    }
+
     setFullSpotIds(loadFullSpotIds())
-    const id = window.setInterval(() => {
-      setFullSpotIds(loadFullSpotIds())
+    const ac = new AbortController()
+    void refresh(ac.signal)
+
+    const pollId = window.setInterval(() => {
+      void refresh()
+    }, COMMUNITY_REPORTS_POLL_MS)
+    const pruneId = window.setInterval(() => {
+      void refresh()
     }, 60_000)
-    return () => window.clearInterval(id)
+
+    return () => {
+      cancelled = true
+      ac.abort()
+      window.clearInterval(pollId)
+      window.clearInterval(pruneId)
+    }
   }, [])
 
   const clearRoute = useCallback(() => {
@@ -389,6 +421,10 @@ export default function App() {
       // Elektriautolaadijad — map uses dedicated EV GeoJSON; no parking pins
       return []
     }
+    if (filter === 'alerts') {
+      // Hoiatusega — only spots with active community isFull reports
+      return allSpots.filter((s) => fullSpotIds.has(s.id))
+    }
     if (filter === 'free_street') {
       // Tasuta: unlimited free only — no clock / free_minutes window
       return allSpots.filter((s) => isUnlimitedFreeParking(s))
@@ -457,7 +493,7 @@ export default function App() {
       )
     }
     return allSpots
-  }, [allSpots, filter])
+  }, [allSpots, filter, fullSpotIds])
 
   /** Live search suggestions: my pins + parking + geocode (only fresh results). */
   const searchSuggestions = useMemo((): SearchSuggestion[] => {
@@ -1450,6 +1486,19 @@ export default function App() {
       if (opts?.markFullId) {
         nextFull = markSpotFull(opts.markFullId)
         setFullSpotIds(nextFull)
+        const marked =
+          allSpots.find((s) => s.id === opts.markFullId) ?? selected
+        void postCommunityFullReport({
+          spotId: opts.markFullId,
+          lat: marked?.lat,
+          lng: marked?.lng,
+          isFull: true,
+        }).then((reports) => {
+          const remote = communityReportIds(reports)
+          setFullSpotIds(
+            new Set([...loadFullSpotIds(), ...remote]),
+          )
+        })
       }
 
       const exclude = new Set<string>([...nextFull])

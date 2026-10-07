@@ -21,6 +21,128 @@ function htmlSeoEnvPlugin(env: Record<string, string>): Plugin {
   }
 }
 
+/**
+ * Dev-only GET/POST /api/reports — mirrors api/reports.js for Vite.
+ * Production uses the Vercel serverless function.
+ */
+function communityReportsApiPlugin(): Plugin {
+  const TTL_MS = 60 * 60 * 1000
+  type Row = {
+    spotId: string
+    isFull: boolean
+    lat?: number
+    lng?: number
+    until: number
+  }
+  const store = new Map<string, Row>()
+
+  const prune = (now = Date.now()) => {
+    for (const [id, row] of store) {
+      if (row.until <= now) store.delete(id)
+    }
+  }
+
+  const listActive = (now = Date.now()) => {
+    prune(now)
+    return [...store.values()]
+      .filter((r) => r.isFull)
+      .map((r) => ({
+        spotId: r.spotId,
+        isFull: true as const,
+        lat: r.lat,
+        lng: r.lng,
+        until: r.until,
+      }))
+  }
+
+  const readBody = async (req: {
+    on: (ev: string, cb: (chunk?: unknown) => void) => void
+  }): Promise<unknown> =>
+    new Promise((resolve) => {
+      const chunks: Buffer[] = []
+      req.on('data', (c) => {
+        chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(String(c)))
+      })
+      req.on('end', () => {
+        const raw = Buffer.concat(chunks).toString('utf8')
+        if (!raw) {
+          resolve(null)
+          return
+        }
+        try {
+          resolve(JSON.parse(raw))
+        } catch {
+          resolve(null)
+        }
+      })
+    })
+
+  return {
+    name: 'community-reports-api',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        const url = req.url?.split('?')[0] ?? ''
+        if (url !== '/api/reports') {
+          next()
+          return
+        }
+
+        const send = (status: number, body: unknown) => {
+          res.statusCode = status
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify(body))
+        }
+
+        if (req.method === 'OPTIONS') {
+          res.statusCode = 204
+          res.end()
+          return
+        }
+
+        if (req.method === 'GET') {
+          send(200, { success: true, reports: listActive() })
+          return
+        }
+
+        if (req.method === 'POST') {
+          const body = (await readBody(req as never)) as Record<
+            string,
+            unknown
+          > | null
+          const spotId = String(body?.spotId ?? body?.id ?? '').trim()
+          if (!spotId) {
+            send(400, { success: false, message: 'Vigane päring' })
+            return
+          }
+          const isFull = body?.isFull !== false
+          const now = Date.now()
+          if (!isFull) {
+            store.delete(spotId)
+          } else {
+            store.set(spotId, {
+              spotId,
+              isFull: true,
+              lat:
+                typeof body?.lat === 'number' && Number.isFinite(body.lat)
+                  ? body.lat
+                  : undefined,
+              lng:
+                typeof body?.lng === 'number' && Number.isFinite(body.lng)
+                  ? body.lng
+                  : undefined,
+              until: now + TTL_MS,
+            })
+          }
+          send(200, { success: true, reports: listActive(now) })
+          return
+        }
+
+        send(405, { success: false, message: 'Method not allowed' })
+      })
+    },
+  }
+}
+
 export default defineConfig(({ mode }) => {
   // Server-only secrets (no VITE_ prefix — never exposed to the browser)
   const env = loadEnv(mode, process.cwd(), '')
@@ -40,7 +162,12 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    plugins: [react(), tailwindcss(), htmlSeoEnvPlugin(env)],
+    plugins: [
+      react(),
+      tailwindcss(),
+      htmlSeoEnvPlugin(env),
+      communityReportsApiPlugin(),
+    ],
     worker: {
       format: 'es',
     },

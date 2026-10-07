@@ -405,6 +405,8 @@ export function ensureEvChargerLayers(map: MapLibreMapType) {
         'text-color': '#FFFFFF',
         'text-halo-color': EV_COLOR_BLUE,
         'text-halo-width': 0.8,
+        'icon-opacity-transition': { duration: 0, delay: 0 },
+        'text-opacity-transition': { duration: 0, delay: 0 },
       },
     })
   }

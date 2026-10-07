@@ -576,7 +576,23 @@ body {
   }
 }
 
+@keyframes pulse {
+  0% {
+    transform: scale(0.55);
+    opacity: 0.75;
+  }
+  70% {
+    transform: scale(1.85);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.85);
+    opacity: 0;
+  }
+}
+
 .full-spot-badge {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -589,16 +605,60 @@ body {
   font-family: var(--font-sans);
   font-size: 10px;
   font-weight: 800;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   border: 2px solid #fff;
   box-shadow: 0 4px 12px rgb(15 23 42 / 0.25);
   pointer-events: none;
   user-select: none;
+  white-space: nowrap;
+}
+
+.full-spot-badge.is-community {
+  background: #ff3b30;
+  min-width: 0;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  z-index: 2;
+}
+
+.full-spot-pulse {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  border-radius: 9999px;
+  border: 2.5px solid #ff3b30;
+  background: rgb(255 59 48 / 0.22);
+  animation: pulse 1.6s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+  pointer-events: none;
+  z-index: 1;
 }
 
 .map-dark .full-spot-badge {
   border-color: #1c1c1e;
   background: #636366;
+}
+
+.map-dark .full-spot-badge.is-community {
+  background: #ff453a;
+  border-color: #1c1c1e;
+}
+
+.map-dark .full-spot-pulse {
+  border-color: #ff453a;
+  background: rgb(255 69 58 / 0.28);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .full-spot-pulse {
+    animation: none;
+    opacity: 0.45;
+    transform: scale(1.25);
+  }
 }
 
 /* Nearest-parking glass price pills (Apple/Waze style — never numbered) */
