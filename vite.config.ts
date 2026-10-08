@@ -109,16 +109,23 @@ function communityReportsApiPlugin(): Plugin {
             string,
             unknown
           > | null
-          const spotId = String(body?.spotId ?? body?.id ?? '').trim()
+          const spotId = String(
+            body?.parkingId ?? body?.spotId ?? body?.id ?? '',
+          ).trim()
           if (!spotId) {
             send(400, { success: false, message: 'Vigane päring' })
             return
           }
-          const isFull = body?.isFull !== false
+          const statusType =
+            typeof body?.statusType === 'string' ? body.statusType.trim() : ''
           const now = Date.now()
-          if (!isFull) {
+          const isFull =
+            statusType === 'full' ||
+            statusType === 'closed' ||
+            (!statusType && body?.isFull !== false)
+          if (!isFull && statusType !== 'prices') {
             store.delete(spotId)
-          } else {
+          } else if (isFull) {
             store.set(spotId, {
               spotId,
               isFull: true,
@@ -133,7 +140,11 @@ function communityReportsApiPlugin(): Plugin {
               until: now + TTL_MS,
             })
           }
-          send(200, { success: true, reports: listActive(now) })
+          send(200, {
+            success: true,
+            message: 'Aitäh! Sinu teavitus aitab teisi autojuhte.',
+            reports: listActive(now),
+          })
           return
         }
 

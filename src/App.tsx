@@ -26,6 +26,7 @@ import {
 } from './components/NearestParkingPanel'
 import { collectNearestAround } from './lib/nearestParking'
 import { ParkingDetailPanel } from './components/ParkingDetailPanel'
+import type { CrowdStatusType } from './components/CrowdReportModal'
 import { ParkingSessionModal } from './components/ParkingSessionModal'
 import { OfflineBanner } from './components/OfflineBanner'
 import { ReportModal, type ReportModalContext } from './components/ReportModal'
@@ -1543,6 +1544,28 @@ export default function App() {
     runFindAlternatives({ markFullId: selected.id, autoGo: true })
   }, [selected, runFindAlternatives])
 
+  const handleCrowdReportSuccess = useCallback(
+    (payload: {
+      statusType: CrowdStatusType
+      comment: string
+      message: string
+    }) => {
+      setToast({
+        kind: 'success',
+        title: payload.message,
+      })
+      if (
+        selected &&
+        (payload.statusType === 'full' || payload.statusType === 'closed')
+      ) {
+        // API already stored the report — only sync local TTL + suggest alternatives
+        setFullSpotIds(markSpotFull(selected.id))
+        runFindAlternatives({ autoGo: true })
+      }
+    },
+    [selected, runFindAlternatives, setToast],
+  )
+
   const handleWidenRadius = useCallback(() => {
     runFindAlternatives({ maxRadius: ALT_RADIUS_WIDE, autoGo: true })
   }, [runFindAlternatives])
@@ -2078,6 +2101,7 @@ export default function App() {
           isFull={fullSpotIds.has(selected.id)}
           onFindAnother={handleFindAnother}
           onMarkFull={handleMarkFull}
+          onCrowdReportSuccess={handleCrowdReportSuccess}
           onWidenRadius={handleWidenRadius}
           onSelectAlternative={handleSelectAlternative}
         />

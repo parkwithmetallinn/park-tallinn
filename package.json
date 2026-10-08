@@ -25,6 +25,7 @@
   "dependencies": {
     "@capacitor/core": "^8.5.2",
     "@capacitor/ios": "^8.5.2",
+    "@supabase/supabase-js": "^2.117.3",
     "@tanstack/react-query": "^5.104.0",
     "@turf/area": "^7.4.0",
     "@turf/bbox": "^7.4.0",
