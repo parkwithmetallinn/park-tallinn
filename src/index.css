@@ -581,88 +581,140 @@ body {
   }
 }
 
-@keyframes pulse {
+/* Community "parkla on täis" — compact red pulse (map + sheet chip) */
+@keyframes parking-full-ring {
   0% {
-    transform: scale(0.55);
-    opacity: 0.75;
-  }
-  70% {
-    transform: scale(1.85);
-    opacity: 0;
+    transform: scale(1);
+    opacity: 0.6;
   }
   100% {
-    transform: scale(1.85);
+    transform: scale(2.2);
     opacity: 0;
   }
 }
 
-.full-spot-badge {
+@keyframes parking-full-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+
+.parking-full-indicator {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 44px;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: 9999px;
-  background: #8e8e93;
-  color: #fff;
-  font-family: var(--font-sans);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  border: 2px solid #fff;
-  box-shadow: 0 4px 12px rgb(15 23 42 / 0.25);
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
   pointer-events: none;
   user-select: none;
-  white-space: nowrap;
-}
-
-.full-spot-badge.is-community {
-  background: #ff3b30;
-  min-width: 0;
-  height: 26px;
-  padding: 0 10px;
-  font-size: 9px;
-  letter-spacing: 0.02em;
   z-index: 2;
 }
 
-.full-spot-pulse {
+.parking-full-indicator--inline {
+  width: 14px;
+  height: 14px;
+}
+
+.parking-full-indicator__core {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #e53935;
+  color: #fff;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgb(229 57 53 / 0.45);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  animation: parking-full-breathe 1.6s ease-in-out infinite;
+}
+
+.parking-full-indicator--inline .parking-full-indicator__core {
+  width: 12px;
+  height: 12px;
+  font-size: 8px;
+  border-width: 1.5px;
+  box-shadow: 0 1px 4px rgb(229 57 53 / 0.4);
+}
+
+.parking-full-indicator__ring {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 28px;
-  height: 28px;
-  margin: -14px 0 0 -14px;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
   border-radius: 9999px;
-  border: 2.5px solid #ff3b30;
-  background: rgb(255 59 48 / 0.22);
-  animation: pulse 1.6s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+  border: 2px solid #e53935;
+  background: transparent;
+  animation: parking-full-ring 1.6s ease-out infinite;
   pointer-events: none;
   z-index: 1;
 }
 
-.map-dark .full-spot-badge {
-  border-color: #1c1c1e;
-  background: #636366;
+.parking-full-indicator--inline .parking-full-indicator__ring {
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-width: 1.5px;
 }
 
-.map-dark .full-spot-badge.is-community {
+.parking-full-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 2px 8px 2px 5px;
+  border-radius: 9999px;
+  background: rgb(229 57 53 / 0.12);
+  color: #c62828;
+  font-family: var(--font-sans);
+  line-height: 1.2;
+  vertical-align: middle;
+}
+
+.parking-full-chip__text {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.map-dark .parking-full-indicator__core {
+  border-color: #1c1c1e;
   background: #ff453a;
-  border-color: #1c1c1e;
+  box-shadow: 0 2px 8px rgb(255 69 58 / 0.5);
 }
 
-.map-dark .full-spot-pulse {
+.map-dark .parking-full-indicator__ring {
   border-color: #ff453a;
-  background: rgb(255 69 58 / 0.28);
+}
+
+.map-dark .parking-full-chip {
+  background: rgb(255 69 58 / 0.18);
+  color: #ff8a80;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .full-spot-pulse {
+  .parking-full-indicator__ring,
+  .parking-full-indicator__core {
     animation: none;
-    opacity: 0.45;
-    transform: scale(1.25);
+  }
+
+  .parking-full-indicator__ring {
+    opacity: 0.35;
+    transform: scale(1.35);
   }
 }
 

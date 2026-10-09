@@ -115,6 +115,7 @@ import {
   type EvChargerFeature,
 } from '../lib/evChargers'
 import type { FilterId, ParkingLayerKey, ParkingSpot } from '../types'
+import { createFullIndicatorElement } from '../lib/fullIndicatorDom'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
 setWorkerUrl(maplibreWorker)
@@ -492,19 +493,6 @@ function updateMyPinEl(
   }
 }
 
-function makeFullSpotEl() {
-  const wrap = document.createElement('div')
-  wrap.className = 'full-spot-badge is-community'
-  wrap.setAttribute('aria-label', 'TÄIS (Kogukond)')
-  const pulse = document.createElement('span')
-  pulse.className = 'full-spot-pulse'
-  pulse.setAttribute('aria-hidden', 'true')
-  const label = document.createElement('span')
-  label.className = 'full-spot-label'
-  label.textContent = 'TÄIS (Kogukond)'
-  wrap.append(pulse, label)
-  return wrap
-}
 
 /** Stable marker payloads — memoized so pan/zoom does not rebuild HTML markers. */
 type FullAlertMarker = {
@@ -876,7 +864,7 @@ export const MapView = memo(forwardRef<
     onMapReady?: () => void
     /** Admin-approved REPORT_INVALID suppressions (never mutates production GeoJSON). */
     suppressedFeatureIds?: Set<string> | string[]
-    /** Crowdsourced "lot is full" marks (60 min TTL) — grey TÄIS badges. */
+    /** Crowdsourced "lot is full" marks (60 min TTL) — compact pulse indicators. */
     fullSpotIds?: Set<string> | string[]
     /** Left/bottom info panel open — shift camera so pin stays visible. */
     infoPanelOpen?: boolean
@@ -2210,7 +2198,7 @@ export const MapView = memo(forwardRef<
     }
   }, [draftPin, ready, theme])
 
-  /** Pulsating community TÄIS markers — driven by memoized specs (not pan/zoom). */
+  /** Compact pulsating "täis" markers — driven by memoized specs (not pan/zoom). */
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
@@ -2229,7 +2217,7 @@ export const MapView = memo(forwardRef<
         existing.setLngLat([spec.lng, spec.lat])
       } else {
         const m = new Marker({
-          element: makeFullSpotEl(),
+          element: createFullIndicatorElement(),
           anchor: 'center',
         })
           .setLngLat([spec.lng, spec.lat])

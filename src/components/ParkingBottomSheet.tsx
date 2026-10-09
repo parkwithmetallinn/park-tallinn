@@ -7,6 +7,7 @@ import {
   Star,
   X,
 } from 'lucide-react'
+import { FullIndicator } from './FullIndicator'
 import {
   useCallback,
   useEffect,
@@ -363,14 +364,7 @@ export function ParkingBottomSheet({
                   Aktiivne
                 </span>
               ) : null}
-              {isFull ? (
-                <span
-                  data-testid="spot-full-badge"
-                  className="rounded-full bg-[#8E8E93]/25 px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-[#636366]"
-                >
-                  TÄIS
-                </span>
-              ) : null}
+              {isFull ? <FullIndicator variant="chip" /> : null}
             </div>
             <div className="flex min-w-0 items-start gap-1.5">
               <h3
