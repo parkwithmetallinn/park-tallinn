@@ -77,13 +77,13 @@ export function CrowdReportModal({
         },
         body: JSON.stringify({
           parkingId: spot.id,
-          statusType,
+          statusType:
+            statusType === 'full'
+              ? 'FULL'
+              : statusType === 'prices'
+                ? 'PRICES'
+                : 'CLOSED',
           comment: comment.trim().slice(0, COMMENT_MAX),
-          // Back-compat fields for map pulse / prior clients
-          spotId: spot.id,
-          isFull: statusType === 'full' || statusType === 'closed',
-          lat: spot.lat,
-          lng: spot.lng,
         }),
       })
       const data = (await res.json().catch(() => null)) as {

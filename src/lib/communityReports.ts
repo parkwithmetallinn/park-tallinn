@@ -1,12 +1,16 @@
 /**
- * Live community reports (isFull) — poll GET /api/reports every 30s.
+ * Live community reports — poll GET /api/reports every 30s.
+ * GET returns a bare array:
+ *   [{ parkingId, isFull, lastReportedMinutesAgo }]
  */
 
 import { apiUrl } from './apiBase'
 
 export type CommunityReport = {
   spotId: string
+  parkingId?: string
   isFull: boolean
+  lastReportedMinutesAgo?: number
   lat?: number
   lng?: number
   until?: number
@@ -15,28 +19,35 @@ export type CommunityReport = {
 const POLL_MS = 30_000
 
 function parseReports(data: unknown): CommunityReport[] {
-  if (!data || typeof data !== 'object') return []
-  const raw = (data as { reports?: unknown }).reports
-  if (!Array.isArray(raw)) return []
+  const raw = Array.isArray(data)
+    ? data
+    : data && typeof data === 'object' && Array.isArray((data as { reports?: unknown }).reports)
+      ? ((data as { reports: unknown[] }).reports)
+      : null
+  if (!raw) return []
+
   const out: CommunityReport[] = []
-  const now = Date.now()
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue
     const row = item as Record<string, unknown>
-    const spotId = String(row.spotId ?? row.id ?? '').trim()
-    if (!spotId) continue
-    const isFull = row.isFull === true || row.isFull === 'true' || row.isFull === 1
+    const parkingId = String(
+      row.parkingId ?? row.spotId ?? row.id ?? '',
+    ).trim()
+    if (!parkingId) continue
+    const isFull =
+      row.isFull === true || row.isFull === 'true' || row.isFull === 1
     if (!isFull) continue
-    const until =
-      typeof row.until === 'number' && Number.isFinite(row.until)
-        ? row.until
+    const lastReportedMinutesAgo =
+      typeof row.lastReportedMinutesAgo === 'number' &&
+      Number.isFinite(row.lastReportedMinutesAgo)
+        ? Math.max(0, Math.round(row.lastReportedMinutesAgo))
         : undefined
-    if (until != null && until <= now) continue
-    const lat =
-      typeof row.lat === 'number' && Number.isFinite(row.lat) ? row.lat : undefined
-    const lng =
-      typeof row.lng === 'number' && Number.isFinite(row.lng) ? row.lng : undefined
-    out.push({ spotId, isFull: true, lat, lng, until })
+    out.push({
+      spotId: parkingId,
+      parkingId,
+      isFull: true,
+      lastReportedMinutesAgo,
+    })
   }
   return out
 }
@@ -73,6 +84,8 @@ export async function postCommunityFullReport(input: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        parkingId: input.spotId,
+        statusType: input.isFull === false ? undefined : 'FULL',
         spotId: input.spotId,
         isFull: input.isFull !== false,
         lat: input.lat,

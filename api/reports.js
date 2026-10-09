@@ -1,152 +1,273 @@
 /**
- * Community parking reports.
+ * Community parking reports — Supabase `parking_reports` table.
  *
- * GET  /api/reports → { success, reports: [...] }
- * POST /api/reports → body either:
- *   Legacy: { spotId, isFull?, lat?, lng? }
- *   Crowd:  { parkingId, statusType, comment?, lat?, lng? }
+ * POST { parkingId, statusType, comment }
+ *   → insert row; rate-limit 3 posts / 2 minutes per client IP
  *
- * When SUPABASE_URL + SUPABASE_ANON_KEY (or VITE_*) are set, inserts into
- * public.community_reports. Always mirrors isFull alerts in memory for the map.
+ * GET → JSON array (last 45 min, grouped by parking_id):
+ *   [{ parkingId, isFull, lastReportedMinutesAgo }]
+ *
+ * Env: SUPABASE_URL + SUPABASE_ANON_KEY (or VITE_* aliases).
+ * Without Supabase, uses an in-memory fallback (local/dev).
  */
 
-const TTL_MS = 60 * 60 * 1000
-const MAX_REPORTS = 2_000
-const STATUS_TYPES = new Set(['full', 'prices', 'closed'])
+const WINDOW_MS = 45 * 60 * 1000
+const RATE_WINDOW_MS = 2 * 60 * 1000
+const RATE_MAX = 3
+const COMMENT_MAX = 150
+const TABLE = 'parking_reports'
 
-/** @type {Map<string, { spotId: string, isFull: boolean, statusType?: string, comment?: string, lat?: number, lng?: number, until: number }>} */
-const store =
-  globalThis.__parkCommunityReports instanceof Map
-    ? globalThis.__parkCommunityReports
+/** Normalize UI / legacy status → DB status_type (UPPER). */
+const STATUS_MAP = {
+  full: 'FULL',
+  FULL: 'FULL',
+  prices: 'PRICES',
+  PRICES: 'PRICES',
+  closed: 'CLOSED',
+  CLOSED: 'CLOSED',
+}
+
+/**
+ * In-memory fallback + rate buckets (per serverless isolate).
+ * @type {Map<string, { parkingId: string, statusType: string, comment: string, clientIp: string, createdAt: number }>}
+ */
+const memStore =
+  globalThis.__parkReportsMem instanceof Map
+    ? globalThis.__parkReportsMem
     : new Map()
-globalThis.__parkCommunityReports = store
+globalThis.__parkReportsMem = memStore
 
-function prune(now = Date.now()) {
-  for (const [id, row] of store) {
-    if (!row || row.until <= now) store.delete(id)
-  }
-  if (store.size > MAX_REPORTS) {
-    const sorted = [...store.entries()].sort((a, b) => a[1].until - b[1].until)
-    const drop = sorted.length - MAX_REPORTS
-    for (let i = 0; i < drop; i++) store.delete(sorted[i][0])
-  }
-}
-
-function listActive(now = Date.now()) {
-  prune(now)
-  const reports = []
-  for (const row of store.values()) {
-    reports.push({
-      spotId: row.spotId,
-      parkingId: row.spotId,
-      isFull: Boolean(row.isFull),
-      statusType: row.statusType || (row.isFull ? 'full' : undefined),
-      comment: row.comment,
-      lat: row.lat,
-      lng: row.lng,
-      until: row.until,
-    })
-  }
-  return reports
-}
+/** @type {Map<string, number[]>} */
+const rateBuckets =
+  globalThis.__parkReportsRate instanceof Map
+    ? globalThis.__parkReportsRate
+    : new Map()
+globalThis.__parkReportsRate = rateBuckets
 
 function supabaseEnv() {
-  const url =
+  const url = (
     process.env.SUPABASE_URL ||
     process.env.VITE_SUPABASE_URL ||
     ''
-  const key =
+  ).trim()
+  const key = (
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.SUPABASE_ANON_KEY ||
     process.env.VITE_SUPABASE_ANON_KEY ||
     ''
-  return { url: url.trim(), key: key.trim() }
-}
-
-async function insertSupabase(row) {
-  const { url, key } = supabaseEnv()
-  if (!url || !key) return { ok: true, skipped: true }
-  try {
-    const res = await fetch(`${url.replace(/\/$/, '')}/rest/v1/community_reports`, {
-      method: 'POST',
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=minimal',
-      },
-      body: JSON.stringify({
-        parking_id: row.spotId,
-        status_type: row.statusType || 'full',
-        comment: row.comment || null,
-        lat: row.lat ?? null,
-        lng: row.lng ?? null,
-        is_full: Boolean(row.isFull),
-      }),
-    })
-    if (!res.ok) {
-      // Table may not exist yet — memory store still works
-      return { ok: false, status: res.status }
-    }
-    return { ok: true }
-  } catch {
-    return { ok: false }
-  }
-}
-
-function upsert(body, now = Date.now()) {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return { ok: false, message: 'Vigane päring' }
-  }
-
-  const parkingId = String(
-    body.parkingId || body.spotId || body.id || '',
   ).trim()
-  if (!parkingId || parkingId.length > 128) {
-    return { ok: false, message: 'Vigane päring' }
-  }
+  return { url: url.replace(/\/$/, ''), key }
+}
 
-  let statusType =
-    typeof body.statusType === 'string' ? body.statusType.trim() : ''
-  if (statusType && !STATUS_TYPES.has(statusType)) {
-    return { ok: false, message: 'Vigane päring' }
-  }
+function hasSupabase() {
+  const { url, key } = supabaseEnv()
+  return Boolean(url && key)
+}
 
-  // Legacy boolean path
-  if (!statusType) {
-    if (body.isFull === false) {
-      store.delete(parkingId)
-      return { ok: true, reports: listActive(now) }
+function restHeaders(extra = {}) {
+  const { key } = supabaseEnv()
+  return {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    'Content-Type': 'application/json',
+    ...extra,
+  }
+}
+
+function clientIp(req) {
+  const xf = req.headers?.['x-forwarded-for']
+  if (typeof xf === 'string' && xf.length) return xf.split(',')[0].trim()
+  const real = req.headers?.['x-real-ip']
+  if (typeof real === 'string' && real.length) return real.trim()
+  return req.socket?.remoteAddress || 'unknown'
+}
+
+function parseBody(req) {
+  let body = req.body
+  if (body == null || body === '') return null
+  if (typeof body === 'string') {
+    try {
+      return JSON.parse(body)
+    } catch {
+      return null
     }
-    statusType = 'full'
+  }
+  if (typeof body === 'object' && !Array.isArray(body)) return body
+  return null
+}
+
+function normalizeStatus(raw) {
+  if (typeof raw !== 'string') return null
+  const t = raw.trim()
+  if (!t) return null
+  return STATUS_MAP[t] || STATUS_MAP[t.toUpperCase()] || STATUS_MAP[t.toLowerCase()] || null
+}
+
+/** Best-effort in-memory rate limit (always applied). */
+function checkRateLimit(ip, now = Date.now()) {
+  const cutoff = now - RATE_WINDOW_MS
+  let hits = rateBuckets.get(ip) || []
+  hits = hits.filter((t) => t > cutoff)
+  if (hits.length >= RATE_MAX) {
+    rateBuckets.set(ip, hits)
+    return false
+  }
+  hits.push(now)
+  rateBuckets.set(ip, hits)
+  return true
+}
+
+async function countRecentByIp(ip, now = Date.now()) {
+  if (!hasSupabase() || !ip || ip === 'unknown') return 0
+  const { url } = supabaseEnv()
+  const since = new Date(now - RATE_WINDOW_MS).toISOString()
+  const q = new URLSearchParams({
+    select: 'id',
+    client_ip: `eq.${ip}`,
+    created_at: `gt.${since}`,
+  })
+  try {
+    const res = await fetch(`${url}/rest/v1/${TABLE}?${q}`, {
+      method: 'GET',
+      headers: {
+        ...restHeaders(),
+        Prefer: 'count=exact',
+        Range: '0-0',
+      },
+    })
+    const range = res.headers.get('content-range') // e.g. 0-0/4
+    if (range && range.includes('/')) {
+      const total = Number(range.split('/')[1])
+      if (Number.isFinite(total)) return total
+    }
+    if (!res.ok) return 0
+    const rows = await res.json()
+    return Array.isArray(rows) ? rows.length : 0
+  } catch {
+    return 0
+  }
+}
+
+async function insertReport(row) {
+  if (!hasSupabase()) {
+    const id = `${row.parkingId}:${row.createdAt}:${Math.random().toString(36).slice(2, 8)}`
+    memStore.set(id, row)
+    // prune older than 45m
+    const cutoff = Date.now() - WINDOW_MS
+    for (const [k, v] of memStore) {
+      if (v.createdAt < cutoff) memStore.delete(k)
+    }
+    return { ok: true, fallback: true }
   }
 
-  const commentRaw =
-    typeof body.comment === 'string' ? body.comment.trim().slice(0, 150) : ''
-  const isFull = statusType === 'full' || statusType === 'closed'
-  const lat =
-    typeof body.lat === 'number' && Number.isFinite(body.lat) ? body.lat : undefined
-  const lng =
-    typeof body.lng === 'number' && Number.isFinite(body.lng) ? body.lng : undefined
-
-  const row = {
-    spotId: parkingId,
-    isFull,
-    statusType,
-    comment: commentRaw || undefined,
-    lat,
-    lng,
-    until: now + TTL_MS,
+  const { url } = supabaseEnv()
+  const payload = {
+    parking_id: row.parkingId,
+    status_type: row.statusType,
+    comment: row.comment || null,
+    client_ip: row.clientIp || null,
   }
 
-  // Map pulse only for full/closed; prices updates stay in list without isFull pin
-  if (isFull) {
-    store.set(parkingId, row)
+  let res = await fetch(`${url}/rest/v1/${TABLE}`, {
+    method: 'POST',
+    headers: restHeaders({ Prefer: 'return=minimal' }),
+    body: JSON.stringify(payload),
+  })
+
+  // Retry without client_ip if column missing (PGRST204 / 400)
+  if (!res.ok && (res.status === 400 || res.status === 404)) {
+    const { client_ip: _drop, ...withoutIp } = payload
+    res = await fetch(`${url}/rest/v1/${TABLE}`, {
+      method: 'POST',
+      headers: restHeaders({ Prefer: 'return=minimal' }),
+      body: JSON.stringify(withoutIp),
+    })
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    return {
+      ok: false,
+      status: res.status,
+      message: text.slice(0, 200) || 'Andmebaasi salvestamine ebaõnnestus',
+    }
+  }
+  return { ok: true }
+}
+
+/**
+ * Fetch last-45-min rows and group by parking_id.
+ * @returns {Promise<Array<{ parkingId: string, isFull: boolean, lastReportedMinutesAgo: number }>>}
+ */
+async function listGrouped(now = Date.now()) {
+  const sinceIso = new Date(now - WINDOW_MS).toISOString()
+  /** @type {Array<{ parking_id: string, status_type: string, created_at: string }>} */
+  let rows = []
+
+  if (hasSupabase()) {
+    const { url } = supabaseEnv()
+    const q = new URLSearchParams({
+      select: 'parking_id,status_type,created_at',
+      created_at: `gt.${sinceIso}`,
+      order: 'created_at.desc',
+    })
+    try {
+      const res = await fetch(`${url}/rest/v1/${TABLE}?${q}`, {
+        method: 'GET',
+        headers: restHeaders(),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data)) rows = data
+      }
+    } catch {
+      rows = []
+    }
   } else {
-    store.set(`${parkingId}:${statusType}:${now}`, row)
+    const cutoff = now - WINDOW_MS
+    for (const v of memStore.values()) {
+      if (v.createdAt >= cutoff) {
+        rows.push({
+          parking_id: v.parkingId,
+          status_type: v.statusType,
+          created_at: new Date(v.createdAt).toISOString(),
+        })
+      }
+    }
   }
-  prune(now)
 
-  return { ok: true, reports: listActive(now), row }
+  /** @type {Map<string, { isFull: boolean, latestMs: number }>} */
+  const byLot = new Map()
+  for (const r of rows) {
+    const id = String(r.parking_id || '').trim()
+    if (!id) continue
+    const createdMs = Date.parse(r.created_at)
+    if (!Number.isFinite(createdMs)) continue
+    const status = String(r.status_type || '').toUpperCase()
+    const prev = byLot.get(id)
+    if (!prev) {
+      byLot.set(id, {
+        isFull: status === 'FULL',
+        latestMs: createdMs,
+      })
+    } else {
+      if (status === 'FULL') prev.isFull = true
+      if (createdMs > prev.latestMs) prev.latestMs = createdMs
+    }
+  }
+
+  const out = []
+  for (const [parkingId, agg] of byLot) {
+    const mins = Math.max(0, Math.round((now - agg.latestMs) / 60_000))
+    out.push({
+      parkingId,
+      isFull: agg.isFull,
+      lastReportedMinutesAgo: mins,
+    })
+  }
+  // Newest reports first
+  out.sort((a, b) => a.lastReportedMinutesAgo - b.lastReportedMinutesAgo)
+  return out
 }
 
 export default async function handler(req, res) {
@@ -163,10 +284,13 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'GET') {
-    res.status(200).json({
-      success: true,
-      reports: listActive().filter((r) => r.isFull),
-    })
+    try {
+      const reports = await listGrouped()
+      // Contract: bare JSON array
+      res.status(200).json(reports)
+    } catch {
+      res.status(500).json([])
+    }
     return
   }
 
@@ -175,29 +299,74 @@ export default async function handler(req, res) {
     return
   }
 
-  let body = req.body
-  if (typeof body === 'string') {
-    try {
-      body = JSON.parse(body)
-    } catch {
-      res.status(400).json({ success: false, message: 'Vigane päring' })
-      return
-    }
-  }
-
-  const result = upsert(body)
-  if (!result.ok) {
-    res.status(400).json({ success: false, message: result.message })
+  const body = parseBody(req)
+  if (!body) {
+    res.status(400).json({ success: false, message: 'Vigane päring' })
     return
   }
 
-  if (result.row) {
-    await insertSupabase(result.row)
+  const parkingId = String(body.parkingId || body.spotId || '').trim()
+  if (!parkingId || parkingId.length > 128) {
+    res.status(400).json({ success: false, message: 'Vigane päring' })
+    return
   }
 
+  // Legacy { spotId, isFull: true } → FULL
+  let statusType = normalizeStatus(body.statusType)
+  if (!statusType && body.isFull === true) statusType = 'FULL'
+  if (!statusType && body.isFull === false) {
+    res.status(400).json({ success: false, message: 'Vigane päring' })
+    return
+  }
+  if (!statusType) {
+    res.status(400).json({ success: false, message: 'Vigane päring' })
+    return
+  }
+
+  const comment =
+    typeof body.comment === 'string' ? body.comment.trim().slice(0, COMMENT_MAX) : ''
+
+  const ip = clientIp(req)
+  const now = Date.now()
+
+  // Dual rate limit: memory + Supabase count when available
+  if (!checkRateLimit(ip, now)) {
+    res.status(429).json({
+      success: false,
+      message: 'Liiga palju teavitusi — proovi 2 minuti pärast uuesti',
+    })
+    return
+  }
+  const dbCount = await countRecentByIp(ip, now)
+  if (dbCount >= RATE_MAX) {
+    res.status(429).json({
+      success: false,
+      message: 'Liiga palju teavitusi — proovi 2 minuti pärast uuesti',
+    })
+    return
+  }
+
+  const row = {
+    parkingId,
+    statusType,
+    comment,
+    clientIp: ip,
+    createdAt: now,
+  }
+
+  const inserted = await insertReport(row)
+  if (!inserted.ok) {
+    res.status(502).json({
+      success: false,
+      message: inserted.message || 'Andmebaasi salvestamine ebaõnnestus',
+    })
+    return
+  }
+
+  const reports = await listGrouped(now)
   res.status(200).json({
     success: true,
     message: 'Aitäh! Sinu teavitus aitab teisi autojuhte.',
-    reports: result.reports.filter((r) => r.isFull),
+    reports,
   })
 }

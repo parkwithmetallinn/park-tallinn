@@ -22,38 +22,27 @@ function htmlSeoEnvPlugin(env: Record<string, string>): Plugin {
 }
 
 /**
- * Dev-only GET/POST /api/reports — mirrors api/reports.js for Vite.
- * Production uses the Vercel serverless function.
+ * Dev GET/POST /api/reports — delegates to api/reports.js (same as Vercel).
  */
-function communityReportsApiPlugin(): Plugin {
-  const TTL_MS = 60 * 60 * 1000
-  type Row = {
-    spotId: string
-    isFull: boolean
-    lat?: number
-    lng?: number
-    until: number
+function communityReportsApiPlugin(env: Record<string, string>): Plugin {
+  // Expose Supabase env to the serverless-style handler under Vite
+  if (env.SUPABASE_URL || env.VITE_SUPABASE_URL) {
+    process.env.SUPABASE_URL =
+      env.SUPABASE_URL || env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
   }
-  const store = new Map<string, Row>()
-
-  const prune = (now = Date.now()) => {
-    for (const [id, row] of store) {
-      if (row.until <= now) store.delete(id)
-    }
+  if (env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY) {
+    process.env.SUPABASE_ANON_KEY =
+      env.SUPABASE_ANON_KEY ||
+      env.VITE_SUPABASE_ANON_KEY ||
+      process.env.SUPABASE_ANON_KEY
   }
-
-  const listActive = (now = Date.now()) => {
-    prune(now)
-    return [...store.values()]
-      .filter((r) => r.isFull)
-      .map((r) => ({
-        spotId: r.spotId,
-        isFull: true as const,
-        lat: r.lat,
-        lng: r.lng,
-        until: r.until,
-      }))
+  if (env.SUPABASE_SERVICE_ROLE_KEY) {
+    process.env.SUPABASE_SERVICE_ROLE_KEY = env.SUPABASE_SERVICE_ROLE_KEY
   }
+  process.env.VITE_SUPABASE_URL =
+    env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
+  process.env.VITE_SUPABASE_ANON_KEY =
+    env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''
 
   const readBody = async (req: {
     on: (ev: string, cb: (chunk?: unknown) => void) => void
@@ -81,74 +70,71 @@ function communityReportsApiPlugin(): Plugin {
     name: 'community-reports-api',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
-        const url = req.url?.split('?')[0] ?? ''
-        if (url !== '/api/reports') {
+        const path = req.url?.split('?')[0] ?? ''
+        if (path !== '/api/reports') {
           next()
           return
         }
 
-        const send = (status: number, body: unknown) => {
-          res.statusCode = status
+        try {
+          const mod = await import('./api/reports.js')
+          const handler = mod.default as (
+            req: unknown,
+            res: {
+              status: (n: number) => { json: (b: unknown) => void; end: () => void }
+              setHeader: (k: string, v: string) => void
+              statusCode?: number
+              json?: (b: unknown) => void
+              end?: (b?: unknown) => void
+            },
+          ) => Promise<void>
+
+          let body: unknown = undefined
+          if (req.method === 'POST' || req.method === 'PUT') {
+            body = await readBody(req as never)
+          }
+
+          const fakeReq = {
+            method: req.method,
+            headers: req.headers,
+            body,
+            socket: { remoteAddress: req.socket?.remoteAddress },
+          }
+
+          let statusCode = 200
+          const fakeRes = {
+            statusCode: 200,
+            setHeader(k: string, v: string) {
+              res.setHeader(k, v)
+            },
+            status(n: number) {
+              statusCode = n
+              this.statusCode = n
+              return this
+            },
+            json(payload: unknown) {
+              res.statusCode = statusCode
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify(payload))
+            },
+            end(payload?: unknown) {
+              res.statusCode = statusCode
+              if (payload !== undefined) res.end(payload as never)
+              else res.end()
+            },
+          }
+
+          await handler(fakeReq, fakeRes)
+        } catch (err) {
+          res.statusCode = 500
           res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify(body))
+          res.end(
+            JSON.stringify({
+              success: false,
+              message: err instanceof Error ? err.message : 'Server error',
+            }),
+          )
         }
-
-        if (req.method === 'OPTIONS') {
-          res.statusCode = 204
-          res.end()
-          return
-        }
-
-        if (req.method === 'GET') {
-          send(200, { success: true, reports: listActive() })
-          return
-        }
-
-        if (req.method === 'POST') {
-          const body = (await readBody(req as never)) as Record<
-            string,
-            unknown
-          > | null
-          const spotId = String(
-            body?.parkingId ?? body?.spotId ?? body?.id ?? '',
-          ).trim()
-          if (!spotId) {
-            send(400, { success: false, message: 'Vigane päring' })
-            return
-          }
-          const statusType =
-            typeof body?.statusType === 'string' ? body.statusType.trim() : ''
-          const now = Date.now()
-          const isFull =
-            statusType === 'full' ||
-            statusType === 'closed' ||
-            (!statusType && body?.isFull !== false)
-          if (!isFull && statusType !== 'prices') {
-            store.delete(spotId)
-          } else if (isFull) {
-            store.set(spotId, {
-              spotId,
-              isFull: true,
-              lat:
-                typeof body?.lat === 'number' && Number.isFinite(body.lat)
-                  ? body.lat
-                  : undefined,
-              lng:
-                typeof body?.lng === 'number' && Number.isFinite(body.lng)
-                  ? body.lng
-                  : undefined,
-              until: now + TTL_MS,
-            })
-          }
-          send(200, {
-            success: true,
-            message: 'Aitäh! Sinu teavitus aitab teisi autojuhte.',
-            reports: listActive(now),
-          })
-          return
-        }
-
-        send(405, { success: false, message: 'Method not allowed' })
       })
     },
   }
@@ -177,7 +163,7 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
       htmlSeoEnvPlugin(env),
-      communityReportsApiPlugin(),
+      communityReportsApiPlugin(env),
     ],
     worker: {
       format: 'es',
