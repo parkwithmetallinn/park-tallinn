@@ -22,10 +22,10 @@ function htmlSeoEnvPlugin(env: Record<string, string>): Plugin {
 }
 
 /**
- * Dev GET/POST /api/reports — delegates to api/reports.ts (same as Vercel).
- * Only service-role + REPORT_SALT — never anon / VITE_SUPABASE_* for reports.
+ * Dev serverless shims for /api/* handlers under api/*.ts (same as Vercel).
+ * Server-only env: SUPABASE_*, REPORT_SALT, INTERNAL_SECRET — never VITE_*.
  */
-function communityReportsApiPlugin(env: Record<string, string>): Plugin {
+function localApiPlugin(env: Record<string, string>): Plugin {
   if (env.SUPABASE_URL) {
     process.env.SUPABASE_URL = env.SUPABASE_URL
   }
@@ -35,6 +35,24 @@ function communityReportsApiPlugin(env: Record<string, string>): Plugin {
   if (env.REPORT_SALT) {
     process.env.REPORT_SALT = env.REPORT_SALT
   }
+  if (env.INTERNAL_SECRET) {
+    process.env.INTERNAL_SECRET = env.INTERNAL_SECRET
+  }
+
+  // Loose typing — each api/*.ts handler has its own ReqReq/ApiRes shape
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const routes: Record<string, () => Promise<{ default: (req: any, res: any) => unknown }>> =
+    {
+      '/api/reports': () => import('./api/reports.ts') as Promise<{ default: (req: any, res: any) => unknown }>,
+      '/api/calculate-price': () =>
+        import('./api/calculate-price.ts') as Promise<{
+          default: (req: any, res: any) => unknown
+        }>,
+      '/api/cleanup': () =>
+        import('./api/cleanup.ts') as Promise<{
+          default: (req: any, res: any) => unknown
+        }>,
+    }
 
   const readBody = async (req: {
     on: (ev: string, cb: (chunk?: unknown) => void) => void
@@ -59,21 +77,22 @@ function communityReportsApiPlugin(env: Record<string, string>): Plugin {
     })
 
   return {
-    name: 'community-reports-api',
+    name: 'local-api',
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         const path = req.url?.split('?')[0] ?? ''
-        if (path !== '/api/reports') {
+        const loader = routes[path]
+        if (!loader) {
           next()
           return
         }
 
         try {
-          const mod = await import('./api/reports.ts')
+          const mod = await loader()
           const handler = mod.default
 
           let body: unknown = undefined
-          if (req.method === 'POST') {
+          if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
             body = await readBody(req as never)
           }
 
@@ -84,6 +103,10 @@ function communityReportsApiPlugin(env: Record<string, string>): Plugin {
               string | string[] | undefined
             >,
             body,
+            url: req.url,
+            query: Object.fromEntries(
+              new URL(req.url || '/', 'http://local').searchParams,
+            ),
             socket: { remoteAddress: req.socket?.remoteAddress },
           }
 
@@ -147,7 +170,7 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
       htmlSeoEnvPlugin(env),
-      communityReportsApiPlugin(env),
+      localApiPlugin(env),
     ],
     worker: {
       format: 'es',
