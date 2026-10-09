@@ -2,7 +2,10 @@ import type { ParkingSpot } from '../types'
 import { parkingIndex } from './spatialIndex'
 import { padBounds, type LngLatBoundsLike } from './bbox'
 import { isLotPolygonFeature } from './geojson'
-import { ZOOM } from '../map/zoom'
+import {
+  DETAIL_FADE_START_ZOOM,
+  PARKING_FADE_START_ZOOM,
+} from '../map/parkingFade'
 
 export type ViewportQueryResult = {
   spots: ParkingSpot[]
@@ -18,8 +21,9 @@ export type ViewportQueryResult = {
 const MAX_VIEWPORT_AREA_DEG2 = 0.04
 
 function lodForZoom(zoom: number): ViewportQueryResult['lod'] {
-  if (zoom < ZOOM.lotMin) return 'district'
-  if (zoom < ZOOM.detailMin) return 'lots'
+  // Start loading at fade START so geometry is warm before fully visible
+  if (zoom < PARKING_FADE_START_ZOOM) return 'district'
+  if (zoom < DETAIL_FADE_START_ZOOM) return 'lots'
   return 'detail'
 }
 

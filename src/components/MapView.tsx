@@ -93,6 +93,15 @@ import {
   SYMBOL_NO_FADE_PAINT,
 } from '../map/symbolFade'
 import { NAV_PITCH } from '../map/theme'
+import {
+  DETAIL_FADE,
+  DETAIL_FADE_START_ZOOM,
+  getParkingOpacity,
+  isParkingInteractiveAtZoom,
+  PARKING_FADE,
+  PARKING_FADE_START_ZOOM,
+  STREET_FADE,
+} from '../map/parkingFade'
 import { ZOOM } from '../map/zoom'
 import {
   isClockLimitedParking,
@@ -1248,10 +1257,43 @@ export const MapView = memo(forwardRef<
       map.getCanvas().style.cursor = ''
     }
 
+    /** Nearly-transparent fade band must not steal hover / clicks. */
+    const isLayerInteractiveAtZoom = (layerId: string, z: number) => {
+      if (
+        (PRECISE_HIT_LAYERS as readonly string[]).includes(layerId) ||
+        layerId === PARKING_LOTS_FILL_LAYER ||
+        layerId === PARKING_LOTS_LABEL_LAYER
+      ) {
+        return isParkingInteractiveAtZoom(z, PARKING_FADE)
+      }
+      if ((STREET_HIT_LAYERS as readonly string[]).includes(layerId)) {
+        return isParkingInteractiveAtZoom(z, STREET_FADE)
+      }
+      if (
+        layerId === PARKING_LINES_LAYER ||
+        layerId === 'parking-street-lines-hit' ||
+        PARKING_PROVIDERS.some((k) => PARKING_LAYER_META[k].id === layerId)
+      ) {
+        return isParkingInteractiveAtZoom(z, DETAIL_FADE)
+      }
+      // Nearest pills / EV — keep existing behavior
+      return true
+    }
+
     const bindHover = () => {
       for (const layerId of parkingHitLayers) {
         if (!map.getLayer(layerId)) continue
-        map.on('mouseenter', layerId, setPointer)
+        map.on('mouseenter', layerId, (e) => {
+          const z = map.getZoom()
+          const id = e.features?.[0]?.properties?.id
+          const selected =
+            id != null && String(id) === selectedIdRef.current
+          if (!selected && !isLayerInteractiveAtZoom(layerId, z)) {
+            clearPointer()
+            return
+          }
+          setPointer()
+        })
         map.on('mouseleave', layerId, clearPointer)
       }
     }
@@ -1259,7 +1301,11 @@ export const MapView = memo(forwardRef<
     const emitZoom = (m: MapLibreMapType) => {
       const z = m.getZoom()
       const mode =
-        z >= ZOOM.detailMin ? 'street' : z >= ZOOM.lotMin ? 'cluster' : 'district'
+        z >= DETAIL_FADE_START_ZOOM
+          ? 'street'
+          : z >= PARKING_FADE_START_ZOOM
+            ? 'cluster'
+            : 'district'
       onZoomChange?.(z, mode)
     }
 
@@ -1349,9 +1395,9 @@ export const MapView = memo(forwardRef<
           ? { points: empty, lines: empty, polygons: empty }
           : spotsToMapGeoJSON(visibleSpots)
 
-      // LOD: zoom < 13 → empty overlays (districts only)
-      //      zoom 13–15 → lot polygons only
-      //      zoom ≥ 15 → pins (EV / timed / INVA) + future curb lines
+      // LOD: below lot fade start → districts only
+      //      lot→detail fade → lot polygons only
+      //      detail fade+ → pins (EV / timed / INVA)
       if (result.lod !== 'detail') {
         geo = { ...geo, points: empty, lines: empty }
       }
@@ -1706,7 +1752,17 @@ export const MapView = memo(forwardRef<
         [e.point.x + pad, e.point.y + pad],
       ]
       const layers = parkingHitLayers.filter((id) => map.getLayer(id))
-      const hits = layers.length ? map.queryRenderedFeatures(box, { layers }) : []
+      const rawHits = layers.length
+        ? map.queryRenderedFeatures(box, { layers })
+        : []
+      const zClick = map.getZoom()
+      // Drop nearly-invisible parking hits; keep selected / pills / EV
+      const hits = rawHits.filter((f) => {
+        const layerId = f.layer?.id ?? ''
+        const id = f.properties?.id
+        if (id != null && String(id) === selectedIdRef.current) return true
+        return isLayerInteractiveAtZoom(layerId, zClick)
+      })
 
       // Nearest-parking price pills (preview only)
       const pillHit = hits.find((f) =>
@@ -2226,6 +2282,22 @@ export const MapView = memo(forwardRef<
       }
     }
 
+    const syncFullMarkerFade = () => {
+      const z = map.getZoom()
+      const op = getParkingOpacity(z, PARKING_FADE)
+      const selected = selectedIdRef.current
+      for (const [id, marker] of markers) {
+        const el = marker.getElement()
+        const keep = id === selected
+        const next = keep ? 1 : op
+        el.style.opacity = String(next)
+        el.style.visibility = keep || next > 0.02 ? 'visible' : 'hidden'
+      }
+    }
+    syncFullMarkerFade()
+    map.on('zoom', syncFullMarkerFade)
+    map.on('zoomend', syncFullMarkerFade)
+
     // Re-apply alerts-only geometry when the remote set changes
     if (filterRef.current === 'alerts') {
       applyDualLayerFilter(
@@ -2240,6 +2312,11 @@ export const MapView = memo(forwardRef<
       void (
         map as MapLibreMapType & { __refreshViewport?: () => void }
       ).__refreshViewport?.()
+    }
+
+    return () => {
+      map.off('zoom', syncFullMarkerFade)
+      map.off('zoomend', syncFullMarkerFade)
     }
   }, [alertMarkerSpecs, ready])
 

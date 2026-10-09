@@ -46,7 +46,17 @@ import {
   PARKING_LOTS_SOURCE,
 } from './streetLineTheme'
 import { disableSymbolLayerFades } from './symbolFade'
-import { ZOOM } from './zoom'
+import {
+  DETAIL_FADE,
+  DETAIL_FADE_START_ZOOM,
+  fadeOpacityExpr,
+  fadeOpacityKeepSelected,
+  NO_OPACITY_TRANSITION,
+  PARKING_FADE,
+  PARKING_FADE_START_ZOOM,
+  STREET_FADE,
+  STREET_FADE_START_ZOOM,
+} from './parkingFade'
 
 const ROUTE_SOURCE = 'nav-route'
 /** Dashed walking leg: parking → house */
@@ -74,12 +84,7 @@ const CASING_DARK = '#0b0e12'
 const CIRCLE_STROKE_LIGHT = '#ffffff'
 const CIRCLE_STROKE_DARK = '#1a1f27'
 
-const selectedFillOpacity = [
-  'case',
-  ['boolean', ['feature-state', 'selected'], false],
-  0.48,
-  0.32,
-]
+const selectedFillOpacity = fadeOpacityKeepSelected(0.32, 0.48, PARKING_FADE)
 
 const selectedLineWidth = [
   'interpolate',
@@ -93,12 +98,7 @@ const selectedLineWidth = [
   ['case', ['boolean', ['feature-state', 'selected'], false], 11, 6],
 ]
 
-const selectedLineOpacity = [
-  'case',
-  ['boolean', ['feature-state', 'selected'], false],
-  1,
-  0.72,
-]
+const selectedLineOpacity = fadeOpacityKeepSelected(0.72, 1, DETAIL_FADE)
 
 /** Soft collision-safe symbol layout — required on every parking label layer. */
 const noOverlapSymbol = {
@@ -158,20 +158,23 @@ function syncLodZoomLimits(map: MapLibreMapType) {
     }
   }
 
-  setMin(PARKING_LOTS_FILL_LAYER, ZOOM.lotMin)
-  setMin(PARKING_LOTS_OUTLINE_LAYER, ZOOM.lotMin)
-  setMin(PARKING_LOTS_LABEL_LAYER, ZOOM.lotMin)
+  // Mount at fade START (opacity 0) so geometry is ready before visible
+  setMin(PARKING_LOTS_FILL_LAYER, PARKING_FADE_START_ZOOM)
+  setMin(PARKING_LOTS_OUTLINE_LAYER, PARKING_FADE_START_ZOOM)
+  setMin(PARKING_LOTS_LABEL_LAYER, PARKING_FADE_START_ZOOM)
 
-  setMin(PRECISE_FILL_LAYER, ZOOM.lotMin)
-  setMin(PRECISE_OUTLINE_LAYER, ZOOM.lotMin)
-  setMin(PRECISE_OUTLINE_UNDERGROUND_LAYER, ZOOM.lotMin)
-  // Lot name badges (SB / EP / FREE…) from detail zoom to declutter dense operators
-  setMin(PRECISE_LABEL_LAYER, ZOOM.detailMin)
-  setMin(PRECISE_MULTISTOREY_BADGE_LAYER, ZOOM.lotMin)
+  setMin(PRECISE_FILL_LAYER, PARKING_FADE_START_ZOOM)
+  setMin(PRECISE_OUTLINE_LAYER, PARKING_FADE_START_ZOOM)
+  setMin(PRECISE_OUTLINE_UNDERGROUND_LAYER, PARKING_FADE_START_ZOOM)
+  setMin('parking-fill-underground-hatch', PARKING_FADE_START_ZOOM)
+  setMin('parking-fill-outline-glow', PARKING_FADE_START_ZOOM)
+  // Lot name badges fade with detail LOD
+  setMin(PRECISE_LABEL_LAYER, DETAIL_FADE_START_ZOOM)
+  setMin(PRECISE_MULTISTOREY_BADGE_LAYER, PARKING_FADE_START_ZOOM)
 
-  setMin(STREET_PARKING_CASING_LAYER, ZOOM.streetMin)
-  setMin(STREET_PARKING_LINE_LAYER, ZOOM.streetMin)
-  setMin(STREET_PARKING_HIT_LAYER, ZOOM.streetMin)
+  setMin(STREET_PARKING_CASING_LAYER, STREET_FADE_START_ZOOM)
+  setMin(STREET_PARKING_LINE_LAYER, STREET_FADE_START_ZOOM)
+  setMin(STREET_PARKING_HIT_LAYER, STREET_FADE_START_ZOOM)
 
   for (const id of [
     PARKING_LINES_CASING_LAYER,
@@ -179,13 +182,125 @@ function syncLodZoomLimits(map: MapLibreMapType) {
     PARKING_LINES_LAYER,
     'parking-street-lines-hit',
   ]) {
-    setMin(id, ZOOM.detailMin)
+    setMin(id, DETAIL_FADE_START_ZOOM)
   }
 
   for (const layerKey of PARKING_PROVIDERS) {
     const meta = PARKING_LAYER_META[layerKey]
-    setMin(meta.id, ZOOM.detailMin)
-    setMin(`${meta.id}-label`, ZOOM.detailMin)
+    setMin(meta.id, DETAIL_FADE_START_ZOOM)
+    setMin(`${meta.id}-label`, DETAIL_FADE_START_ZOOM)
+  }
+
+  syncParkingFadePaint(map)
+}
+
+/**
+ * Re-apply zoom-opacity paint on existing layers (HMR / theme remount).
+ * Selected features stay fully opaque via feature-state.
+ */
+function syncParkingFadePaint(map: MapLibreMapType) {
+  const setOp = (
+    id: string,
+    prop:
+      | 'fill-opacity'
+      | 'line-opacity'
+      | 'text-opacity'
+      | 'circle-opacity'
+      | 'circle-stroke-opacity',
+    value: unknown,
+  ) => {
+    if (!map.getLayer(id)) return
+    try {
+      map.setPaintProperty(id, prop, value as never)
+      map.setPaintProperty(
+        id,
+        `${prop}-transition` as 'fill-opacity',
+        NO_OPACITY_TRANSITION as never,
+      )
+    } catch {
+      /* ok */
+    }
+  }
+
+  setOp(
+    PRECISE_FILL_LAYER,
+    'fill-opacity',
+    fadeOpacityKeepSelected(0.35, 0.48, PARKING_FADE),
+  )
+  setOp(
+    'parking-fill-underground-hatch',
+    'fill-opacity',
+    fadeOpacityExpr(0.55, PARKING_FADE),
+  )
+  setOp(PRECISE_OUTLINE_LAYER, 'line-opacity', fadeOpacityKeepSelected(1, 1, PARKING_FADE))
+  setOp(
+    PRECISE_OUTLINE_UNDERGROUND_LAYER,
+    'line-opacity',
+    fadeOpacityKeepSelected(1, 1, PARKING_FADE),
+  )
+  setOp(
+    PRECISE_LABEL_LAYER,
+    'text-opacity',
+    fadeOpacityKeepSelected(1, 1, DETAIL_FADE),
+  )
+  setOp(
+    PRECISE_MULTISTOREY_BADGE_LAYER,
+    'text-opacity',
+    fadeOpacityKeepSelected(1, 1, PARKING_FADE),
+  )
+  setOp(
+    PARKING_LOTS_FILL_LAYER,
+    'fill-opacity',
+    selectedFillOpacity,
+  )
+  setOp(
+    PARKING_LOTS_OUTLINE_LAYER,
+    'line-opacity',
+    fadeOpacityKeepSelected(0.45, 0.85, PARKING_FADE),
+  )
+  setOp(
+    PARKING_LOTS_LABEL_LAYER,
+    'text-opacity',
+    fadeOpacityKeepSelected(1, 1, PARKING_FADE),
+  )
+
+  setOp(
+    STREET_PARKING_CASING_LAYER,
+    'line-opacity',
+    fadeOpacityExpr(0.75, STREET_FADE),
+  )
+  setOp(
+    STREET_PARKING_LINE_LAYER,
+    'line-opacity',
+    fadeOpacityKeepSelected(0.92, 1, STREET_FADE),
+  )
+  // Hit targets: keep tiny opacity but only after fade starts (minzoom handles mount)
+  setOp(STREET_PARKING_HIT_LAYER, 'line-opacity', 0.01)
+
+  setOp(
+    PARKING_LINES_CASING_LAYER,
+    'line-opacity',
+    fadeOpacityExpr(0.72, DETAIL_FADE),
+  )
+  setOp(PARKING_LINES_LAYER, 'line-opacity', selectedLineOpacity)
+
+  for (const layerKey of PARKING_PROVIDERS) {
+    const meta = PARKING_LAYER_META[layerKey]
+    setOp(
+      meta.id,
+      'circle-opacity',
+      fadeOpacityKeepSelected(0.82, 1, DETAIL_FADE),
+    )
+    setOp(
+      meta.id,
+      'circle-stroke-opacity',
+      fadeOpacityKeepSelected(1, 1, DETAIL_FADE),
+    )
+    setOp(
+      `${meta.id}-label`,
+      'text-opacity',
+      fadeOpacityKeepSelected(1, 1, DETAIL_FADE),
+    )
   }
 }
 
@@ -298,39 +413,28 @@ function applyOverlayThemePaints(map: MapLibreMapType, mode: ThemeMode) {
   for (const id of [STREET_PARKING_CASING_LAYER, PARKING_LINES_CASING_LAYER]) {
     if (!map.getLayer(id)) continue
     map.setPaintProperty(id, 'line-color', casing)
-    if (dark && id === STREET_PARKING_CASING_LAYER) {
-      map.setPaintProperty(id, 'line-opacity', [
-        'interpolate',
-        ['linear'],
-        ['zoom'],
-        12,
-        0.35,
-        13,
-        0.55,
-        16,
-        0.85,
-      ])
+    if (id === STREET_PARKING_CASING_LAYER) {
+      map.setPaintProperty(
+        id,
+        'line-opacity',
+        fadeOpacityExpr(dark ? 0.85 : 0.75, STREET_FADE) as never,
+      )
     }
   }
 
-  // Slightly stronger parking fills on dark basemap for hue recognition
+  // Slightly stronger parking fills on dark basemap — keep zoom fade
   if (map.getLayer(PRECISE_FILL_LAYER)) {
     map.setPaintProperty(
       PRECISE_FILL_LAYER,
       'fill-opacity',
-      dark
-        ? ([
-            'case',
-            ['boolean', ['feature-state', 'selected'], false],
-            0.58,
-            0.42,
-          ] as never)
-        : ([
-            'case',
-            ['boolean', ['feature-state', 'selected'], false],
-            0.48,
-            0.35,
-          ] as never),
+      (dark
+        ? fadeOpacityKeepSelected(0.42, 0.58, PARKING_FADE)
+        : fadeOpacityKeepSelected(0.35, 0.48, PARKING_FADE)) as never,
+    )
+    map.setPaintProperty(
+      PRECISE_FILL_LAYER,
+      'fill-opacity-transition' as 'fill-opacity',
+      NO_OPACITY_TRANSITION as never,
     )
   }
 
@@ -551,45 +655,48 @@ export function ensureParkingOverlaySources(
       promoteId: 'id',
       data: { type: 'FeatureCollection', features: [] },
     })
+  }
 
-    // Fill — translucent operator colors (opacity 0.35)
+  // Fill — translucent operator colors (max opacity 0.35; fades in with zoom)
+  if (!map.getLayer(PRECISE_FILL_LAYER)) {
     map.addLayer({
       id: PRECISE_FILL_LAYER,
       type: 'fill',
       source: PRECISE_PARKING_SOURCE,
-      minzoom: ZOOM.lotMin,
+      minzoom: PARKING_FADE_START_ZOOM,
       layout: { visibility: 'visible' },
       paint: {
         'fill-color': ['get', 'color'],
-        'fill-opacity': [
-          'case',
-          ['boolean', ['feature-state', 'selected'], false],
-          0.48,
-          0.35,
-        ] as never,
+        'fill-opacity': fadeOpacityKeepSelected(0.35, 0.48, PARKING_FADE) as never,
+        'fill-opacity-transition': NO_OPACITY_TRANSITION,
       },
     })
+  }
 
-    // Subtle hatch for underground lots
+  // Subtle hatch for underground lots
+  if (!map.getLayer('parking-fill-underground-hatch')) {
     map.addLayer({
       id: 'parking-fill-underground-hatch',
       type: 'fill',
       source: PRECISE_PARKING_SOURCE,
-      minzoom: ZOOM.lotMin,
+      minzoom: PARKING_FADE_START_ZOOM,
       filter: ['==', ['get', 'type'], 'underground'],
       layout: { visibility: 'visible' },
       paint: {
         'fill-pattern': 'underground-hatch',
-        'fill-opacity': 0.55,
+        'fill-opacity': fadeOpacityExpr(0.55, PARKING_FADE) as never,
+        'fill-opacity-transition': NO_OPACITY_TRANSITION,
       },
     })
+  }
 
-    // Soft glow under selected lot outline (preview / detail)
+  // Soft glow under selected lot outline (preview / detail) — always full when selected
+  if (!map.getLayer('parking-fill-outline-glow')) {
     map.addLayer({
       id: 'parking-fill-outline-glow',
       type: 'line',
       source: PRECISE_PARKING_SOURCE,
-      minzoom: ZOOM.lotMin,
+      minzoom: PARKING_FADE_START_ZOOM,
       layout: {
         visibility: 'visible',
         'line-cap': 'round',
@@ -612,13 +719,15 @@ export function ensureParkingOverlaySources(
         'line-blur': 3.5,
       },
     })
+  }
 
-    // Solid curb-to-curb outline (surface + multi_storey)
+  // Solid curb-to-curb outline (surface + multi_storey)
+  if (!map.getLayer(PRECISE_OUTLINE_LAYER)) {
     map.addLayer({
       id: PRECISE_OUTLINE_LAYER,
       type: 'line',
       source: PRECISE_PARKING_SOURCE,
-      minzoom: ZOOM.lotMin,
+      minzoom: PARKING_FADE_START_ZOOM,
       filter: ['!=', ['get', 'type'], 'underground'],
       layout: {
         visibility: 'visible',
@@ -633,16 +742,19 @@ export function ensureParkingOverlaySources(
           4.5,
           2,
         ] as never,
-        'line-opacity': 1,
+        'line-opacity': fadeOpacityKeepSelected(1, 1, PARKING_FADE) as never,
+        'line-opacity-transition': NO_OPACITY_TRANSITION,
       },
     })
+  }
 
-    // Dashed outline for underground
+  // Dashed outline for underground
+  if (!map.getLayer(PRECISE_OUTLINE_UNDERGROUND_LAYER)) {
     map.addLayer({
       id: PRECISE_OUTLINE_UNDERGROUND_LAYER,
       type: 'line',
       source: PRECISE_PARKING_SOURCE,
-      minzoom: ZOOM.lotMin,
+      minzoom: PARKING_FADE_START_ZOOM,
       filter: ['==', ['get', 'type'], 'underground'],
       layout: {
         visibility: 'visible',
@@ -657,17 +769,20 @@ export function ensureParkingOverlaySources(
           4.5,
           2,
         ] as never,
-        'line-opacity': 1,
+        'line-opacity': fadeOpacityKeepSelected(1, 1, PARKING_FADE) as never,
+        'line-opacity-transition': NO_OPACITY_TRANSITION,
         'line-dasharray': [1.2, 1.6],
       },
     })
+  }
 
-    // Lot name labels (from detail zoom; Snabb uses mapLabel "SB")
+  // Lot name labels (detail fade; Snabb uses mapLabel "SB")
+  if (!map.getLayer(PRECISE_LABEL_LAYER)) {
     map.addLayer({
       id: PRECISE_LABEL_LAYER,
       type: 'symbol',
       source: PRECISE_PARKING_SOURCE,
-      minzoom: ZOOM.detailMin,
+      minzoom: DETAIL_FADE_START_ZOOM,
       layout: {
         'text-field': ['get', 'badge'],
         'text-font': ['Noto Sans Bold'],
@@ -688,15 +803,19 @@ export function ensureParkingOverlaySources(
         'text-color': ['get', 'color'],
         'text-halo-color': '#F8FAFC',
         'text-halo-width': 1.8,
+        'text-opacity': fadeOpacityKeepSelected(1, 1, DETAIL_FADE) as never,
+        'text-opacity-transition': NO_OPACITY_TRANSITION,
       },
     })
+  }
 
-    // Floating multi-storey height badge (P+N)
+  // Floating multi-storey height badge (P+N)
+  if (!map.getLayer(PRECISE_MULTISTOREY_BADGE_LAYER)) {
     map.addLayer({
       id: PRECISE_MULTISTOREY_BADGE_LAYER,
       type: 'symbol',
       source: PRECISE_PARKING_SOURCE,
-      minzoom: ZOOM.lotMin,
+      minzoom: PARKING_FADE_START_ZOOM,
       filter: ['==', ['get', 'type'], 'multi_storey'],
       layout: {
         'text-field': ['get', 'floors_label'],
@@ -713,6 +832,8 @@ export function ensureParkingOverlaySources(
         'text-color': '#1C1C1E',
         'text-halo-color': '#FFFFFF',
         'text-halo-width': 2,
+        'text-opacity': fadeOpacityKeepSelected(1, 1, PARKING_FADE) as never,
+        'text-opacity-transition': NO_OPACITY_TRANSITION,
       },
     })
   }
@@ -728,18 +849,19 @@ export function ensureParkingOverlaySources(
       id: PARKING_LOTS_FILL_LAYER,
       type: 'fill',
       source: PARKING_LOTS_SOURCE,
-      minzoom: ZOOM.lotMin,
+      minzoom: PARKING_FADE_START_ZOOM,
       layout: { visibility: 'visible' },
       paint: {
         'fill-color': ['get', 'color'],
         'fill-opacity': selectedFillOpacity as never,
+        'fill-opacity-transition': NO_OPACITY_TRANSITION,
       },
     })
     map.addLayer({
       id: PARKING_LOTS_OUTLINE_LAYER,
       type: 'line',
       source: PARKING_LOTS_SOURCE,
-      minzoom: ZOOM.lotMin,
+      minzoom: PARKING_FADE_START_ZOOM,
       layout: {
         visibility: 'visible',
         'line-cap': 'round',
@@ -756,12 +878,8 @@ export function ensureParkingOverlaySources(
           17,
           ['case', ['boolean', ['feature-state', 'selected'], false], 3.2, 1.6],
         ] as never,
-        'line-opacity': [
-          'case',
-          ['boolean', ['feature-state', 'selected'], false],
-          0.85,
-          0.45,
-        ] as never,
+        'line-opacity': fadeOpacityKeepSelected(0.45, 0.85, PARKING_FADE) as never,
+        'line-opacity-transition': NO_OPACITY_TRANSITION,
         'line-blur': 0.6,
       },
     })
@@ -769,7 +887,7 @@ export function ensureParkingOverlaySources(
       id: PARKING_LOTS_LABEL_LAYER,
       type: 'symbol',
       source: PARKING_LOTS_SOURCE,
-      minzoom: ZOOM.lotMin,
+      minzoom: PARKING_FADE_START_ZOOM,
       layout: {
         'text-field': ['get', 'badge'],
         'text-font': ['Noto Sans Bold'],
@@ -785,11 +903,13 @@ export function ensureParkingOverlaySources(
         'text-color': ['get', 'color'],
         'text-halo-color': '#F8FAFC',
         'text-halo-width': 1.8,
+        'text-opacity': fadeOpacityKeepSelected(1, 1, PARKING_FADE) as never,
+        'text-opacity-transition': NO_OPACITY_TRANSITION,
       },
     })
   }
 
-  // ——— Street-side parking lines from ee_parking_max (minzoom 12) ———
+  // ——— Street-side parking lines from ee_parking_max (fade from street START) ———
   if (!map.getSource(STREET_PARKING_SOURCE)) {
     map.addSource(STREET_PARKING_SOURCE, {
       type: 'geojson',
@@ -801,7 +921,7 @@ export function ensureParkingOverlaySources(
       id: STREET_PARKING_CASING_LAYER,
       type: 'line',
       source: STREET_PARKING_SOURCE,
-      minzoom: ZOOM.streetMin,
+      minzoom: STREET_FADE_START_ZOOM,
       layout: {
         visibility: 'none',
         'line-cap': 'round',
@@ -820,17 +940,8 @@ export function ensureParkingOverlaySources(
           18,
           10,
         ],
-        'line-opacity': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          12,
-          0.25,
-          13,
-          0.45,
-          16,
-          0.75,
-        ],
+        'line-opacity': fadeOpacityExpr(0.75, STREET_FADE) as never,
+        'line-opacity-transition': NO_OPACITY_TRANSITION,
       },
     })
 
@@ -838,7 +949,7 @@ export function ensureParkingOverlaySources(
       id: STREET_PARKING_LINE_LAYER,
       type: 'line',
       source: STREET_PARKING_SOURCE,
-      minzoom: ZOOM.streetMin,
+      minzoom: STREET_FADE_START_ZOOM,
       layout: {
         visibility: 'none',
         'line-cap': 'round',
@@ -873,22 +984,8 @@ export function ensureParkingOverlaySources(
             7,
           ],
         ] as never,
-        'line-opacity': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          12,
-          0.7,
-          14,
-          0.88,
-          16,
-          [
-            'case',
-            ['boolean', ['feature-state', 'selected'], false],
-            1,
-            0.92,
-          ],
-        ] as never,
+        'line-opacity': fadeOpacityKeepSelected(0.92, 1, STREET_FADE) as never,
+        'line-opacity-transition': NO_OPACITY_TRANSITION,
       },
     })
 
@@ -896,7 +993,7 @@ export function ensureParkingOverlaySources(
       id: STREET_PARKING_HIT_LAYER,
       type: 'line',
       source: STREET_PARKING_SOURCE,
-      minzoom: ZOOM.streetMin,
+      minzoom: STREET_FADE_START_ZOOM,
       layout: {
         visibility: 'none',
         'line-cap': 'round',
@@ -921,7 +1018,7 @@ export function ensureParkingOverlaySources(
       id: PARKING_LINES_CASING_LAYER,
       type: 'line',
       source: PARKING_LINES_SOURCE,
-      minzoom: ZOOM.detailMin,
+      minzoom: DETAIL_FADE_START_ZOOM,
       layout: {
         visibility: 'none',
         'line-cap': 'round',
@@ -930,14 +1027,15 @@ export function ensureParkingOverlaySources(
       paint: {
         'line-color': '#FFFFFF',
         'line-width': ['interpolate', ['linear'], ['zoom'], 15, 5, 17, 9, 18, 12],
-        'line-opacity': 0.72,
+        'line-opacity': fadeOpacityExpr(0.72, DETAIL_FADE) as never,
+        'line-opacity-transition': NO_OPACITY_TRANSITION,
       },
     })
     map.addLayer({
       id: PARKING_LINES_GLOW_LAYER,
       type: 'line',
       source: PARKING_LINES_SOURCE,
-      minzoom: ZOOM.detailMin,
+      minzoom: DETAIL_FADE_START_ZOOM,
       layout: {
         visibility: 'none',
         'line-cap': 'round',
@@ -967,7 +1065,7 @@ export function ensureParkingOverlaySources(
       id: PARKING_LINES_LAYER,
       type: 'line',
       source: PARKING_LINES_SOURCE,
-      minzoom: ZOOM.detailMin,
+      minzoom: DETAIL_FADE_START_ZOOM,
       layout: {
         visibility: 'none',
         'line-cap': 'round',
@@ -977,13 +1075,14 @@ export function ensureParkingOverlaySources(
         'line-color': ['get', 'color'],
         'line-width': selectedLineWidth as never,
         'line-opacity': selectedLineOpacity as never,
+        'line-opacity-transition': NO_OPACITY_TRANSITION,
       },
     })
     map.addLayer({
       id: 'parking-street-lines-hit',
       type: 'line',
       source: PARKING_LINES_SOURCE,
-      minzoom: ZOOM.detailMin,
+      minzoom: DETAIL_FADE_START_ZOOM,
       layout: {
         visibility: 'none',
         'line-cap': 'round',
@@ -997,7 +1096,7 @@ export function ensureParkingOverlaySources(
     })
   }
 
-  // ——— POI pins: EV / INVA / loading / P&R (detail ≥ 15) ———
+  // ——— POI pins: EV / INVA / loading / P&R (detail fade → fully visible at 15) ———
   if (!map.getSource(PARKING_VIEWPORT_SOURCE)) {
     map.addSource(PARKING_VIEWPORT_SOURCE, {
       type: 'geojson',
@@ -1016,7 +1115,7 @@ export function ensureParkingOverlaySources(
           ['==', ['get', 'layer'], layerKey],
           ['==', ['get', 'provider'], layerKey],
         ],
-        minzoom: ZOOM.detailMin,
+        minzoom: DETAIL_FADE_START_ZOOM,
         layout: { visibility: 'visible' },
         paint: {
           'circle-color': meta.color,
@@ -1046,12 +1145,10 @@ export function ensureParkingOverlaySources(
             2,
           ] as never,
           'circle-stroke-color': '#ffffff',
-          'circle-opacity': [
-            'case',
-            ['boolean', ['feature-state', 'selected'], false],
-            1,
-            0.82,
-          ] as never,
+          'circle-opacity': fadeOpacityKeepSelected(0.82, 1, DETAIL_FADE) as never,
+          'circle-opacity-transition': NO_OPACITY_TRANSITION,
+          'circle-stroke-opacity': fadeOpacityKeepSelected(1, 1, DETAIL_FADE) as never,
+          'circle-stroke-opacity-transition': NO_OPACITY_TRANSITION,
         },
       })
       map.addLayer({
@@ -1063,7 +1160,7 @@ export function ensureParkingOverlaySources(
           ['==', ['get', 'layer'], layerKey],
           ['==', ['get', 'provider'], layerKey],
         ],
-        minzoom: ZOOM.detailMin,
+        minzoom: DETAIL_FADE_START_ZOOM,
         layout: {
           'text-field': ['get', 'badge'],
           'text-font': ['Noto Sans Bold'],
@@ -1077,6 +1174,8 @@ export function ensureParkingOverlaySources(
           'text-color': meta.color,
           'text-halo-color': '#F1F5F9',
           'text-halo-width': 1.3,
+          'text-opacity': fadeOpacityKeepSelected(1, 1, DETAIL_FADE) as never,
+          'text-opacity-transition': NO_OPACITY_TRANSITION,
         },
       })
     }
