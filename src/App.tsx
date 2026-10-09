@@ -82,7 +82,9 @@ import {
 import { spotDisplayName } from './lib/parkingDisplayName'
 import {
   fetchRoutePlan,
+  fetchWalkingRoute,
   formatDuration,
+  routeCoordsToLngLat,
   type NavRouteBundle,
 } from './lib/routing'
 import {
@@ -213,6 +215,11 @@ export default function App() {
   const [routeSummaryReady, setRouteSummaryReady] = useState(false)
   const [, setRouteLoading] = useState(false)
   const [, setRouteError] = useState<string | null>(null)
+  /** Pedestrian preview path [lng,lat][] for nearest-picker dashed link. */
+  const [previewWalkPath, setPreviewWalkPath] = useState<
+    [number, number][] | null
+  >(null)
+  const previewWalkAbort = useRef<AbortController | null>(null)
 
   const {
     geoResults,
@@ -1319,7 +1326,7 @@ export default function App() {
     })
   }
 
-  /** Instant preview only — no detail panel, no OSRM. Strict single selection. */
+  /** Instant preview only — no detail panel. Strict single selection. */
   const handleNearestPreview = useCallback((id: string) => {
     setSelectedPreviewId(id)
   }, [])
@@ -1365,6 +1372,49 @@ export default function App() {
     if (nearestOptions[0]) setSelectedPreviewId(nearestOptions[0].optionKey)
   }, [nearestPickerOpen, nearestOptions, selectedPreviewId])
 
+  // Pedestrian OSRM path for nearest-picker dashed preview (parking → house)
+  useEffect(() => {
+    if (!nearestPickerOpen || !searchLocation || !selectedPreviewId) {
+      previewWalkAbort.current?.abort()
+      previewWalkAbort.current = null
+      setPreviewWalkPath(null)
+      return
+    }
+    const hit = nearestOptions.find((o) => o.optionKey === selectedPreviewId)
+    if (!hit) {
+      setPreviewWalkPath(null)
+      return
+    }
+
+    const ctrl = new AbortController()
+    previewWalkAbort.current?.abort()
+    previewWalkAbort.current = ctrl
+    setPreviewWalkPath(null)
+
+    const from: [number, number] = [hit.spot.lat, hit.spot.lng]
+    const to: [number, number] = [searchLocation.lat, searchLocation.lng]
+
+    fetchWalkingRoute(from, to, ctrl.signal)
+      .then((route) => {
+        if (ctrl.signal.aborted) return
+        setPreviewWalkPath(routeCoordsToLngLat(route.coords))
+      })
+      .catch((e) => {
+        if ((e as Error).name === 'AbortError') return
+        // fetchWalkingRoute already sidewalk-snaps; leave empty rather than chord
+        setPreviewWalkPath(null)
+      })
+
+    return () => {
+      ctrl.abort()
+    }
+  }, [
+    nearestPickerOpen,
+    searchLocation,
+    selectedPreviewId,
+    nearestOptions,
+  ])
+
   const nearestPills = useMemo(() => {
     if (!nearestPickerOpen) return []
     return nearestOptions.map(({ spot, optionKey }) => ({
@@ -1388,8 +1438,15 @@ export default function App() {
         : undefined,
       // Fit cluster once — do not re-camera on every preview tap (keeps taps instant)
       fitAll: true,
+      walkPath: previewWalkPath,
     }
-  }, [nearestPickerOpen, searchLocation, selectedPreviewId, nearestOptions])
+  }, [
+    nearestPickerOpen,
+    searchLocation,
+    selectedPreviewId,
+    nearestOptions,
+    previewWalkPath,
+  ])
 
   /** Route camera + OSRM intro to a parking spot (alternatives flow). */
   const routeToSpot = useCallback(

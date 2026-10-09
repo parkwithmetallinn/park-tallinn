@@ -367,15 +367,15 @@ function ensurePreviewLinkLayers(map: MapLibreMapType) {
   }
 }
 
+/** Pedestrian preview path — [lng, lat][] from OSRM foot (never a building chord). */
 function setPreviewLinkData(
   map: MapLibreMapType,
-  from: { lat: number; lng: number } | null,
-  to: { lat: number; lng: number } | null,
+  coordinates: [number, number][] | null,
 ) {
   ensurePreviewLinkLayers(map)
   const src = map.getSource(PREVIEW_LINK_SOURCE) as GeoJSONSource | undefined
   if (!src) return
-  if (!from || !to) {
+  if (!coordinates || coordinates.length < 2) {
     src.setData({ type: 'FeatureCollection', features: [] })
     return
   }
@@ -387,10 +387,7 @@ function setPreviewLinkData(
         properties: {},
         geometry: {
           type: 'LineString',
-          coordinates: [
-            [from.lng, from.lat],
-            [to.lng, to.lat],
-          ],
+          coordinates,
         },
       },
     ],
@@ -845,6 +842,11 @@ export const MapView = memo(forwardRef<
       parking?: { lat: number; lng: number }
       /** When true, fit all nearestPills + target (picker open). */
       fitAll?: boolean
+      /**
+       * Pedestrian OSRM geometry parking→destination as [lng, lat][].
+       * Dashed preview link; omit/empty while loading (no straight-line fallback).
+       */
+      walkPath?: [number, number][] | null
     } | null
     /** Map pill tap → preview selection (parent must not confirm/route). */
     onNearestPillClick?: (id: string) => void
@@ -2368,20 +2370,26 @@ export const MapView = memo(forwardRef<
     if (!map || !ready) return
     if (nearestPills.length === 0) {
       nearestPillsFitKeyRef.current = ''
-      setPreviewLinkData(map, null, null)
+      setPreviewLinkData(map, null)
     }
     setNearestPricePillData(map, nearestPills, nearestActivePillId)
   }, [nearestPills, nearestActivePillId, ready])
 
-  /** Dashed link: destination ↔ active nearest parking preview. */
+  /** Dashed pedestrian path: parking → destination (OSRM foot / sidewalk snap). */
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
     if (!previewFocus?.target || !previewFocus.parking) {
-      setPreviewLinkData(map, null, null)
+      setPreviewLinkData(map, null)
       return
     }
-    setPreviewLinkData(map, previewFocus.target, previewFocus.parking)
+    const path = previewFocus.walkPath
+    if (path && path.length >= 2) {
+      setPreviewLinkData(map, path)
+      return
+    }
+    // Loading / no route yet — do not draw a building-crossing chord
+    setPreviewLinkData(map, null)
   }, [previewFocus, ready])
 
   /** Frame searched target + all nearest pills (Lähimad parklad). */
