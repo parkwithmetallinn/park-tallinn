@@ -135,8 +135,8 @@ export function MyPinSheet({
   }
 
   const panel = dark
-    ? 'border-white/10 bg-[#1C1C1E]/95 text-[#F5F5F7] shadow-[0_8px_28px_rgba(0,0,0,0.4)] md:bg-[#1C1C1E]/78'
-    : 'border-black/8 bg-white/95 text-[#1C1C1E] shadow-[0_8px_28px_rgba(15,23,42,0.12)] md:border-white/55 md:bg-white/72'
+    ? 'border-white/10 bg-[#1C1C1E]/95 text-[#F5F5F7] shadow-[0_8px_28px_rgba(0,0,0,0.4)]'
+    : 'border-black/8 bg-white/95 text-[#1C1C1E] shadow-[0_8px_28px_rgba(15,23,42,0.12)]'
   const muted = dark ? 'text-[#98989D]' : 'text-[#8E8E93]'
   const soft = dark ? 'text-[#EBEBF5]/80' : 'text-[#636366]'
   const chip = dark ? 'bg-white/10' : 'bg-[#F2F2F7]'
@@ -152,14 +152,14 @@ export function MyPinSheet({
 
   return (
     <div
-      className={`${sheetClassName} pointer-events-none absolute z-30 left-3 right-3 bottom-[max(1rem,env(safe-area-inset-bottom))] max-h-[min(45dvh,50vh)] sm:top-[10rem] sm:right-auto sm:bottom-auto sm:left-4 sm:w-[22rem] sm:max-w-[min(24rem,calc(100vw-2rem))] sm:max-h-[min(80vh,calc(100dvh-11rem))]`}
+      className={`${sheetClassName} pointer-events-none absolute z-30 left-3 right-3 bottom-[max(1rem,env(safe-area-inset-bottom))] max-h-[45dvh] sm:top-[10rem] sm:right-auto sm:bottom-auto sm:left-4 sm:w-[22rem] sm:max-w-[min(24rem,calc(100vw-2rem))] sm:max-h-[min(80vh,calc(100dvh-11rem))]`}
       role="dialog"
       aria-modal="false"
       aria-label={title}
       data-testid="my-pin-sheet"
     >
       <div
-        className={`pointer-events-auto flex max-h-[inherit] flex-col overflow-hidden rounded-2xl border ${panel} md:backdrop-blur-md`}
+        className={`pointer-events-auto flex max-h-[inherit] flex-col overflow-hidden rounded-2xl border ${panel}`}
       >
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3.5 pb-4">
           <div className="mb-2.5 flex items-start justify-between gap-2">

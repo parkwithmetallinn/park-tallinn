@@ -16,10 +16,10 @@ export function OfflineBanner() {
       aria-live="polite"
     >
       <div
-        className={`pointer-events-auto animate-slide-up flex max-w-md items-center gap-2.5 rounded-2xl border px-3.5 py-2.5 text-[12px] font-semibold shadow-[0_8px_28px_rgba(15,23,42,0.2)] backdrop-blur-xl ${
+        className={`pointer-events-auto animate-slide-up flex max-w-md items-center gap-2.5 rounded-2xl border px-3.5 py-2.5 text-[12px] font-semibold shadow-[0_8px_28px_rgba(15,23,42,0.2)] ${
           online
             ? 'border-amber-400/30 bg-amber-50/95 text-amber-900'
-            : 'border-white/20 bg-[#1C1C1E]/92 text-white'
+            : 'border-white/20 bg-[#1C1C1E]/95 text-white'
         }`}
       >
         <CloudOff className="h-4 w-4 shrink-0 opacity-90" />

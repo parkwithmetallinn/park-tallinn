@@ -138,11 +138,11 @@ const FILTERS: { id: FilterId; label: string; color?: string }[] = [
 /** Marker click does not auto-start a route (search selection does). */
 const AUTO_ROUTE_ON_MARKER_CLICK = false
 
-/** Solid on mobile (GPU blur tanks MapLibre FPS); light glass + blur from md up. */
+/** Solid ~95% panels — no backdrop-blur (keeps MapLibre at 60 FPS on mobile). */
 const glass =
-  'rounded-2xl border border-black/8 bg-white/95 shadow-[0_8px_28px_rgba(15,23,42,0.12)] md:border-white/55 md:bg-white/72 md:backdrop-blur-md'
+  'rounded-2xl border border-black/8 bg-white/95 shadow-[0_8px_28px_rgba(15,23,42,0.12)]'
 const glassDark =
-  'rounded-2xl border border-white/10 bg-[#1C1C1E]/95 shadow-[0_8px_28px_rgba(0,0,0,0.4)] md:bg-[#1C1C1E]/78 md:backdrop-blur-md'
+  'rounded-2xl border border-white/10 bg-[#1C1C1E]/95 shadow-[0_8px_28px_rgba(0,0,0,0.4)]'
 
 export default function App() {
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme())

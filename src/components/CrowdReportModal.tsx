@@ -51,8 +51,8 @@ export function CrowdReportModal({
   const ink = dark ? 'text-[#F5F5F7]' : 'text-[#1C1C1E]'
   const muted = dark ? 'text-[#98989D]' : 'text-[#8E8E93]'
   const panel = dark
-    ? 'border-white/10 bg-[#1C1C1E]/92 text-[#F5F5F7]'
-    : 'border-white/55 bg-white/90 text-[#1C1C1E]'
+    ? 'border-white/10 bg-[#1C1C1E]/95 text-[#F5F5F7]'
+    : 'border-black/8 bg-white/95 text-[#1C1C1E]'
   const optionIdle = dark
     ? 'border-white/10 bg-white/5'
     : 'border-black/6 bg-[#F2F2F7]/90'
@@ -105,14 +105,14 @@ export function CrowdReportModal({
 
   return (
     <div
-      className="animate-fade-in fixed inset-0 z-[1100] flex items-end justify-center bg-black/40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-md sm:items-center sm:p-4"
+      className="animate-fade-in fixed inset-0 z-[1100] flex items-end justify-center bg-black/40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:items-center sm:p-4"
       onClick={onClose}
       onKeyDown={(e) => e.key === 'Escape' && onClose()}
       role="presentation"
       data-testid="crowd-report-modal"
     >
       <div
-        className={`animate-slide-up w-full max-w-md overflow-hidden rounded-3xl border p-4 shadow-2xl backdrop-blur-xl sm:p-5 ${panel}`}
+        className={`animate-slide-up w-full max-w-md overflow-hidden rounded-3xl border p-4 shadow-2xl sm:p-5 ${panel}`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

@@ -797,12 +797,11 @@ function panelCameraPadding(
     // Left rail panel (~22rem) + search/filters along the top
     return { top: 104, bottom: 48, left: 380, right: 56 }
   }
+  // Mobile sheets are max-h-[45dvh] — keep the focus in the visible upper ~55%
+  const bottom = Math.max(280, Math.round(window.innerHeight * 0.45))
   if (mode === 'nearest') {
-    // Compact "Lähimad parklad" sheet (~45vh) — keep pins visible above it
-    return { top: 80, bottom: 320, left: 40, right: 40 }
+    return { top: 80, bottom, left: 40, right: 40 }
   }
-  // Full detail sheet — frame above ~half the viewport
-  const bottom = Math.round(window.innerHeight * 0.45)
   return { top: 80, bottom, left: 24, right: 24 }
 }
 

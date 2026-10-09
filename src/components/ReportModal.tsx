@@ -147,13 +147,13 @@ export function ReportModal({
 
   return (
     <div
-      className="animate-fade-in fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+      className="animate-fade-in fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 p-4"
       onClick={onClose}
       onKeyDown={(e) => e.key === 'Escape' && onClose()}
       role="presentation"
     >
       <div
-        className="animate-slide-up max-h-[90vh] w-full max-w-md overflow-y-auto rounded-3xl border border-white/50 bg-white/85 p-6 font-sans shadow-2xl backdrop-blur-xl [font-family:var(--font-sans),ui-sans-serif,system-ui,-apple-system,sans-serif]"
+        className="animate-slide-up max-h-[90vh] w-full max-w-md overflow-y-auto rounded-3xl border border-black/8 bg-white/95 p-6 font-sans shadow-2xl [font-family:var(--font-sans),ui-sans-serif,system-ui,-apple-system,sans-serif]"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

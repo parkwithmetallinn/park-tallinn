@@ -5,7 +5,7 @@
  * exclusive of the floating clock FAB modal (`ParkingSessionModal`).
  * Star toggle saves the lot to localStorage favorites (`parkvibe_favorites`).
  *
- * Mobile: renders as a bottom sheet (z-30) with solid panel + dim backdrop
+ * Mobile: swipeable bottom sheet (max-h-[45dvh], z-30) with solid /95 panel
  * via InfoSidePanelShell — FABs / filter chips are faded by App when open.
  */
 

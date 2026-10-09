@@ -67,7 +67,7 @@ export function Toast({
       data-toast-kind={toast.kind}
     >
       <div
-        className={`pointer-events-auto animate-slide-up flex max-w-md items-start gap-3 rounded-2xl border px-4 py-3 shadow-[0_12px_40px_rgba(15,23,42,0.28)] backdrop-blur-xl ${tone}`}
+        className={`pointer-events-auto animate-slide-up flex max-w-md items-start gap-3 rounded-2xl border px-4 py-3 shadow-[0_12px_40px_rgba(15,23,42,0.28)] ${tone}`}
       >
         <Icon
           className={`mt-0.5 h-5 w-5 shrink-0 ${toast.kind === 'loading' ? 'animate-spin text-sea' : ''}`}

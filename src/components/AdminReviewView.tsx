@@ -251,7 +251,7 @@ export function AdminReviewView() {
         <section className="flex min-h-0 flex-col">
           <div className="relative min-h-[240px] flex-1">
             <div ref={mapEl} className="absolute inset-0" />
-            <div className="pointer-events-none absolute top-3 left-3 inline-flex items-center gap-1.5 rounded-lg bg-black/55 px-2 py-1 text-[10px] font-semibold text-white backdrop-blur">
+            <div className="pointer-events-none absolute top-3 left-3 inline-flex items-center gap-1.5 rounded-lg bg-black/90 px-2 py-1 text-[10px] font-semibold text-white">
               <Satellite className="h-3 w-3" />
               Satellite lookup
             </div>

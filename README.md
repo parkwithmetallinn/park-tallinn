@@ -108,7 +108,8 @@ Sildid ei kattu: `text-allow-overlap` / `icon-allow-overlap` on `false`; madalam
 - **Viewport bbox** — ainult ekraanil nähtavad kohad
 - **Nominatim otsing** — `/api/nominatim` proxy (Vite / Vercel)
 - **Bottom sheet** — Waze, Google Maps, Apple Maps navigeerimine
-- **Floating glass UI** — ümarad paneelid + backdrop-blur
+- **Floating UI** — ümarad paneelid solid ~95% taustaga (ilma backdrop-blur’ita, et MapLibre püsiks 60 FPS)
+- **Mobiili bottom sheet** — detail + lähimad parklad max-h-[45dvh], swipe-dismiss, safe-area inset
 
 ## Parkimissessioon (n8n)
 
