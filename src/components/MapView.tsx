@@ -10,6 +10,7 @@ import {
 import maplibreWorker from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import {
   forwardRef,
+  memo,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -721,7 +722,7 @@ function panelCameraPadding(panelOpen: boolean): {
   return { top: 88, bottom, left: 16, right: 16 }
 }
 
-export const MapView = forwardRef<
+export const MapView = memo(forwardRef<
   MapViewHandle,
   {
     spots: ParkingSpot[]
@@ -2687,17 +2688,20 @@ export const MapView = forwardRef<
   }, [districtDebug, ready])
 
   return (
-    <div className="relative h-full w-full">
+    <div className="relative z-0 h-full w-full" data-testid="map-view-root">
+      {/* Map canvas — z-0; marker/data updates go through refs, not React re-renders of this wrapper */}
       <div ref={containerRef} className="h-full w-full maplibre-root" />
       {/* Temporary QA toggle for district reference markers */}
       <button
         type="button"
         onClick={() => setDistrictDebug((v) => !v)}
-        className="district-qa-btn absolute bottom-28 left-3 z-20 rounded-md border border-slate-300 bg-white/95 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm backdrop-blur hover:bg-white"
+        className="district-qa-btn absolute bottom-28 left-3 z-[1] rounded-md border border-slate-300 bg-white/95 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm hover:bg-white"
         title="Toggle district QA reference points"
       >
         {districtDebug ? 'District QA: ON' : 'District QA'}
       </button>
     </div>
   )
-})
+}))
+
+MapView.displayName = 'MapView'

@@ -372,9 +372,10 @@ export function ParkingBottomSheet({
                 </span>
               ) : null}
             </div>
-            <div className="flex items-start gap-1.5">
+            <div className="flex min-w-0 items-start gap-1.5">
               <h3
-                className={`min-w-0 flex-1 text-[15px] leading-snug font-bold tracking-tight ${ink}`}
+                className={`min-w-0 flex-1 truncate text-base leading-snug font-bold tracking-tight sm:text-lg ${ink}`}
+                title={spotDisplayName(spot)}
               >
                 {spotDisplayName(spot)}
               </h3>
@@ -464,6 +465,7 @@ export function ParkingBottomSheet({
           </div>
           <button
             type="button"
+            data-testid="detail-panel-close"
             onClick={requestClose}
             className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition active:scale-95 ${chipBg} ${muted}`}
             aria-label="Sulge"

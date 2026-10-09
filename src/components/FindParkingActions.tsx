@@ -45,7 +45,7 @@ export function FindParkingActions({
 
   return (
     <div
-      className={`sticky bottom-0 z-10 -mx-3.5 mt-2 border-t px-3.5 pt-2.5 pb-1 backdrop-blur-md ${stickyBg}`}
+      className={`sticky bottom-0 z-10 -mx-3.5 mt-2 border-t px-3.5 pt-2.5 pb-1 ${stickyBg}`}
     >
       <div className="flex gap-2">
         <button

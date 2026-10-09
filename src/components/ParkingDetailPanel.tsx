@@ -4,6 +4,9 @@
  * Session form lives inside this panel when a lot is selected —
  * exclusive of the floating clock FAB modal (`ParkingSessionModal`).
  * Star toggle saves the lot to localStorage favorites (`parkvibe_favorites`).
+ *
+ * Mobile: renders as a bottom sheet (z-30) with solid panel + dim backdrop
+ * via InfoSidePanelShell — FABs / filter chips are faded by App when open.
  */
 
 import { useState } from 'react'
@@ -75,7 +78,7 @@ export function ParkingDetailPanel({
   const favorited = isFavorite(spot.id)
 
   return (
-    <>
+    <div data-testid="parking-detail-panel" className="contents">
       <ParkingBottomSheet
         spot={spot}
         {...rest}
@@ -102,6 +105,6 @@ export function ParkingDetailPanel({
           }}
         />
       ) : null}
-    </>
+    </div>
   )
 }

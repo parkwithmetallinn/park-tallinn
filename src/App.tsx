@@ -135,10 +135,11 @@ const FILTERS: { id: FilterId; label: string; color?: string }[] = [
 /** Marker click does not auto-start a route (search selection does). */
 const AUTO_ROUTE_ON_MARKER_CLICK = false
 
+/** Solid on mobile (GPU blur tanks MapLibre FPS); light glass + blur from md up. */
 const glass =
-  'rounded-2xl border border-white/55 bg-white/72 shadow-[0_8px_28px_rgba(15,23,42,0.12)] backdrop-blur-md'
+  'rounded-2xl border border-black/8 bg-white/95 shadow-[0_8px_28px_rgba(15,23,42,0.12)] md:border-white/55 md:bg-white/72 md:backdrop-blur-md'
 const glassDark =
-  'rounded-2xl border border-white/10 bg-[#1C1C1E]/78 shadow-[0_8px_28px_rgba(0,0,0,0.4)] backdrop-blur-md'
+  'rounded-2xl border border-white/10 bg-[#1C1C1E]/95 shadow-[0_8px_28px_rgba(0,0,0,0.4)] md:bg-[#1C1C1E]/78 md:backdrop-blur-md'
 
 export default function App() {
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme())
@@ -1618,10 +1619,21 @@ export default function App() {
 
   const fabClass = `tap-scale flex h-[52px] w-[52px] items-center justify-center rounded-full ${panel} ${text} shadow-[0_4px_16px_rgba(15,23,42,0.14)]`
 
+  /** Detail / sheet open — hide map chrome clutter on mobile. */
+  const detailChromeOpen = Boolean(
+    selected ||
+      selectedEvCharger ||
+      (searchSheetOpen && searchLocation) ||
+      nearestPickerOpen ||
+      draftPin ||
+      editingPinId ||
+      favoritesOpen,
+  )
+
   return (
     <div className={`relative h-full overflow-hidden ${dark ? 'bg-[#0f1714]' : 'bg-transparent'}`}>
-      {/* Full-bleed map */}
-      <div className="absolute inset-0">
+      {/* Full-bleed map — z-0 base layer */}
+      <div className="absolute inset-0 z-0">
         <MapErrorBoundary>
           <MapView
             ref={mapApiRef}
@@ -1691,13 +1703,20 @@ export default function App() {
 
       <OfflineBanner />
 
-      {/* Top floating search + filter pills (Apple HIG) */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-30 px-3 pt-[max(0.65rem,env(safe-area-inset-top))] sm:px-4">
+      {/* Top search + filter chips — z-20 (below detail drawer z-30) */}
+      <div
+        className={`pointer-events-none absolute inset-x-0 top-0 z-20 px-3 pt-[max(0.65rem,env(safe-area-inset-top))] transition-opacity duration-200 sm:px-4 ${
+          detailChromeOpen
+            ? 'max-sm:pointer-events-none max-sm:opacity-0 max-sm:invisible'
+            : ''
+        }`}
+        aria-hidden={detailChromeOpen ? true : undefined}
+      >
         <div className="pointer-events-auto mx-auto w-full max-w-xl space-y-2">
           <div className="relative min-w-0">
-            <div className={panel}>
+            <div className={`${panel} overflow-hidden`}>
               <div className="flex min-w-0 items-center gap-1 px-2 py-1.5">
-                <div className="relative min-w-0 flex-1">
+                <div className="relative min-w-0 flex-1 overflow-hidden">
                   {(geoLoading || pendingEnterSelect) &&
                   clampSearchQuery(query).length >= 3 ? (
                     <Loader2
@@ -1744,7 +1763,7 @@ export default function App() {
                     onKeyDown={handleSearchKeyDown}
                     placeholder="Otsi aadressi või kohta Eestis"
                     aria-label="Otsi aadressi või kohta"
-                    className={`w-full rounded-2xl border-0 bg-transparent py-3 pr-10 pl-10 text-[16px] font-sans outline-none ${text} placeholder:text-[#8E8E93]`}
+                    className={`w-full min-w-0 truncate rounded-2xl border-0 bg-transparent py-2.5 pr-10 pl-10 text-base font-sans outline-none sm:py-3 sm:text-lg ${text} placeholder:truncate placeholder:text-[#8E8E93]`}
                     autoComplete="off"
                     enterKeyHint="search"
                   />
@@ -1831,7 +1850,14 @@ export default function App() {
           </div>
 
           {!isDropdownOpen ? (
-            <div className="no-scrollbar flex gap-2 overflow-x-auto px-0.5 py-0.5">
+            <div
+              data-testid="filter-chips"
+              className={`no-scrollbar flex gap-2 overflow-x-auto px-0.5 py-0.5 transition-opacity duration-200 ${
+                detailChromeOpen
+                  ? 'max-sm:pointer-events-none max-sm:h-0 max-sm:overflow-hidden max-sm:opacity-0 max-sm:py-0'
+                  : ''
+              }`}
+            >
               {FILTERS.map((f) => {
                 const active = filter === f.id
                 return (
@@ -1950,18 +1976,15 @@ export default function App() {
         </div>
       </div>
 
-      {/* Floating Action Buttons — location + 3D */}
+      {/* FABs — z-10; fade away on mobile when detail sheet is open */}
       <div
-        className={`absolute right-3 z-50 flex flex-col gap-2.5 sm:right-4 ${
-          selected ||
-          selectedEvCharger ||
-          (searchSheetOpen && searchLocation) ||
-          nearestPickerOpen ||
-          draftPin ||
-          editingPinId
-            ? 'bottom-[max(42vh,calc(env(safe-area-inset-bottom)+11rem))] sm:bottom-[max(6.5rem,env(safe-area-inset-bottom))]'
-            : 'bottom-[max(6.5rem,env(safe-area-inset-bottom))]'
+        data-testid="map-fabs"
+        className={`absolute right-3 z-10 flex flex-col gap-2.5 transition-opacity duration-200 sm:right-4 bottom-[max(6.5rem,env(safe-area-inset-bottom))] ${
+          detailChromeOpen
+            ? 'max-sm:pointer-events-none max-sm:opacity-0 max-sm:invisible sm:bottom-[max(6.5rem,env(safe-area-inset-bottom))]'
+            : ''
         }`}
+        aria-hidden={detailChromeOpen ? true : undefined}
       >
         <button
           type="button"
