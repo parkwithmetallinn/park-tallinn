@@ -346,8 +346,9 @@ function ensurePreviewLinkLayers(map: MapLibreMapType) {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': '#007AFF',
-        'line-width': 6,
-        'line-opacity': 0.18,
+        'line-width': 7,
+        'line-opacity': 0.2,
+        'line-dasharray': [1.4, 1.8],
       },
     })
   }
@@ -359,8 +360,9 @@ function ensurePreviewLinkLayers(map: MapLibreMapType) {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': '#007AFF',
-        'line-width': 2.5,
-        'line-opacity': 0.9,
+        'line-width': 2.75,
+        'line-opacity': 0.92,
+        // Dashed = walking (distinct from solid drive route)
         'line-dasharray': [1.4, 1.8],
       },
     })
