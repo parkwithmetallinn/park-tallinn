@@ -107,6 +107,7 @@ import { useParkingSession } from './hooks/useParkingSession'
 import { useSearchGeocode } from './hooks/useSearchGeocode'
 import { clampSearchQuery } from './lib/validation'
 import { track } from './lib/analytics'
+import { getCurrentPositionOnce } from './lib/geolocation'
 
 import { parkingIndex } from './lib/spatialIndex'
 import { loadCustomSpots } from './lib/storage'
@@ -162,6 +163,7 @@ export default function App() {
     return CITIES[id].center
   })
   const [hasGps, setHasGps] = useState(false)
+  const [gpsLocating, setGpsLocating] = useState(false)
   const [flyTarget, setFlyTarget] = useState<[number, number] | null>(null)
   const [flyZoom, setFlyZoom] = useState<number | undefined>(undefined)
   const [flyKey, setFlyKey] = useState(0)
@@ -645,7 +647,7 @@ export default function App() {
     setSelected(match)
     setFlyMode('fly')
     setFlyTarget([match.lat, match.lng])
-    setFlyZoom(16.5)
+    setFlyZoom(16)
     setFlyKey((k) => k + 1)
     // Drop ?spot= so a hard refresh lands on a clean map (not stuck on deep-link zoom)
     try {
@@ -686,7 +688,7 @@ export default function App() {
       // Fly/zoom onto the lot — never leave the map at city/bay scale
       setFlyMode('fly')
       setFlyTarget([spot.lat, spot.lng])
-      setFlyZoom(16.5)
+      setFlyZoom(16)
       setFlyKey((k) => k + 1)
     },
     [clearRoute, setTimerOpen],
@@ -917,12 +919,39 @@ export default function App() {
     setSearchSheetOpen(true)
   }, [searchLocation])
 
-  const recenter = () => {
-    setFlyMode('ease')
-    setFlyTarget([...userLocation] as [number, number])
-    setFlyZoom(16)
-    setFlyKey((k) => k + 1)
-  }
+  /** FAB "Minu asukoht" — request a fresh GPS fix, then flyTo. */
+  const locateMe = useCallback(async () => {
+    if (gpsLocating) return
+    setGpsLocating(true)
+    try {
+      const result = await getCurrentPositionOnce()
+      if (!result.ok) {
+        setHasGps(false)
+        setToast({
+          kind: 'error',
+          title: 'Asukoht puudub',
+          detail: result.message,
+        })
+        return
+      }
+      const { lat, lng } = result.position
+      setUserLocation([lat, lng])
+      setHasGps(true)
+      setFlyMode('fly')
+      setFlyTarget([lat, lng])
+      setFlyZoom(16)
+      setFlyKey((k) => k + 1)
+    } catch {
+      setHasGps(false)
+      setToast({
+        kind: 'error',
+        title: 'Asukoht puudub',
+        detail: 'Asukoha määramine ebaõnnestus.',
+      })
+    } finally {
+      setGpsLocating(false)
+    }
+  }, [gpsLocating, setToast])
 
   /** Collect 3–5 nearest roadside/lot spots around the SEARCH destination. */
   const collectNearestOptions = useCallback(
@@ -988,7 +1017,7 @@ export default function App() {
       if (destSpot) {
         setFlyMode('fly')
         setFlyTarget([destSpot.lat, destSpot.lng])
-        setFlyZoom(16.5)
+        setFlyZoom(16)
         setFlyKey((k) => k + 1)
       }
 
@@ -1179,7 +1208,7 @@ export default function App() {
       setSearchSheetOpen(true)
       setFlyMode('fly')
       setFlyTarget([loc.lat, loc.lng])
-      setFlyZoom(16.5)
+      setFlyZoom(16)
       setFlyKey((k) => k + 1)
     }
   }
@@ -2013,12 +2042,23 @@ export default function App() {
       >
         <button
           type="button"
-          onClick={recenter}
+          data-testid="locate-me"
+          onClick={() => {
+            void locateMe()
+          }}
+          disabled={gpsLocating}
           className={fabClass}
           title="Minu asukoht"
           aria-label="Minu asukoht"
+          aria-busy={gpsLocating}
         >
-          <LocateFixed className={`h-[22px] w-[22px] ${hasGps ? 'text-[#007AFF]' : muted}`} />
+          {gpsLocating ? (
+            <Loader2 className="h-[22px] w-[22px] animate-spin text-[#007AFF]" />
+          ) : (
+            <LocateFixed
+              className={`h-[22px] w-[22px] ${hasGps ? 'text-[#007AFF]' : muted}`}
+            />
+          )}
         </button>
         <button
           type="button"
@@ -2121,7 +2161,7 @@ export default function App() {
             setSelected(spot)
             setFlyMode('fly')
             setFlyTarget([spot.lat, spot.lng])
-            setFlyZoom(16.5)
+            setFlyZoom(16)
             setFlyKey((k) => k + 1)
           }}
         />
@@ -2365,7 +2405,6 @@ export default function App() {
         />
       ) : null}
 
-      {!hasGps ? null : null}
     </div>
   )
 }

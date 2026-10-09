@@ -397,9 +397,11 @@ function setPreviewLinkData(
   })
 }
 
-function makeUserEl() {
+/** Pulsating blue GPS marker for the device's current position. */
+function makeUserEl(): HTMLDivElement {
   const wrap = document.createElement('div')
   wrap.className = 'user-location-wrap'
+  wrap.setAttribute('aria-hidden', 'true')
   wrap.innerHTML = `<div class="user-pulse"></div><div class="user-dot"></div>`
   return wrap
 }
@@ -2256,13 +2258,8 @@ export const MapView = memo(forwardRef<
     if (nearestPillsRef.current.length > 0) return
     const center: [number, number] = [flyTarget[1], flyTarget[0]]
     const zoom = flyZoom ?? Math.max(map.getZoom(), ZOOM.detailMin + 0.4)
-    // Detail focus: pitch 30 so the lot sits clearly above the sheet
-    const detailFocus = zoom >= 16
-    const pitch = detailFocus
-      ? 30
-      : pitch3dRef.current
-        ? NAV_PITCH
-        : 0
+    // Detail / locate focus: gentle pitch so the pin sits above the sheet
+    const pitch = zoom >= 15.5 ? 30 : pitch3dRef.current ? NAV_PITCH : 0
 
     const padding = panelCameraPadding(
       infoPanelOpenRef.current || flyModeRef.current === 'fly',
@@ -2274,9 +2271,7 @@ export const MapView = memo(forwardRef<
         zoom,
         pitch,
         padding,
-        duration: prefersReducedMotion() ? 0 : detailFocus ? 1200 : undefined,
-        speed: detailFocus ? undefined : 1.2,
-        curve: detailFocus ? undefined : 1.4,
+        duration: prefersReducedMotion() ? 0 : 1500,
         essential: true,
       })
     } else {
@@ -2285,7 +2280,7 @@ export const MapView = memo(forwardRef<
         zoom,
         pitch,
         padding,
-        duration: 900,
+        duration: prefersReducedMotion() ? 0 : 900,
         essential: true,
       })
     }
@@ -2327,7 +2322,7 @@ export const MapView = memo(forwardRef<
   }, [selectedId, highlightId, ready])
 
   /**
-   * Detail selection → flyTo lot (zoom 16.5, pitch 30).
+   * Detail selection → smooth flyTo (zoom 16, 1500ms).
    * Covers marker clicks, favorites, deep links — not nearest-picker fitBounds.
    */
   useEffect(() => {
@@ -2344,7 +2339,7 @@ export const MapView = memo(forwardRef<
     const alreadyFocused =
       Math.abs(c.lat - spot.lat) < 0.00035 &&
       Math.abs(c.lng - spot.lng) < 0.00035 &&
-      z >= 16.2
+      z >= 15.8
     if (alreadyFocused) {
       if (map.getPitch() < 20) {
         map.easeTo({ pitch: 30, duration: 400, essential: true })
@@ -2353,9 +2348,9 @@ export const MapView = memo(forwardRef<
     }
     map.flyTo({
       center: [spot.lng, spot.lat],
-      zoom: 16.5,
+      zoom: 16,
       pitch: 30,
-      duration: prefersReducedMotion() ? 0 : 1200,
+      duration: prefersReducedMotion() ? 0 : 1500,
       padding: panelCameraPadding(true, 'detail'),
       essential: true,
     })
