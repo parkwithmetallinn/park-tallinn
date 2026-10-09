@@ -85,11 +85,8 @@ export async function postCommunityFullReport(input: {
       },
       body: JSON.stringify({
         parkingId: input.spotId,
-        statusType: input.isFull === false ? undefined : 'FULL',
-        spotId: input.spotId,
-        isFull: input.isFull !== false,
-        lat: input.lat,
-        lng: input.lng,
+        statusType: input.isFull === false ? 'FREE' : 'FULL',
+        comment: '',
       }),
     })
     if (!res.ok) return []

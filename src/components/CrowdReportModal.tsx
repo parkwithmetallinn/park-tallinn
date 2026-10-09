@@ -15,7 +15,7 @@ const STATUS_OPTIONS: {
   { id: 'closed', label: 'Parkla suletud', Icon: Ban },
 ]
 
-const COMMENT_MAX = 150
+const COMMENT_MAX = 200
 
 const SUCCESS_TOAST =
   'Aitäh! Sinu teavitus aitab teisi autojuhte.'
@@ -77,12 +77,8 @@ export function CrowdReportModal({
         },
         body: JSON.stringify({
           parkingId: spot.id,
-          statusType:
-            statusType === 'full'
-              ? 'FULL'
-              : statusType === 'prices'
-                ? 'PRICES'
-                : 'CLOSED',
+          // FULL = täis; prices/closed map to FREE vote for tally
+          statusType: statusType === 'full' ? 'FULL' : 'FREE',
           comment: comment.trim().slice(0, COMMENT_MAX),
         }),
       })

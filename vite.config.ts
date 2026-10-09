@@ -22,27 +22,19 @@ function htmlSeoEnvPlugin(env: Record<string, string>): Plugin {
 }
 
 /**
- * Dev GET/POST /api/reports — delegates to api/reports.js (same as Vercel).
+ * Dev GET/POST /api/reports — delegates to api/reports.ts (same as Vercel).
+ * Only service-role + REPORT_SALT — never anon / VITE_SUPABASE_* for reports.
  */
 function communityReportsApiPlugin(env: Record<string, string>): Plugin {
-  // Expose Supabase env to the serverless-style handler under Vite
-  if (env.SUPABASE_URL || env.VITE_SUPABASE_URL) {
-    process.env.SUPABASE_URL =
-      env.SUPABASE_URL || env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
-  }
-  if (env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY) {
-    process.env.SUPABASE_ANON_KEY =
-      env.SUPABASE_ANON_KEY ||
-      env.VITE_SUPABASE_ANON_KEY ||
-      process.env.SUPABASE_ANON_KEY
+  if (env.SUPABASE_URL) {
+    process.env.SUPABASE_URL = env.SUPABASE_URL
   }
   if (env.SUPABASE_SERVICE_ROLE_KEY) {
     process.env.SUPABASE_SERVICE_ROLE_KEY = env.SUPABASE_SERVICE_ROLE_KEY
   }
-  process.env.VITE_SUPABASE_URL =
-    env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
-  process.env.VITE_SUPABASE_ANON_KEY =
-    env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || ''
+  if (env.REPORT_SALT) {
+    process.env.REPORT_SALT = env.REPORT_SALT
+  }
 
   const readBody = async (req: {
     on: (ev: string, cb: (chunk?: unknown) => void) => void
@@ -77,39 +69,31 @@ function communityReportsApiPlugin(env: Record<string, string>): Plugin {
         }
 
         try {
-          const mod = await import('./api/reports.js')
-          const handler = mod.default as (
-            req: unknown,
-            res: {
-              status: (n: number) => { json: (b: unknown) => void; end: () => void }
-              setHeader: (k: string, v: string) => void
-              statusCode?: number
-              json?: (b: unknown) => void
-              end?: (b?: unknown) => void
-            },
-          ) => Promise<void>
+          const mod = await import('./api/reports.ts')
+          const handler = mod.default
 
           let body: unknown = undefined
-          if (req.method === 'POST' || req.method === 'PUT') {
+          if (req.method === 'POST') {
             body = await readBody(req as never)
           }
 
           const fakeReq = {
             method: req.method,
-            headers: req.headers,
+            headers: req.headers as Record<
+              string,
+              string | string[] | undefined
+            >,
             body,
             socket: { remoteAddress: req.socket?.remoteAddress },
           }
 
           let statusCode = 200
           const fakeRes = {
-            statusCode: 200,
             setHeader(k: string, v: string) {
               res.setHeader(k, v)
             },
             status(n: number) {
               statusCode = n
-              this.statusCode = n
               return this
             },
             json(payload: unknown) {
