@@ -105,8 +105,15 @@ const CONNECTOR_GAP_M = 5
  * snapped foot network so we never draw through buildings/courtyards.
  */
 const MAX_STITCH_M = 40
+/**
+ * Mid-segment without foot geometry may only be this short. Longer snap→snap
+ * chords cut through buildings / vehicle-only roads and must be rejected.
+ */
+const MAX_MID_CHORD_M = 25
 /** OSRM radiuses (meters) to snap endpoints onto the walkable graph. */
-const WALK_RADII_M = [80, 150, 300] as const
+const WALK_RADII_M = [80, 150, 300, 500] as const
+/** Pedestrian OSRM profiles on the routed-foot instance (same graph). */
+const FOOT_PROFILES = ['foot', 'walking', 'pedestrian'] as const
 
 function round5(n: number) {
   return Math.round(n * 1e5) / 1e5
@@ -196,10 +203,143 @@ function walkDurationSeconds(distM: number): number {
   return Math.max(60, Math.round(distM / 1.4))
 }
 
+function interpolateLatLng(
+  a: [number, number],
+  b: [number, number],
+  t: number,
+): [number, number] {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
+}
+
+function pushUniqueCoord(coords: [number, number][], p: [number, number]) {
+  const last = coords[coords.length - 1]
+  if (
+    !last ||
+    distanceMeters(last[0], last[1], p[0], p[1]) > 0.4
+  ) {
+    coords.push(p)
+  }
+}
+
 /**
- * Last-resort walk geometry: parking → nearest sidewalk → nearest sidewalk at
- * destination → destination. Never a single chord through buildings.
- * Mid segment uses the foot router when possible; otherwise stays at sidewalks.
+ * True when geometry is essentially a geodesic chord (buildings / yards).
+ * Real foot routes have many vertices and detour around the block.
+ */
+function isChordLike(coords: [number, number][]): boolean {
+  if (coords.length < 2) return true
+  const straight = distanceMeters(
+    coords[0]![0],
+    coords[0]![1],
+    coords[coords.length - 1]![0],
+    coords[coords.length - 1]![1],
+  )
+  if (coords.length === 2) return straight > MAX_MID_CHORD_M
+  const pathM = pathLengthMeters(coords)
+  if (pathM < 1) return true
+  // Near-geodesic with almost no vertices → illegally cutting through blocks
+  if (
+    coords.length <= 4 &&
+    straight > MAX_MID_CHORD_M &&
+    pathM / straight < 1.08
+  ) {
+    return true
+  }
+  return false
+}
+
+function dedupeWaypoints(points: [number, number][]): [number, number][] {
+  const out: [number, number][] = []
+  for (const p of points) {
+    const last = out[out.length - 1]
+    if (
+      !last ||
+      distanceMeters(last[0], last[1], p[0], p[1]) > 8
+    ) {
+      out.push(p)
+    }
+  }
+  return out
+}
+
+/**
+ * Route through sidewalk-snapped midpoints so long legs follow the foot graph
+ * even when a direct OSRM pair fails (gaps, private courts, missing links).
+ */
+async function fetchFootViaSidewalkMids(
+  from: [number, number],
+  to: [number, number],
+  signal?: AbortSignal,
+): Promise<RouteResult | null> {
+  const dist = distanceMeters(from[0], from[1], to[0], to[1])
+  if (dist < 60) return null
+
+  const fractions =
+    dist > 900 ? [0.25, 0.5, 0.75] : dist > 350 ? [0.33, 0.66] : [0.5]
+  const mids = await Promise.all(
+    fractions.map((t) =>
+      snapToWalkNetwork(interpolateLatLng(from, to, t), signal),
+    ),
+  )
+  const waypoints = dedupeWaypoints([from, ...mids, to])
+  if (waypoints.length < 3) return null
+
+  // Single multi-waypoint request on the foot graph
+  try {
+    const routed = await fetchFootRouteMulti(waypoints, signal, 200)
+    if (!isChordLike(routed.coords)) return routed
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw e
+  }
+
+  // Stitch leg-by-leg if the multi request fails (raw only — no recursion)
+  const stitched: [number, number][] = []
+  let totalDist = 0
+  let totalDur = 0
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const a = waypoints[i]!
+    const b = waypoints[i + 1]!
+    const legStraight = distanceMeters(a[0], a[1], b[0], b[1])
+    let leg: RouteResult | null = null
+    for (const radius of WALK_RADII_M) {
+      try {
+        const candidate = await fetchFootRouteRaw(a, b, signal, radius)
+        if (!isChordLike(candidate.coords)) {
+          leg = candidate
+          break
+        }
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') throw e
+      }
+    }
+    if (leg) {
+      for (const p of leg.coords) pushUniqueCoord(stitched, p)
+      totalDist += leg.distanceMeters
+      totalDur += leg.durationSeconds
+    } else if (legStraight <= MAX_MID_CHORD_M) {
+      // Tiny sidewalk hop only — never a long illegal chord
+      pushUniqueCoord(stitched, a)
+      pushUniqueCoord(stitched, b)
+      totalDist += legStraight
+      totalDur += walkDurationSeconds(legStraight)
+    } else {
+      // Skip the illegal span; keep whatever network path we already have
+      pushUniqueCoord(stitched, a)
+    }
+  }
+  pushUniqueCoord(stitched, to)
+  if (stitched.length < 2 || isChordLike(stitched)) return null
+  return {
+    coords: stitched,
+    distanceMeters: totalDist > 0 ? totalDist : pathLengthMeters(stitched),
+    durationSeconds:
+      totalDur > 0 ? totalDur : walkDurationSeconds(pathLengthMeters(stitched)),
+    profile: 'foot',
+  }
+}
+
+/**
+ * Last-resort walk geometry: parking → nearest sidewalk → foot network →
+ * destination sidewalk → destination. Never a building-crossing mid chord.
  */
 async function sidewalkCorridorFallback(
   from: [number, number],
@@ -211,52 +351,68 @@ async function sidewalkCorridorFallback(
     snapToWalkNetwork(to, signal),
   ])
 
-  let mid: [number, number][] = [snapFrom, snapTo]
-  try {
-    const routed = await fetchFootRouteRaw(snapFrom, snapTo, signal, 200)
-    if (routed.coords.length >= 2) mid = routed.coords
-  } catch (e) {
-    if ((e as Error).name === 'AbortError') throw e
-  }
+  let mid: [number, number][] | null = null
 
-  const coords: [number, number][] = []
-  const pushUnique = (p: [number, number]) => {
-    const last = coords[coords.length - 1]
-    if (
-      !last ||
-      distanceMeters(last[0], last[1], p[0], p[1]) > 0.4
-    ) {
-      coords.push(p)
+  // Prefer real foot geometry with growing snap radiuses
+  for (const radius of WALK_RADII_M) {
+    try {
+      const routed = await fetchFootRouteRaw(snapFrom, snapTo, signal, radius)
+      if (!isChordLike(routed.coords)) {
+        mid = routed.coords
+        break
+      }
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') throw e
     }
   }
 
-  // Short access connectors only (courtyard → sidewalk)
-  pushUnique(from)
-  if (distanceMeters(from[0], from[1], snapFrom[0], snapFrom[1]) <= MAX_STITCH_M) {
-    pushUnique(snapFrom)
-  } else {
-    // Too far to invent a path through blocks — start on the sidewalk
-    pushUnique(snapFrom)
+  if (!mid) {
+    const via = await fetchFootViaSidewalkMids(snapFrom, snapTo, signal)
+    if (via && !isChordLike(via.coords)) mid = via.coords
   }
-  for (const p of mid) pushUnique(p)
+
+  const snapGap = distanceMeters(
+    snapFrom[0],
+    snapFrom[1],
+    snapTo[0],
+    snapTo[1],
+  )
+  // Only allow a bare snap→snap mid when the gap is a tiny sidewalk stitch
+  if (!mid && snapGap <= MAX_MID_CHORD_M) {
+    mid = [snapFrom, snapTo]
+  }
+
+  const coords: [number, number][] = []
+
+  // Short access connectors only (courtyard → sidewalk)
+  if (distanceMeters(from[0], from[1], snapFrom[0], snapFrom[1]) <= MAX_STITCH_M) {
+    pushUniqueCoord(coords, from)
+  }
+  pushUniqueCoord(coords, snapFrom)
+  if (mid) {
+    for (const p of mid) pushUniqueCoord(coords, p)
+  }
+  pushUniqueCoord(coords, snapTo)
   if (distanceMeters(to[0], to[1], snapTo[0], snapTo[1]) <= MAX_STITCH_M) {
-    pushUnique(snapTo)
-    pushUnique(to)
-  } else {
-    pushUnique(snapTo)
+    pushUniqueCoord(coords, to)
   }
 
   if (coords.length < 2) {
     // Absolute last resort: stay on snapped sidewalks only (no building chord)
     coords.length = 0
-    coords.push(snapFrom, snapTo)
+    if (snapGap <= MAX_MID_CHORD_M) {
+      coords.push(snapFrom, snapTo)
+    } else {
+      // Cannot invent a path — pin both ends on the network without linking
+      coords.push(snapFrom, snapFrom)
+    }
   }
 
   const distM = pathLengthMeters(coords)
   return {
     coords,
-    distanceMeters: distM,
-    durationSeconds: walkDurationSeconds(distM),
+    distanceMeters: Math.max(distM, 1),
+    durationSeconds: walkDurationSeconds(Math.max(distM, 1)),
     isFallback: true,
     profile: 'foot',
   }
@@ -359,32 +515,46 @@ async function fetchOsrmRoute(
   }
 }
 
-/** Raw foot route with endpoint radiuses (meters) for sidewalk snapping. */
+/** Raw pedestrian route with endpoint radiuses (meters) for sidewalk snapping. */
 async function fetchFootRouteRaw(
   from: [number, number],
   to: [number, number],
   signal?: AbortSignal,
   radiusM = 80,
+  profile: (typeof FOOT_PROFILES)[number] = 'foot',
 ): Promise<RouteResult> {
-  const [fromLat, fromLng] = from
-  const [toLat, toLng] = to
-  const coords = `${fromLng},${fromLat};${toLng},${toLat}`
+  return fetchFootRouteMulti([from, to], signal, radiusM, profile)
+}
+
+/** Multi-waypoint pedestrian route on the OSM routed-foot instance. */
+async function fetchFootRouteMulti(
+  points: [number, number][],
+  signal?: AbortSignal,
+  radiusM = 80,
+  profile: (typeof FOOT_PROFILES)[number] = 'foot',
+): Promise<RouteResult> {
+  if (points.length < 2) {
+    throw new Error('Jalutusmarsruuti ei õnnestunud leida')
+  }
+  const coords = points.map(([lat, lng]) => `${lng},${lat}`).join(';')
+  const radiuses = points.map(() => String(radiusM)).join(';')
   const qs = new URLSearchParams({
     overview: 'full',
     geometries: 'geojson',
     steps: 'false',
     alternatives: 'false',
     continue_straight: 'false',
-    radiuses: `${radiusM};${radiusM}`,
+    radiuses,
   })
-  const url = apiUrl(`/api/route-foot/route/v1/foot/${coords}?${qs}`)
+  const url = apiUrl(`/api/route-foot/route/v1/${profile}/${coords}?${qs}`)
   const result = await fetchOsrmRoute(url, signal)
   return { ...result, profile: 'foot' }
 }
 
 /**
  * Pedestrian route via OSM routed-foot (sidewalks / footways / crossings).
- * Retries with larger radiuses before throwing.
+ * Retries with larger radiuses and alternate pedestrian profiles; rejects
+ * chord-like geometry that would cut through buildings.
  */
 async function fetchWalkingRouteNetwork(
   from: [number, number],
@@ -392,14 +562,31 @@ async function fetchWalkingRouteNetwork(
   signal?: AbortSignal,
 ): Promise<RouteResult> {
   let lastErr: Error | null = null
-  for (const radius of WALK_RADII_M) {
-    try {
-      return await fetchFootRouteRaw(from, to, signal, radius)
-    } catch (e) {
-      if ((e as Error).name === 'AbortError') throw e
-      lastErr = e as Error
+  for (const profile of FOOT_PROFILES) {
+    for (const radius of WALK_RADII_M) {
+      try {
+        const routed = await fetchFootRouteRaw(
+          from,
+          to,
+          signal,
+          radius,
+          profile,
+        )
+        if (isChordLike(routed.coords)) {
+          lastErr = new Error('Jalutusmarsruut läbis ehitisi')
+          continue
+        }
+        return routed
+      } catch (e) {
+        if ((e as Error).name === 'AbortError') throw e
+        lastErr = e as Error
+      }
     }
   }
+
+  const via = await fetchFootViaSidewalkMids(from, to, signal)
+  if (via && !isChordLike(via.coords)) return via
+
   throw lastErr ?? new Error('Jalutusmarsruuti ei õnnestunud leida')
 }
 
@@ -559,6 +746,9 @@ export async function fetchRoutePlan(args: {
         snapToWalkNetwork(destination, signal),
       ])
       const raw = await fetchRoute(snapPark, snapDest, 'walking', signal)
+      if (isChordLike(raw.coords)) {
+        throw new Error('Jalutusmarsruut läbis ehitisi')
+      }
       const stitched = stitchWalkEndpoints(raw, parking, destination)
       return { ok: true, value: stitched, failed: false }
     } catch (e) {
@@ -612,6 +802,8 @@ export async function fetchRoutePlan(args: {
 
 /**
  * Walking route with sidewalk-aware fallback (for nearest-picker preview etc.).
+ * Always prefers the OSM foot graph; short hops snap to the nearest sidewalk
+ * instead of drawing a building-crossing chord.
  */
 export async function fetchWalkingRoute(
   from: [number, number],
@@ -620,11 +812,58 @@ export async function fetchWalkingRoute(
 ): Promise<RouteResult> {
   const dist = distanceMeters(from[0], from[1], to[0], to[1])
   if (dist < WALK_SKIP_M) {
-    return {
-      coords: [from, to],
-      distanceMeters: dist,
-      durationSeconds: Math.max(30, Math.round(dist / 1.4)),
-      profile: 'foot',
+    try {
+      const [snapFrom, snapTo] = await Promise.all([
+        snapToWalkNetwork(from, signal),
+        snapToWalkNetwork(to, signal),
+      ])
+      const snapGap = distanceMeters(
+        snapFrom[0],
+        snapFrom[1],
+        snapTo[0],
+        snapTo[1],
+      )
+      // Same sidewalk node (or tiny gap): short access stitches only
+      if (snapGap <= MAX_MID_CHORD_M) {
+        const coords: [number, number][] = []
+        if (
+          distanceMeters(from[0], from[1], snapFrom[0], snapFrom[1]) <=
+          MAX_STITCH_M
+        ) {
+          pushUniqueCoord(coords, from)
+        }
+        pushUniqueCoord(coords, snapFrom)
+        pushUniqueCoord(coords, snapTo)
+        if (
+          distanceMeters(to[0], to[1], snapTo[0], snapTo[1]) <= MAX_STITCH_M
+        ) {
+          pushUniqueCoord(coords, to)
+        }
+        if (coords.length >= 2) {
+          const distM = pathLengthMeters(coords)
+          return {
+            coords,
+            distanceMeters: distM,
+            durationSeconds: Math.max(30, Math.round(distM / 1.4)),
+            profile: 'foot',
+          }
+        }
+      }
+      const raw = await fetchWalkingRouteNetwork(snapFrom, snapTo, signal)
+      return stitchWalkEndpoints(raw, from, to)
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') throw e
+      // Truly tiny courtyard hop — allow a short stitch, never a long chord
+      if (dist <= MAX_MID_CHORD_M) {
+        return {
+          coords: [from, to],
+          distanceMeters: dist,
+          durationSeconds: Math.max(30, Math.round(dist / 1.4)),
+          isFallback: true,
+          profile: 'foot',
+        }
+      }
+      return sidewalkCorridorFallback(from, to, signal)
     }
   }
   try {
@@ -633,6 +872,9 @@ export async function fetchWalkingRoute(
       snapToWalkNetwork(to, signal),
     ])
     const raw = await fetchRoute(snapFrom, snapTo, 'walking', signal)
+    if (isChordLike(raw.coords)) {
+      return sidewalkCorridorFallback(from, to, signal)
+    }
     return stitchWalkEndpoints(raw, from, to)
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e
