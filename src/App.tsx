@@ -683,6 +683,11 @@ export default function App() {
       setFromNearestPicker(false)
       setSelectedEvCharger(null)
       setSelected(spot)
+      // Fly/zoom onto the lot — never leave the map at city/bay scale
+      setFlyMode('fly')
+      setFlyTarget([spot.lat, spot.lng])
+      setFlyZoom(16.5)
+      setFlyKey((k) => k + 1)
     },
     [clearRoute, setTimerOpen],
   )
@@ -979,6 +984,14 @@ export default function App() {
         }
       }
 
+      // Immediately frame the chosen lot (detail zoom) — route intro may refine later
+      if (destSpot) {
+        setFlyMode('fly')
+        setFlyTarget([destSpot.lat, destSpot.lng])
+        setFlyZoom(16.5)
+        setFlyKey((k) => k + 1)
+      }
+
       const nearUser =
         distanceMeters(
           userLocation[0],
@@ -988,10 +1001,12 @@ export default function App() {
         ) < 40
 
       if (nearUser) {
-        setFlyMode('fly')
-        setFlyTarget(house)
-        setFlyZoom(17)
-        setFlyKey((k) => k + 1)
+        if (!destSpot) {
+          setFlyMode('fly')
+          setFlyTarget(house)
+          setFlyZoom(17)
+          setFlyKey((k) => k + 1)
+        }
         searchSheetTimer.current = window.setTimeout(() => {
           openInfoSheet()
           searchSheetTimer.current = null
@@ -1154,16 +1169,18 @@ export default function App() {
     setNearestPickerOpen(true)
     setSelectedPreviewId(options[0]?.optionKey ?? null)
 
-    // Frame the searched destination (wider so nearby lots are visible)
-    setFlyMode('fly')
-    setFlyTarget([loc.lat, loc.lng])
-    setFlyZoom(options.length > 0 ? 15.2 : 16.5)
-    setFlyKey((k) => k + 1)
+    // Do NOT fly to destination alone — MapView previewFocus.fitBounds
+    // frames destination + all nearby lots (avoids city/bay scale + race).
+    setFlyTarget(null)
 
     if (options.length === 0) {
-      // No parking nearby — fall back to location info sheet
+      // No parking nearby — fall back to location info sheet + fly to dest
       setNearestPickerOpen(false)
       setSearchSheetOpen(true)
+      setFlyMode('fly')
+      setFlyTarget([loc.lat, loc.lng])
+      setFlyZoom(16.5)
+      setFlyKey((k) => k + 1)
     }
   }
 
@@ -1647,7 +1664,15 @@ export default function App() {
             flyMode={flyMode}
             pitch3d={pitch3d}
             selectedId={selected?.id ?? null}
-            highlightId={nearestPickerOpen ? selectedPreviewId : null}
+            highlightId={
+              nearestPickerOpen
+                ? nearestOptions.find((o) => o.optionKey === selectedPreviewId)
+                    ?.spot.id ?? null
+                : null
+            }
+            nearestActivePillId={
+              nearestPickerOpen ? selectedPreviewId : null
+            }
             nearestPills={nearestPills}
             previewFocus={previewFocus}
             onNearestPillClick={(id) => {
@@ -2096,7 +2121,7 @@ export default function App() {
             setSelected(spot)
             setFlyMode('fly')
             setFlyTarget([spot.lat, spot.lng])
-            setFlyZoom(16)
+            setFlyZoom(16.5)
             setFlyKey((k) => k + 1)
           }}
         />

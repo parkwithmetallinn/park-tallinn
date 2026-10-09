@@ -164,6 +164,11 @@ const NEAREST_PILL_HIT_LAYERS = [
   NEAREST_PILLS_BG_LAYER,
 ] as const
 
+/** Dashed preview link: destination ↔ selected nearest parking. */
+export const PREVIEW_LINK_SOURCE = 'preview-dest-link'
+export const PREVIEW_LINK_LAYER = 'preview-dest-link-line'
+export const PREVIEW_LINK_HALO = 'preview-dest-link-halo'
+
 function ensureNearestPricePillLayers(map: MapLibreMapType) {
   if (!map.getSource(NEAREST_PILLS_SOURCE)) {
     map.addSource(NEAREST_PILLS_SOURCE, {
@@ -182,24 +187,29 @@ function ensureNearestPricePillLayers(map: MapLibreMapType) {
         'circle-radius': [
           'case',
           ['boolean', ['get', 'active'], false],
-          22,
+          26,
           18,
         ],
         'circle-color': [
-          'match',
-          ['get', 'tone'],
-          'free',
-          '#ECFDF5',
-          'clock',
-          '#FFFBEB',
-          'paid',
-          '#FEF2F2',
-          '#F8FAFC',
+          'case',
+          ['boolean', ['get', 'active'], false],
+          '#FFF6BF',
+          [
+            'match',
+            ['get', 'tone'],
+            'free',
+            '#ECFDF5',
+            'clock',
+            '#FFFBEB',
+            'paid',
+            '#FEF2F2',
+            '#F8FAFC',
+          ],
         ],
         'circle-stroke-width': [
           'case',
           ['boolean', ['get', 'active'], false],
-          3.5,
+          4,
           2,
         ],
         'circle-stroke-color': [
@@ -318,6 +328,72 @@ function setNearestPricePillData(
         coordinates: [p.lng, p.lat],
       },
     })),
+  })
+}
+
+function ensurePreviewLinkLayers(map: MapLibreMapType) {
+  if (!map.getSource(PREVIEW_LINK_SOURCE)) {
+    map.addSource(PREVIEW_LINK_SOURCE, {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+    })
+  }
+  if (!map.getLayer(PREVIEW_LINK_HALO)) {
+    map.addLayer({
+      id: PREVIEW_LINK_HALO,
+      type: 'line',
+      source: PREVIEW_LINK_SOURCE,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#007AFF',
+        'line-width': 6,
+        'line-opacity': 0.18,
+      },
+    })
+  }
+  if (!map.getLayer(PREVIEW_LINK_LAYER)) {
+    map.addLayer({
+      id: PREVIEW_LINK_LAYER,
+      type: 'line',
+      source: PREVIEW_LINK_SOURCE,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#007AFF',
+        'line-width': 2.5,
+        'line-opacity': 0.9,
+        'line-dasharray': [1.4, 1.8],
+      },
+    })
+  }
+}
+
+function setPreviewLinkData(
+  map: MapLibreMapType,
+  from: { lat: number; lng: number } | null,
+  to: { lat: number; lng: number } | null,
+) {
+  ensurePreviewLinkLayers(map)
+  const src = map.getSource(PREVIEW_LINK_SOURCE) as GeoJSONSource | undefined
+  if (!src) return
+  if (!from || !to) {
+    src.setData({ type: 'FeatureCollection', features: [] })
+    return
+  }
+  src.setData({
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: {},
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            [from.lng, from.lat],
+            [to.lng, to.lat],
+          ],
+        },
+      },
+    ],
   })
 }
 
@@ -696,12 +772,17 @@ function applyHoverHighlight(map: MapLibreMapType, hoverId: string | null) {
 }
 
 
+type CameraPadMode = 'closed' | 'detail' | 'nearest'
+
 /**
  * Camera padding so the focus point sits in the free map area.
  * Top chrome is search + filter pills only — route/distance summary lives
  * inside the detail panel (never a floating banner over the filters).
  */
-function panelCameraPadding(panelOpen: boolean): {
+function panelCameraPadding(
+  panelOpen: boolean,
+  mode: CameraPadMode = 'detail',
+): {
   top: number
   bottom: number
   left: number
@@ -717,9 +798,13 @@ function panelCameraPadding(panelOpen: boolean): {
     // Left rail panel (~22rem) + search/filters along the top
     return { top: 104, bottom: 48, left: 380, right: 56 }
   }
-  // Mobile bottom sheet can use up to ~85vh; keep route framing above it
-  const bottom = Math.round(window.innerHeight * 0.5)
-  return { top: 88, bottom, left: 16, right: 16 }
+  if (mode === 'nearest') {
+    // Compact "Lähimad parklad" sheet (~45vh) — keep pins visible above it
+    return { top: 80, bottom: 320, left: 40, right: 40 }
+  }
+  // Full detail sheet — frame above ~half the viewport
+  const bottom = Math.round(window.innerHeight * 0.45)
+  return { top: 80, bottom, left: 24, right: 24 }
 }
 
 export const MapView = memo(forwardRef<
@@ -739,10 +824,15 @@ export const MapView = memo(forwardRef<
     pitch3d?: boolean
     selectedId?: string | null
     /**
-     * Nearest-parking picker preview (tap/click) — highlights matching
-     * pin/polygon + active price pill. Does not open detail or fetch routes.
+     * Parking feature id for map pin/polygon highlight (selected / preview).
+     * Must match GeoJSON feature ids — not nearest optionKey.
      */
     highlightId?: string | null
+    /**
+     * Active nearest-pill optionKey (price pill halo). Separate from
+     * highlightId because optionKey may differ from spot.id.
+     */
+    nearestActivePillId?: string | null
     /** Glass price pills above nearest parking options (no numeric ranks).
      * Parent supplies already-clustered / category-diverse optionKeys from
      * collectNearestAround — MapView does not re-expand street segments. */
@@ -810,6 +900,7 @@ export const MapView = memo(forwardRef<
     pitch3d = true,
     selectedId = null,
     highlightId = null,
+    nearestActivePillId = null,
     nearestPills = [],
     previewFocus = null,
     onNearestPillClick,
@@ -866,6 +957,7 @@ export const MapView = memo(forwardRef<
   const nearestPillsFitKeyRef = useRef('')
   const nearestPillsRef = useRef(nearestPills)
   const highlightIdRef = useRef(highlightId)
+  const nearestActivePillIdRef = useRef(nearestActivePillId)
   const onNavigateRef = useRef(onNavigate)
   const onEvChargerSelectRef = useRef(onEvChargerSelect)
   const onBackgroundClickRef = useRef(onBackgroundClick)
@@ -922,6 +1014,7 @@ export const MapView = memo(forwardRef<
   onNearestPillClickRef.current = onNearestPillClick
   nearestPillsRef.current = nearestPills
   highlightIdRef.current = highlightId
+  nearestActivePillIdRef.current = nearestActivePillId
   onPreciseSpotsLoadedRef.current = onPreciseSpotsLoaded
   onStreetSpotsLoadedRef.current = onStreetSpotsLoaded
   onMapReadyRef.current = onMapReady
@@ -1339,7 +1432,7 @@ export const MapView = memo(forwardRef<
       setNearestPricePillData(
         map,
         nearestPillsRef.current,
-        highlightIdRef.current ?? null,
+        nearestActivePillIdRef.current ?? null,
       )
 
       const routeSrc = map.getSource(ROUTE_SOURCE) as GeoJSONSource | undefined
@@ -2158,16 +2251,22 @@ export const MapView = memo(forwardRef<
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready || !flyTarget) return
-    // Route intro owns the camera — ignore flyTarget/recenter until done
+    // Route intro / nearest fitBounds own the camera
     if (routeAnimatingRef.current) return
+    if (nearestPillsRef.current.length > 0) return
     const center: [number, number] = [flyTarget[1], flyTarget[0]]
     const zoom = flyZoom ?? Math.max(map.getZoom(), ZOOM.detailMin + 0.4)
-    const pitch = pitch3dRef.current ? NAV_PITCH : 0
+    // Detail focus: pitch 30 so the lot sits clearly above the sheet
+    const detailFocus = zoom >= 16
+    const pitch = detailFocus
+      ? 30
+      : pitch3dRef.current
+        ? NAV_PITCH
+        : 0
 
-    // Search flies open an info panel ~720ms later — pad now so the pin
-    // lands in the free map area instead of under the forthcoming sheet.
     const padding = panelCameraPadding(
       infoPanelOpenRef.current || flyModeRef.current === 'fly',
+      'detail',
     )
     if (flyModeRef.current === 'fly') {
       map.flyTo({
@@ -2175,8 +2274,9 @@ export const MapView = memo(forwardRef<
         zoom,
         pitch,
         padding,
-        speed: 1.2,
-        curve: 1.4,
+        duration: prefersReducedMotion() ? 0 : detailFocus ? 1200 : undefined,
+        speed: detailFocus ? undefined : 1.2,
+        curve: detailFocus ? undefined : 1.4,
         essential: true,
       })
     } else {
@@ -2196,16 +2296,20 @@ export const MapView = memo(forwardRef<
     const map = mapRef.current
     if (!map || !ready) return
     if (routeAnimatingRef.current) return
+    // Nearest picker fitBounds owns padding while pills are visible
+    if (nearestPills.length > 0) return
     map.easeTo({
-      padding: panelCameraPadding(infoPanelOpen),
+      padding: panelCameraPadding(infoPanelOpen, 'detail'),
       duration: 280,
       essential: true,
     })
-  }, [infoPanelOpen, ready])
+  }, [infoPanelOpen, ready, nearestPills.length])
 
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
+    // Don't fight detail flyTo pitch:30
+    if (selectedIdRef.current) return
     map.easeTo({
       pitch: pitch3d ? NAV_PITCH : 0,
       bearing: pitch3d ? map.getBearing() || -22 : 0,
@@ -2222,6 +2326,41 @@ export const MapView = memo(forwardRef<
     if (highlightId) applyHoverHighlight(map, highlightId)
   }, [selectedId, highlightId, ready])
 
+  /**
+   * Detail selection → flyTo lot (zoom 16.5, pitch 30).
+   * Covers marker clicks, favorites, deep links — not nearest-picker fitBounds.
+   */
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready || !selectedId) return
+    if (routeAnimatingRef.current) return
+    if (nearestPills.length > 0) return
+    const spot =
+      spots.find((s) => s.id === selectedId) ??
+      parkingIndex.getById(selectedId)
+    if (!spot || !Number.isFinite(spot.lat) || !Number.isFinite(spot.lng)) return
+    const c = map.getCenter()
+    const z = map.getZoom()
+    const alreadyFocused =
+      Math.abs(c.lat - spot.lat) < 0.00035 &&
+      Math.abs(c.lng - spot.lng) < 0.00035 &&
+      z >= 16.2
+    if (alreadyFocused) {
+      if (map.getPitch() < 20) {
+        map.easeTo({ pitch: 30, duration: 400, essential: true })
+      }
+      return
+    }
+    map.flyTo({
+      center: [spot.lng, spot.lat],
+      zoom: 16.5,
+      pitch: 30,
+      duration: prefersReducedMotion() ? 0 : 1200,
+      padding: panelCameraPadding(true, 'detail'),
+      essential: true,
+    })
+  }, [selectedId, ready, nearestPills.length, spots])
+
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
@@ -2234,11 +2373,23 @@ export const MapView = memo(forwardRef<
     if (!map || !ready) return
     if (nearestPills.length === 0) {
       nearestPillsFitKeyRef.current = ''
+      setPreviewLinkData(map, null, null)
     }
-    setNearestPricePillData(map, nearestPills, highlightId)
-  }, [nearestPills, highlightId, ready])
+    setNearestPricePillData(map, nearestPills, nearestActivePillId)
+  }, [nearestPills, nearestActivePillId, ready])
 
-  /** Frame searched target + all nearest pills (and optional hover focus). */
+  /** Dashed link: destination ↔ active nearest parking preview. */
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    if (!previewFocus?.target || !previewFocus.parking) {
+      setPreviewLinkData(map, null, null)
+      return
+    }
+    setPreviewLinkData(map, previewFocus.target, previewFocus.parking)
+  }, [previewFocus, ready])
+
+  /** Frame searched target + all nearest pills (Lähimad parklad). */
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready || !previewFocus || routeAnimatingRef.current) return
@@ -2246,7 +2397,7 @@ export const MapView = memo(forwardRef<
     const bounds = new LngLatBounds()
     bounds.extend([target.lng, target.lat])
 
-      if (fitAll && nearestPills.length > 0) {
+    if (fitAll && nearestPills.length > 0) {
       for (const p of nearestPills) {
         bounds.extend([p.lng, p.lat])
       }
@@ -2256,9 +2407,9 @@ export const MapView = memo(forwardRef<
       nearestPillsFitKeyRef.current = key
       try {
         map.fitBounds(bounds, {
-          padding: panelCameraPadding(true),
-          maxZoom: 16.2,
-          duration: prefersReducedMotion() ? 0 : 900,
+          padding: panelCameraPadding(true, 'nearest'),
+          maxZoom: 17,
+          duration: prefersReducedMotion() ? 0 : 1000,
           pitch: 0,
           bearing: 0,
           essential: true,
@@ -2280,8 +2431,8 @@ export const MapView = memo(forwardRef<
       bounds.extend([parking.lng + pad, parking.lat + pad])
       try {
         map.fitBounds(bounds, {
-          padding: panelCameraPadding(infoPanelOpenRef.current || true),
-          maxZoom: 16.8,
+          padding: panelCameraPadding(true, 'nearest'),
+          maxZoom: 17,
           duration: prefersReducedMotion() ? 0 : 650,
           pitch: 0,
           bearing: 0,

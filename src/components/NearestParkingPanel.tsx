@@ -158,6 +158,7 @@ export function NearestParkingPanel({
       title="Lähimad parklad"
       dark={dark}
       onClose={onClose}
+      variant="compact"
     >
       {({ requestClose }) => (
         <div data-testid="nearest-parking-panel">
