@@ -1,4 +1,12 @@
-import { Flag, MapPin, Navigation, RefreshCw, Square, X } from 'lucide-react'
+import {
+  Flag,
+  MapPin,
+  Navigation,
+  RefreshCw,
+  Square,
+  Star,
+  X,
+} from 'lucide-react'
 import {
   useCallback,
   useEffect,
@@ -117,6 +125,8 @@ export function ParkingBottomSheet({
   onMarkFull,
   onWidenRadius,
   onSelectAlternative,
+  isFavorite = false,
+  onToggleFavorite,
 }: {
   spot: ParkingSpot
   distanceLabel?: string | null
@@ -146,6 +156,9 @@ export function ParkingBottomSheet({
   onMarkFull?: () => void
   onWidenRadius?: () => void
   onSelectAlternative?: (spot: ParkingSpot) => void
+  /** Lemmikparkla — filled yellow star when saved. */
+  isFavorite?: boolean
+  onToggleFavorite?: () => void
 }) {
   const links = navLinks(spot.lat, spot.lng)
   const color =
@@ -359,9 +372,37 @@ export function ParkingBottomSheet({
                 </span>
               ) : null}
             </div>
-            <h3 className={`text-[15px] leading-snug font-bold tracking-tight ${ink}`}>
-              {spotDisplayName(spot)}
-            </h3>
+            <div className="flex items-start gap-1.5">
+              <h3
+                className={`min-w-0 flex-1 text-[15px] leading-snug font-bold tracking-tight ${ink}`}
+              >
+                {spotDisplayName(spot)}
+              </h3>
+              {onToggleFavorite ? (
+                <button
+                  type="button"
+                  data-testid="favorite-toggle"
+                  onClick={onToggleFavorite}
+                  className="tap-scale -mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition active:scale-95"
+                  aria-label={
+                    isFavorite ? 'Eemalda lemmikutest' : 'Lisa lemmikutesse'
+                  }
+                  aria-pressed={isFavorite}
+                  title={
+                    isFavorite ? 'Eemalda lemmikutest' : 'Lisa lemmikutesse'
+                  }
+                >
+                  <Star
+                    className={`h-5 w-5 ${
+                      isFavorite
+                        ? 'fill-[#FFCC00] text-[#FFCC00]'
+                        : muted
+                    }`}
+                    strokeWidth={isFavorite ? 0 : 1.75}
+                  />
+                </button>
+              ) : null}
+            </div>
             <button
               type="button"
               data-testid="spot-address"

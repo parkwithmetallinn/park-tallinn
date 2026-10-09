@@ -10,6 +10,7 @@ import {
   Moon,
   Plus,
   Search,
+  Star,
   Sun,
   X,
 } from 'lucide-react'
@@ -25,6 +26,7 @@ import {
   type NearestParkingOption,
 } from './components/NearestParkingPanel'
 import { collectNearestAround } from './lib/nearestParking'
+import { FavoritesPanel } from './components/FavoritesPanel'
 import { ParkingDetailPanel } from './components/ParkingDetailPanel'
 import type { CrowdStatusType } from './components/CrowdReportModal'
 import { ParkingSessionModal } from './components/ParkingSessionModal'
@@ -182,6 +184,7 @@ export default function App() {
   /** Detail was opened from nearest picker — show "Tagasi nimekirja". */
   const [fromNearestPicker, setFromNearestPicker] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
+  const [favoritesOpen, setFavoritesOpen] = useState(false)
   const [reportContext, setReportContext] = useState<ReportModalContext | null>(null)
   const [approvedOverlays, setApprovedOverlays] = useState<ParkingSpot[]>([])
   const [suppressedIds, setSuppressedIds] = useState<Set<string>>(() => new Set())
@@ -1764,6 +1767,17 @@ export default function App() {
                 </div>
                 <button
                   type="button"
+                  data-testid="open-favorites"
+                  onClick={() => setFavoritesOpen(true)}
+                  className={`cursor-pointer rounded-full p-2.5 ${chip}`}
+                  title="Lemmikparklad"
+                  aria-label="Lemmikparklad"
+                  aria-pressed={favoritesOpen}
+                >
+                  <Star className="h-5 w-5" />
+                </button>
+                <button
+                  type="button"
                   onClick={() => setInfoOpen(true)}
                   className={`cursor-pointer rounded-full p-2.5 ${chip}`}
                   title="Reeglid"
@@ -2045,6 +2059,23 @@ export default function App() {
           feature={selectedEvCharger}
           dark={dark}
           onClose={() => setSelectedEvCharger(null)}
+        />
+      ) : null}
+
+      {favoritesOpen && !selected && !selectedEvCharger ? (
+        <FavoritesPanel
+          spots={allSpots}
+          dark={dark}
+          onClose={() => setFavoritesOpen(false)}
+          onSelect={(spot) => {
+            setFavoritesOpen(false)
+            setSelectedEvCharger(null)
+            setSelected(spot)
+            setFlyMode('fly')
+            setFlyTarget([spot.lat, spot.lng])
+            setFlyZoom(16)
+            setFlyKey((k) => k + 1)
+          }}
         />
       ) : null}
 

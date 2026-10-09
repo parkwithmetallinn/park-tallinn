@@ -3,9 +3,11 @@
  * Owns the crowd-report modal opened from "Parkla on täis" / "Teavita veast".
  * Session form lives inside this panel when a lot is selected —
  * exclusive of the floating clock FAB modal (`ParkingSessionModal`).
+ * Star toggle saves the lot to localStorage favorites (`parkvibe_favorites`).
  */
 
 import { useState } from 'react'
+import { useFavorites } from '../hooks/useFavorites'
 import {
   CrowdReportModal,
   type CrowdStatusType,
@@ -69,12 +71,16 @@ export function ParkingDetailPanel({
 }) {
   void _onReportInvalid
   const [crowdOpen, setCrowdOpen] = useState<CrowdOpen>(null)
+  const { isFavorite, toggleFavorite } = useFavorites()
+  const favorited = isFavorite(spot.id)
 
   return (
     <>
       <ParkingBottomSheet
         spot={spot}
         {...rest}
+        isFavorite={favorited}
+        onToggleFavorite={() => toggleFavorite(spot.id)}
         onMarkFull={
           onMarkFull || onCrowdReportSuccess
             ? () => setCrowdOpen({ initialStatus: 'full' })
