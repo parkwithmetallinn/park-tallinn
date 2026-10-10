@@ -56,6 +56,7 @@ import {
   CITIES,
   cityFromCoords,
   getInitialCity,
+  isInsideTallinnMapBounds,
   persistCity,
   type CityId,
 } from './data/cities'
@@ -922,11 +923,19 @@ export default function App() {
       return
     }
     const { lat, lng } = result.position
+    if (!isInsideTallinnMapBounds(lat, lng)) {
+      stopFollow()
+      setToast({
+        kind: 'info',
+        title: 'Oled väljaspool Tallinna',
+      })
+      return
+    }
     setFlyMode('fly')
     setFlyTarget([lat, lng])
     setFlyZoom(16)
     setFlyKey((k) => k + 1)
-  }, [gpsLocating, locateAndFollow, setToast])
+  }, [gpsLocating, locateAndFollow, setToast, stopFollow])
 
   /** Collect 3–5 nearest roadside/lot spots around the SEARCH destination. */
   const collectNearestOptions = useCallback(

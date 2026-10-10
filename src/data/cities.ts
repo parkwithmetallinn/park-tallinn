@@ -45,6 +45,23 @@ export const CITY_LIST: CityConfig[] = [CITIES.tallinn, CITIES.parnu]
 
 export const CITY_STORAGE_KEY = 'parktallinn:city:v1'
 
+/**
+ * MapLibre maxBounds for Tallinn navigation — [[west, south], [east, north]].
+ * Camera cannot pan/zoom outside this box.
+ */
+export const TALLINN_MAP_MAX_BOUNDS: [[number, number], [number, number]] = [
+  [24.4, 59.25],
+  [25.1, 59.6],
+]
+
+export const TALLINN_MAP_MIN_ZOOM = 10
+
+/** True when [lat, lng] is inside {@link TALLINN_MAP_MAX_BOUNDS}. */
+export function isInsideTallinnMapBounds(lat: number, lng: number): boolean {
+  const [[west, south], [east, north]] = TALLINN_MAP_MAX_BOUNDS
+  return lng >= west && lng <= east && lat >= south && lat <= north
+}
+
 export function getInitialCity(): CityId {
   try {
     const raw = localStorage.getItem(CITY_STORAGE_KEY)
