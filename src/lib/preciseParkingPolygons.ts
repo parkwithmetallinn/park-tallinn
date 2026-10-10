@@ -63,7 +63,7 @@ export type PreciseParkingProps = {
   color: string
   /** True only for verified free public parking (matches Tasuta filter + green). */
   verified_free: boolean
-  /** True when pricing/type is unknown — dashed outline + "?" marker. */
+  /** True when pricing/type is unknown — dashed outline, no center badge. */
   pricing_unknown?: boolean
   /** Feature area m² — larger lots win label collision (symbol-sort-key). */
   area_m2: number
@@ -531,8 +531,9 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
       badge,
       color,
     })
-    // Unknown lots show "?" on the map instead of an operator code.
-    const mapBadge = pricing_unknown ? '?' : badge
+    // One meaningful center badge per lot — never "?" clutter for unknown spots.
+    // Unknown / unclassified lots keep fill+outline but no text label.
+    const mapBadge = pricing_unknown ? '' : badge
 
     const descParts = [
       str(p.description),

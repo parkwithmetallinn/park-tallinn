@@ -1,4 +1,7 @@
-import type { Map as MapLibreMapType } from 'maplibre-gl'
+import type {
+  FilterSpecification,
+  Map as MapLibreMapType,
+} from 'maplibre-gl'
 import type { ThemeMode } from '../lib/theme'
 import { districtDebugRefsToGeoJSON } from '../lib/districtsGeoJSON'
 import type { CityId } from '../data/cities'
@@ -831,24 +834,23 @@ export function ensureParkingOverlaySources(
     })
   }
 
-  // Lot name labels (detail fade; Snabb uses mapLabel "SB")
+  // One center badge per lot polygon (TASUTA / KELL / EP…). Never "?" unknowns.
+  const preciseLabelFilter = [
+    'all',
+    ['!=', ['get', 'pricing_unknown'], true],
+    ['!=', ['get', 'badge'], '?'],
+    ['!=', ['to-string', ['get', 'badge']], ''],
+    ['has', 'badge'],
+  ] as FilterSpecification
   if (!map.getLayer(PRECISE_LABEL_LAYER)) {
     map.addLayer({
       id: PRECISE_LABEL_LAYER,
       type: 'symbol',
       source: PRECISE_PARKING_SOURCE,
       minzoom: 16,
+      filter: preciseLabelFilter,
       layout: {
-        'text-field': [
-          'case',
-          [
-            'any',
-            ['==', ['get', 'pricing_unknown'], true],
-            ['==', ['get', 'badge'], '?'],
-          ],
-          '?',
-          ['coalesce', ['get', 'badge'], ''],
-        ],
+        'text-field': ['coalesce', ['get', 'badge'], ''],
         'text-font': ['Noto Sans Bold'],
         'text-size': ['interpolate', ['linear'], ['zoom'], 15, 11, 17, 13],
         'text-max-width': 8,
@@ -871,6 +873,13 @@ export function ensureParkingOverlaySources(
         'text-opacity-transition': NO_OPACITY_TRANSITION,
       },
     })
+  } else {
+    map.setFilter(PRECISE_LABEL_LAYER, preciseLabelFilter)
+    map.setLayoutProperty(
+      PRECISE_LABEL_LAYER,
+      'text-field',
+      ['coalesce', ['get', 'badge'], ''] as never,
+    )
   }
 
   // Floating multi-storey height badge (P+N)
@@ -952,6 +961,12 @@ export function ensureParkingOverlaySources(
       type: 'symbol',
       source: PARKING_LOTS_SOURCE,
       minzoom: 16,
+      filter: [
+        'all',
+        ['!=', ['get', 'badge'], '?'],
+        ['!=', ['to-string', ['get', 'badge']], ''],
+        ['has', 'badge'],
+      ],
       layout: {
         'text-field': ['get', 'badge'],
         'text-font': ['Noto Sans Bold'],
@@ -971,6 +986,13 @@ export function ensureParkingOverlaySources(
         'text-opacity-transition': NO_OPACITY_TRANSITION,
       },
     })
+  } else if (map.getLayer(PARKING_LOTS_LABEL_LAYER)) {
+    map.setFilter(PARKING_LOTS_LABEL_LAYER, [
+      'all',
+      ['!=', ['get', 'badge'], '?'],
+      ['!=', ['to-string', ['get', 'badge']], ''],
+      ['has', 'badge'],
+    ])
   }
 
   // ——— Street-side parking lines from ee_parking_max (fade from street START) ———
@@ -1215,33 +1237,62 @@ export function ensureParkingOverlaySources(
           'circle-stroke-opacity-transition': NO_OPACITY_TRANSITION,
         },
       })
-      map.addLayer({
-        id: `${meta.id}-label`,
-        type: 'symbol',
-        source: PARKING_VIEWPORT_SOURCE,
-        filter: [
+      const pinLabelId = `${meta.id}-label`
+      const pinLabelFilter = [
+        'all',
+        [
           'any',
           ['==', ['get', 'layer'], layerKey],
           ['==', ['get', 'provider'], layerKey],
         ],
-        minzoom: 16,
-        layout: {
-          'text-field': ['get', 'badge'],
-          'text-font': ['Noto Sans Bold'],
-          'text-size': 9,
-          'text-offset': [0, 1.2],
-          'text-anchor': 'top',
-          'symbol-sort-key': ['get', 'labelRank'],
-          ...noOverlapSymbol,
-        },
-        paint: {
-          'text-color': meta.color,
-          'text-halo-color': '#F1F5F9',
-          'text-halo-width': 1.3,
-          'text-opacity': fadeOpacityKeepSelected(1, 1, DETAIL_FADE) as never,
-          'text-opacity-transition': NO_OPACITY_TRANSITION,
-        },
-      })
+        ['!=', ['get', 'badge'], '?'],
+        ['!=', ['to-string', ['get', 'badge']], ''],
+        ['has', 'badge'],
+      ] as FilterSpecification
+      if (!map.getLayer(pinLabelId)) {
+        map.addLayer({
+          id: pinLabelId,
+          type: 'symbol',
+          source: PARKING_VIEWPORT_SOURCE,
+          filter: pinLabelFilter,
+          minzoom: 16,
+          layout: {
+            'text-field': ['get', 'badge'],
+            'text-font': ['Noto Sans Bold'],
+            'text-size': 9,
+            'text-offset': [0, 1.2],
+            'text-anchor': 'top',
+            'symbol-sort-key': ['get', 'labelRank'],
+            ...noOverlapSymbol,
+          },
+          paint: {
+            'text-color': meta.color,
+            'text-halo-color': '#F1F5F9',
+            'text-halo-width': 1.3,
+            'text-opacity': fadeOpacityKeepSelected(1, 1, DETAIL_FADE) as never,
+            'text-opacity-transition': NO_OPACITY_TRANSITION,
+          },
+        })
+      } else {
+        map.setFilter(pinLabelId, pinLabelFilter)
+      }
+    }
+  } else {
+    // Keep pin label filters in sync on re-ensure (hide "?" / empty badges)
+    for (const layerKey of PARKING_PROVIDERS) {
+      const pinLabelId = `${PARKING_LAYER_META[layerKey].id}-label`
+      if (!map.getLayer(pinLabelId)) continue
+      map.setFilter(pinLabelId, [
+        'all',
+        [
+          'any',
+          ['==', ['get', 'layer'], layerKey],
+          ['==', ['get', 'provider'], layerKey],
+        ],
+        ['!=', ['get', 'badge'], '?'],
+        ['!=', ['to-string', ['get', 'badge']], ''],
+        ['has', 'badge'],
+      ] as FilterSpecification)
     }
   }
 
