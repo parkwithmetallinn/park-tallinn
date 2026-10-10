@@ -458,12 +458,14 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
     if (price_per_hour <= 0 && !verified_free && layer === 'municipal' && !feeIsPaid) {
       price_per_hour = 0
     }
+    // Preserve Tallinn zone free windows (15 min kellaga) on municipal/paid
+    // layers — never drop curatedFreeMins just because layer ≠ timed.
     const free_minutes =
-      layer === 'timed'
-        ? curatedFreeMins || maxstayMins || 15
-        : layer === 'free_street'
-          ? 0
-          : curatedFreeMins || (verified_free ? maxstayMins : 0)
+      layer === 'free_street'
+        ? 0
+        : curatedFreeMins ||
+          maxstayMins ||
+          (layer === 'timed' ? 15 : 0)
 
     const zone_code =
       zone ||
@@ -660,8 +662,11 @@ function isPaidParkingFeature(p: {
   name?: string
   desc?: string
   badge?: string
+  type?: string
 }): boolean {
   if (p.verified_free || p.layer === 'free_street' || p.layer === 'timed') return false
+  // Free-clock window (Tallinn 15 min etc.) → Kellaga, not Tasuline
+  if (isClockLimitedParking(p)) return false
   if (isUnclassifiedParking(p)) return false
   if (PAID_LAYERS.has(p.layer)) return true
   if (p.layer === 'municipal' && (p.price_per_hour ?? 0) > 0) return true
@@ -699,6 +704,7 @@ export function filterPreciseCollection(
       features: fc.features.filter((f) =>
         isClockLimitedParking({
           layer: f.properties.layer,
+          type: f.properties.type,
           free_minutes: f.properties.free_minutes,
           price_per_hour: f.properties.price_per_hour,
           zone_code: f.properties.zone_code,

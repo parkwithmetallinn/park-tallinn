@@ -178,7 +178,8 @@ export function applyTallinnZoneOverrides(
   props.verified_free_hint = false
   props.enriched_from_zone = zone.zone_code
   props.enriched_as = 'tallinn_paid_zone'
-  props.rules = 'paid'
+  // Keep free-clock window discoverable by Kellaga filter (not pure paid)
+  props.rules = zone.free_minutes > 0 ? 'clock' : 'paid'
   props.desc =
     props.desc ||
     `${zone.name} tasuline tsoon · ${zone.free_minutes > 0 ? `${zone.free_minutes} min kellaga` : 'tasuline'}`

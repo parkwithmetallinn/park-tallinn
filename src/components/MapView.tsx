@@ -1546,10 +1546,11 @@ export const MapView = memo(forwardRef<
           ) as Partial<Record<ParkingLayerKey, boolean>>,
         )
       } else if (layers === 'clock') {
+        // Same as filter effect — municipal Tallinn clock zones must stay visible
         setParkingLayerVisibility(
           map,
           Object.fromEntries(
-            PARKING_PROVIDERS.map((p) => [p, p === 'timed']),
+            PARKING_PROVIDERS.map((p) => [p, true]),
           ) as Partial<Record<ParkingLayerKey, boolean>>,
         )
       } else if (Array.isArray(layers)) {
@@ -2120,11 +2121,13 @@ export const MapView = memo(forwardRef<
         ) as Partial<Record<ParkingLayerKey, boolean>>,
       )
     } else if (layers === 'clock') {
-      // Kellaga: clock-limited pins; GeoJSON filtered via 'clock'.
+      // Kellaga: keep ALL pin layers visible — Tallinn municipal zones
+      // (Kesklinn / Vanalinn / …) live under municipal/europark, not only
+      // layer=timed. GeoJSON is filtered with isClockLimitedParking.
       setParkingLayerVisibility(
         map,
         Object.fromEntries(
-          PARKING_PROVIDERS.map((p) => [p, p === 'timed']),
+          PARKING_PROVIDERS.map((p) => [p, true]),
         ) as Partial<Record<ParkingLayerKey, boolean>>,
       )
     } else if (layers === 'unclassified') {

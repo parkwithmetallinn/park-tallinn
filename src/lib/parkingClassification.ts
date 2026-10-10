@@ -165,22 +165,55 @@ export function isUnlimitedFreeParking(p: FreeClockFields): boolean {
 }
 
 /**
+ * Tallinn municipal zones that officially allow free minutes with a parking
+ * clock (kellaga) — even when an hourly rate applies after the free window.
+ */
+const TALLINN_CLOCK_ZONES = new Set([
+  'KESKLINN',
+  'VANALINN',
+  'SÜDALINN',
+  'SUDALINN',
+  'PIRITA',
+])
+
+export function isTallinnClockZone(zoneRaw?: string | null): boolean {
+  const z = String(zoneRaw || '')
+    .trim()
+    .toUpperCase()
+  if (!z) return false
+  if (TALLINN_CLOCK_ZONES.has(z)) return true
+  // ASCII fallback (SUDALINN) + bare area names from display titles
+  const ascii = z
+    .replace(/Ü/g, 'U')
+    .replace(/Ä/g, 'A')
+    .replace(/Ö/g, 'O')
+    .replace(/Õ/g, 'O')
+  if (TALLINN_CLOCK_ZONES.has(ascii)) return true
+  return /^(KESKLINN|VANALINN|S[UÜ]DALINN|PIRITA)(\s|$)/i.test(z)
+}
+
+/**
  * Time-limited / parking-clock free parking — "Kellaga" filter.
- * Includes layer=timed, €0 spots with a free window (15/60/120…), KELL
- * clock curb, and keyword signals (Parkimiskellaga, Ajapiiranguga, maxstay).
- * Paid hourly zones with a short grace period stay under "Tasuline".
+ * ANY spot with a free-clock window belongs here, including Tallinn paid
+ * zones (Kesklinn / Südalinn / Vanalinn / Pirita) that allow 15 min free
+ * with a disc before the hourly rate starts.
  */
 export function isClockLimitedParking(p: FreeClockFields): boolean {
   const layer = String(p.layer || '')
   const mins = Number(p.free_minutes ?? 0)
-  const price = Number(p.price_per_hour ?? 0)
   const zone = String(p.zone_code || '').toUpperCase()
   const badge = String(p.badge || '').toUpperCase()
+
+  // Explicit free-clock window beats paid €/h (Tallinn municipal rules)
+  if (Number.isFinite(mins) && mins > 0) return true
+
   if (layer === 'timed' || p.type === 'timed') return true
   if (zone === 'KELL' || badge === 'KELL') return true
-  // Free (or effectively free) with an explicit clock window
-  if (mins > 0 && price <= 0) return true
-  if (price > 0) return false
+
+  // Official Tallinn clock zones — include even if free_minutes was dropped
+  if (isTallinnClockZone(zone) || isTallinnClockZone(badge)) return true
+  if (isTallinnClockZone(p.name)) return true
+
   if (
     hasClockKeyword(
       p.timeLimit,

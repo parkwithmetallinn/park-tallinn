@@ -461,7 +461,8 @@ export default function App() {
       return typedSpots.filter((s) => isUnlimitedFreeParking(s))
     }
     if (filter === 'timed') {
-      // Kellaga: all clock-limited free parking
+      // Kellaga: every spot with a free-clock window (incl. Tallinn
+      // Kesklinn / Südalinn / Vanalinn 15 min + paid after)
       return typedSpots.filter((s) => isClockLimitedParking(s))
     }
     if (filter === 'paid') {

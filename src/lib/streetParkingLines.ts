@@ -250,6 +250,18 @@ function classifyRules(p: Record<string, unknown>): {
       }
     }
     if (curatedRules === 'paid' || feeIsPaid) {
+      const mins = curatedFreeMins || maxMins
+      // Tallinn-style paid + free clock window → Kellaga (keep minutes)
+      if (mins > 0) {
+        return {
+          rules: 'clock',
+          layer: 'municipal',
+          free_minutes: mins,
+          price_per_hour: Number(p.price_per_hour ?? 2.5),
+          color: STREET_COLOR.timed,
+          verified_free: false,
+        }
+      }
       return {
         rules: 'paid',
         layer: 'municipal',
@@ -261,16 +273,28 @@ function classifyRules(p: Record<string, unknown>): {
     }
   }
 
-  // Tallinn municipal zone / Arena overrides → always Tasuline (red)
+  // Tallinn municipal zone / Arena overrides
   if (
     Number(p.price_per_hour) > 0 &&
     (str(p.enriched_as) === 'tallinn_paid_zone' ||
       str(p.enriched_as) === 'arena_stadium_paid')
   ) {
+    const mins = Number(p.free_minutes ?? 0)
+    // Arena lots have no free clock — pure paid. Tallinn zones keep 15 min.
+    if (str(p.enriched_as) === 'tallinn_paid_zone' && mins > 0) {
+      return {
+        rules: 'clock',
+        layer: 'municipal',
+        free_minutes: mins,
+        price_per_hour: Number(p.price_per_hour),
+        color: STREET_COLOR.timed,
+        verified_free: false,
+      }
+    }
     return {
       rules: 'paid',
       layer: 'municipal',
-      free_minutes: Number(p.free_minutes ?? 0),
+      free_minutes: mins,
       price_per_hour: Number(p.price_per_hour),
       color: STREET_COLOR.paid,
       verified_free: false,
@@ -278,10 +302,21 @@ function classifyRules(p: Record<string, unknown>): {
   }
 
   if (feeIsPaid) {
+    const mins = Number(p.free_minutes ?? 0) || curatedFreeMins || maxMins
+    if (mins > 0) {
+      return {
+        rules: 'clock',
+        layer: 'municipal',
+        free_minutes: mins,
+        price_per_hour: Number(p.price_per_hour ?? 2.5),
+        color: STREET_COLOR.timed,
+        verified_free: false,
+      }
+    }
     return {
       rules: 'paid',
       layer: 'municipal',
-      free_minutes: Number(p.free_minutes ?? 0),
+      free_minutes: 0,
       price_per_hour: Number(p.price_per_hour ?? 2.5),
       color: STREET_COLOR.paid,
       verified_free: false,
