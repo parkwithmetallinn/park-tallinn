@@ -119,6 +119,7 @@ import {
   isUnlimitedFreeParking,
 } from '../lib/parkingClassification'
 import { isPaidParkingSpot } from '../lib/nearestParking'
+import { tKey } from '../i18n'
 import {
   ensureEvChargerLayers,
   EV_CHARGERS_CIRCLE_LAYER,
@@ -474,7 +475,7 @@ function makeSearchPinEl(onClick: () => void) {
   const wrap = document.createElement('button')
   wrap.type = 'button'
   wrap.className = 'search-pin'
-  wrap.setAttribute('aria-label', 'Ava asukoha info')
+  wrap.setAttribute('aria-label', tKey('pins.openInfo'))
   wrap.innerHTML = `<span class="search-pin-dot"></span>`
   wrap.addEventListener('click', (e) => {
     e.stopPropagation()
@@ -507,7 +508,7 @@ function makeMyPinEl(opts: {
   ]
     .filter(Boolean)
     .join(' ')
-  wrap.setAttribute('aria-label', opts.name || 'Minu pin')
+  wrap.setAttribute('aria-label', opts.name || tKey('pins.myPin'))
   wrap.innerHTML = `
     <span class="my-pin-shadow" aria-hidden="true"></span>
     <span class="my-pin-teardrop" style="background:${opts.color}">
@@ -546,7 +547,7 @@ function updateMyPinEl(
 ) {
   el.classList.toggle('is-compact', opts.compact)
   el.classList.toggle('is-selected', opts.selected)
-  el.setAttribute('aria-label', opts.name || 'Minu pin')
+  el.setAttribute('aria-label', opts.name || tKey('pins.myPin'))
   const tear = el.querySelector('.my-pin-teardrop') as HTMLElement | null
   if (tear) tear.style.background = opts.color
   const label = el.querySelector('.my-pin-label') as HTMLElement | null

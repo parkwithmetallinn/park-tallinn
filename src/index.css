@@ -51,6 +51,24 @@ a.tap-scale {
   min-height: 44px;
 }
 
+/* Visible keyboard focus — contrast ≥ 4.5:1 against light/dark chrome */
+:where(button, a, input, select, textarea, [role='button'], [role='tab'], [role='option'], [role='radio']):focus-visible {
+  outline: 2px solid #007aff;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .user-pulse,
+  .animate-spin,
+  .animate-fade-in,
+  .animate-slide-up {
+    animation: none !important;
+  }
+  .user-pulse {
+    opacity: 0.45;
+  }
+}
+
 /* MapLibre controls — clear of bottom FABs / safe area */
 .maplibre-root .maplibregl-ctrl-bottom-right {
   bottom: max(5.75rem, calc(env(safe-area-inset-bottom) + 4.5rem));

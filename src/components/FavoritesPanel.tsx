@@ -10,6 +10,7 @@ import { spotDisplayName } from '../lib/parkingDisplayName'
 import type { ParkingSpot } from '../types'
 import { parkingPriceBadge } from './NearestParkingPanel'
 import { InfoSidePanelShell } from './InfoSidePanel'
+import { useI18n } from '../i18n'
 
 const EMPTY_COPY =
   'Sinu lemmikparklad ilmuvad siia. Vajuta tärnile, et salvestada.'
@@ -26,6 +27,7 @@ export function FavoritesPanel({
   onClose: () => void
   onSelect?: (spot: ParkingSpot) => void
 }) {
+  const { t } = useI18n()
   const { favoriteIds, isFavorite, toggleFavorite, clearFavorites, count } =
     useFavorites()
 
@@ -88,7 +90,7 @@ export function FavoritesPanel({
                   data-testid="favorites-clear-all"
                   onClick={() => clearFavorites()}
                   className={`flex h-8 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold transition active:scale-95 ${chipBg} ${muted}`}
-                  aria-label="Kustuta kõik"
+                  aria-label={t('a11y.deleteAll')}
                   title="Kustuta kõik"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -99,7 +101,7 @@ export function FavoritesPanel({
                 type="button"
                 onClick={requestClose}
                 className={`flex h-8 w-8 items-center justify-center rounded-full transition active:scale-95 ${chipBg} ${muted}`}
-                aria-label="Sulge"
+                aria-label={t('common.close')}
               >
                 <X className="h-4 w-4" />
               </button>

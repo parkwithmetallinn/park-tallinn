@@ -4,6 +4,7 @@ import type { AlternativeParking } from '../lib/alternatives'
 import { formatDistance } from '../lib/geo'
 import { spotDisplayName } from '../lib/parkingDisplayName'
 import type { ParkingSpot } from '../types'
+import { useI18n } from '../i18n'
 
 /**
  * Always-visible "find another parking" actions + collapsible alternatives list.
@@ -39,6 +40,7 @@ export function FindParkingActions({
   /** Tooltip when the Täis button is disabled (cooldown / already full). */
   markFullDisabledReason?: string
 }) {
+  const { t } = useI18n()
   const [expanded, setExpanded] = useState(false)
   const muted = dark ? 'text-[#98989D]' : 'text-[#8E8E93]'
   const ink = dark ? 'text-[#F5F5F7]' : 'text-[#1C1C1E]'
@@ -78,7 +80,7 @@ export function FindParkingActions({
                 ? 'bg-[#FF3B30]/20 text-[#FF6961]'
                 : 'bg-[#FF3B30]/10 text-[#FF3B30]'
             }`}
-            aria-label="Parkla on täis"
+            aria-label={t('report.full')}
             title={
               isCurrentFull
                 ? markFullDisabledReason || 'Juba märgitud täis'
@@ -99,7 +101,7 @@ export function FindParkingActions({
                 ? 'bg-white/10 text-[#EBEBF5]'
                 : 'bg-[#F2F2F7] text-[#3A3A3C]'
             }`}
-            aria-label="Teata muust"
+            aria-label={t('report.other')}
             title="Teata muust"
           >
             Teata muust
@@ -124,7 +126,7 @@ export function FindParkingActions({
                   ? 'bg-[#007AFF]/20 text-[#64B5FF]'
                   : 'bg-[#007AFF]/10 text-[#007AFF]'
               }`}
-              aria-label="Proovi suuremat raadiust"
+              aria-label={t('a11y.largerRadius')}
             >
               <RefreshCw className="h-3.5 w-3.5" />
               Proovi suuremat raadiust

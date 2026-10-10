@@ -12,6 +12,7 @@ import {
   type MyPinColor,
 } from '../lib/myPins'
 import { useSheetClose } from './AnimatedBottomSheet'
+import { useI18n } from '../i18n'
 
 export type MyPinDraft = {
   lat: number
@@ -52,6 +53,7 @@ export function MyPinSheet({
   /** When true, parent enables marker dragging (edit mode). */
   onDragRequest?: (enabled: boolean) => void
 }) {
+  const { t } = useI18n()
   const lat = pin?.lat ?? draft?.lat ?? 0
   const lng = pin?.lng ?? draft?.lng ?? 0
   const [name, setName] = useState(pin?.name ?? '')
@@ -182,7 +184,7 @@ export function MyPinSheet({
               type="button"
               onClick={requestClose}
               className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition active:scale-95 ${chip} ${muted}`}
-              aria-label="Sulge"
+              aria-label={t('common.close')}
             >
               <X className="h-4 w-4" />
             </button>
@@ -225,7 +227,7 @@ export function MyPinSheet({
           <p className={`mb-1.5 text-[12px] font-semibold tracking-wide uppercase ${muted}`}>
             Värv
           </p>
-          <div className="mb-3 flex flex-wrap gap-1" role="listbox" aria-label="Pinni värv">
+          <div className="mb-3 flex flex-wrap gap-1" role="listbox" aria-label={t('pins.colorAria')}>
             {MY_PIN_COLOR_KEYS.map((c) => {
               const selected = c === color
               return (

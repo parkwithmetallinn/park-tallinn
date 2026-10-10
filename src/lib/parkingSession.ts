@@ -13,6 +13,13 @@
  */
 
 import { parkingSessionWebhookUrl } from './apiBase'
+import {
+  formatDateTime,
+  formatHourlyRate as formatHourlyRateI18n,
+  getLocale,
+  resolveApiError,
+  tKey,
+} from '../i18n'
 
 function webhookHeaders(): Headers {
   const headers = new Headers()
@@ -73,18 +80,21 @@ export type SessionOutcome =
       kind: 'ACTIVE'
       details: ParkingSessionDetails
       message: string
+      code?: string
       activeSessions?: ParkingSessionDetails[]
       count?: number
     }
   | {
       kind: 'NOT_FOUND'
       message: string
+      code?: string
       activeSessions?: ParkingSessionDetails[]
       count?: number
     }
   | {
       kind: 'ERROR'
       message: string
+      code?: string
       httpStatus?: number
       activeSessions?: ParkingSessionDetails[]
       count?: number
@@ -606,7 +616,9 @@ async function postSession(
 
 import { parseParkingSessionBody } from './validation'
 
-function validateRequest(input: ParkingSessionRequest): string | null {
+function validateRequest(
+  input: ParkingSessionRequest,
+): { message: string; code: string } | null {
   const parsed = parseParkingSessionBody({
     action: input.action,
     zone: input.zone?.trim() || undefined,
@@ -616,15 +628,15 @@ function validateRequest(input: ParkingSessionRequest): string | null {
   })
   if (!parsed) {
     if (input.action === 'start' && !input.zone?.trim()) {
-      return 'Tsoon puudub'
+      return { message: 'Tsoon puudub', code: 'INVALID_ZONE' }
     }
     if (input.action === 'stop' && !input.zone?.trim()) {
-      return 'Tsoon puudub'
+      return { message: 'Tsoon puudub', code: 'INVALID_ZONE' }
     }
     if (input.action === 'extend' && !input.endsAt?.trim()) {
-      return 'Vigane päring'
+      return { message: 'Vigane päring', code: 'VALIDATION_ERROR' }
     }
-    return 'Vigane päring'
+    return { message: 'Vigane päring', code: 'VALIDATION_ERROR' }
   }
   return null
 }
@@ -639,7 +651,11 @@ export async function sendParkingSession(
 ): Promise<SessionOutcome> {
   const validationError = validateRequest(input)
   if (validationError) {
-    return { kind: 'ERROR', message: validationError }
+    return {
+      kind: 'ERROR',
+      message: validationError.message,
+      code: validationError.code,
+    }
   }
 
   const body: ParkingSessionRequest = {
@@ -714,20 +730,27 @@ export function sessionHourlyRate(
 
 export function formatHourlyRate(rate?: number): string | undefined {
   if (rate == null || !Number.isFinite(rate)) return undefined
-  return `${rate.toFixed(2)} €/h`
+  return formatHourlyRateI18n(rate, getLocale()) || undefined
 }
 
 export function formatSessionInstant(iso?: string): string | undefined {
   if (!iso) return undefined
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleString('et-EE', {
+  const formatted = formatDateTime(iso, getLocale(), {
     day: '2-digit',
     month: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
   })
+  return formatted || undefined
+}
+
+/** Localize API/server messages — Estonian message only when UI locale is et. */
+export function localizeSessionMessage(
+  message?: string | null,
+  code?: string | null,
+): string {
+  return resolveApiError(getLocale(), { message, code })
 }
 
 /** Backend said there is no active session (stop/status). */
@@ -822,17 +845,22 @@ export function formatSessionFeedbackDetail(
 ): string {
   const details = outcome.kind === 'ACTIVE' ? outcome.details : null
   const listCount = outcome.count ?? outcome.activeSessions?.length
+  const locale = getLocale()
   const parts = [
-    outcome.message,
+    localizeSessionMessage(outcome.message, outcome.code),
     ...extras,
     listCount != null && outcome.activeSessions
-      ? `${listCount} aktiivset sessiooni`
+      ? tKey('session.activeCount', { n: listCount }, locale)
       : null,
     details?.zone ? String(details.zone) : null,
     formatHourlyRate(sessionHourlyRate(details)),
     details?.status ? String(details.status) : null,
     formatSessionInstant(sessionStartIso(details))
-      ? `alates ${formatSessionInstant(sessionStartIso(details))}`
+      ? tKey(
+          'session.since',
+          { time: formatSessionInstant(sessionStartIso(details))! },
+          locale,
+        )
       : null,
   ]
   const seen = new Set<string>()

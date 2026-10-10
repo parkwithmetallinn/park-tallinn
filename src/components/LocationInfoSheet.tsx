@@ -9,6 +9,7 @@ import {
 import type { ParkingSpot } from '../types'
 import { FindParkingActions } from './FindParkingActions'
 import { InfoSidePanelShell } from './InfoSidePanel'
+import { useI18n } from '../i18n'
 
 export function LocationInfoSheet({
   location,
@@ -32,6 +33,7 @@ export function LocationInfoSheet({
   onWidenRadius?: () => void
   onSelectAlternative?: (spot: ParkingSpot) => void
 }) {
+  const { t } = useI18n()
   const links = navLinks(location.lat, location.lng)
   const coords = formatCoords(location.lat, location.lng)
   const muted = dark ? 'text-[#98989D]' : 'text-[#8E8E93]'
@@ -62,7 +64,7 @@ export function LocationInfoSheet({
               type="button"
               onClick={requestClose}
               className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition active:scale-95 ${chip} ${muted}`}
-              aria-label="Sulge"
+              aria-label={t('common.close')}
             >
               <X className="h-4 w-4" />
             </button>
@@ -94,7 +96,7 @@ export function LocationInfoSheet({
               type="button"
               onClick={() => openAppleMaps(location.lat, location.lng)}
               className="flex min-h-11 flex-col items-center justify-center gap-1 rounded-xl bg-[#1C1C1E] px-1.5 py-2.5 text-center transition active:scale-[0.98]"
-              aria-label="Ava Apple Maps"
+              aria-label={t('a11y.openAppleMaps')}
             >
               <MapPin className="h-4 w-4 text-white" strokeWidth={2.5} />
               <span className="text-[12px] font-bold text-white">Apple</span>
@@ -105,7 +107,7 @@ export function LocationInfoSheet({
             type="button"
             onClick={() => onClear()}
             className="mb-1 flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-[#FF3B30]/10 px-3 py-2.5 text-[12px] font-semibold text-[#D70015] transition active:scale-[0.99]"
-            aria-label="Tühjenda otsing"
+            aria-label={t('a11y.clearSearch')}
           >
             <X className="h-3.5 w-3.5" />
             Tühjenda otsing

@@ -124,6 +124,7 @@ import { useSearchGeocode } from './hooks/useSearchGeocode'
 import { clampSearchQuery } from './lib/validation'
 import { track } from './lib/analytics'
 import { useLiveLocation } from './hooks/useLiveLocation'
+import { useI18n } from './i18n'
 
 import { parkingIndex } from './lib/spatialIndex'
 import { loadCustomSpots } from './lib/storage'
@@ -138,15 +139,15 @@ import { EV_COLOR_CYAN, type EvChargerFeature } from './lib/evChargers'
 import { EvChargerSheet } from './components/EvChargerSheet'
 import type { FilterId, ParkingSpot } from './types'
 
-/** Top filter pills — EV chargers unified under Elektriautolaadijad */
-const FILTERS: { id: FilterId; label: string; color?: string }[] = [
-  { id: 'all', label: 'Kõik' },
-  { id: 'free_street', label: 'Tasuta', color: PARKING_COLOR_FREE },
-  { id: 'timed', label: 'Kellaga', color: PARKING_COLOR_TIMED },
-  { id: 'paid', label: 'Tasuline', color: PARKING_COLOR_PAID },
-  { id: 'ev', label: 'Elektriautolaadijad', color: EV_COLOR_CYAN },
-  { id: 'other', label: 'Teadmata', color: PARKING_COLOR_UNKNOWN },
-  { id: 'alerts', label: '⚠️ Hoiatusega', color: '#FF3B30' },
+/** Top filter pills — labels via i18n inside App. */
+const FILTER_META: { id: FilterId; labelKey: string; color?: string }[] = [
+  { id: 'all', labelKey: 'filters.all' },
+  { id: 'free_street', labelKey: 'filters.free', color: PARKING_COLOR_FREE },
+  { id: 'timed', labelKey: 'filters.clock', color: PARKING_COLOR_TIMED },
+  { id: 'paid', labelKey: 'filters.paid', color: PARKING_COLOR_PAID },
+  { id: 'ev', labelKey: 'filters.ev', color: EV_COLOR_CYAN },
+  { id: 'other', labelKey: 'filters.other', color: PARKING_COLOR_UNKNOWN },
+  { id: 'alerts', labelKey: 'filters.alerts', color: '#FF3B30' },
 ]
 
 /** Marker click does not auto-start a route (search selection does). */
@@ -161,6 +162,17 @@ const glassDark =
 export default function App() {
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme())
   const dark = theme === 'dark'
+  const { t, formatMoney, zoneName } = useI18n()
+  const FILTERS = useMemo(
+    () =>
+      FILTER_META.map((f) => ({
+        id: f.id,
+        label:
+          f.id === 'alerts' ? `⚠️ ${t(f.labelKey)}` : t(f.labelKey),
+        color: f.color,
+      })),
+    [t],
+  )
   const [cityId, setCityId] = useState<CityId>(() => getInitialCity())
   const [filter, setFilter] = useState<FilterId>('all')
   const [query, setQuery] = useState('')
@@ -745,22 +757,22 @@ export default function App() {
       markHintSeen()
       return
     }
-    const t = window.setTimeout(() => {
+    const hintTimer = window.setTimeout(() => {
       setToast({
         kind: 'info',
-        title: 'Vajuta kaardil pikalt, et lisada oma pin',
+        title: t('pins.longPressHint'),
       })
       markHintSeen()
     }, 1200)
-    return () => window.clearTimeout(t)
-  }, [mapReady, myPins.length, setToast])
+    return () => window.clearTimeout(hintTimer)
+  }, [mapReady, myPins.length, setToast, t])
 
   const notifyStorageIssue = useCallback(() => {
     if (wasStorageUnavailableToastShown()) return
     markStorageUnavailableToastShown()
     setToast({
       kind: 'info',
-      title: 'Pinne ei saa sellel seadmel salvestada',
+      title: t('pins.cannotSave'),
     })
   }, [setToast])
 
@@ -815,14 +827,14 @@ export default function App() {
       if (!result.ok && result.reason === 'quota') {
         setToast({
           kind: 'info',
-          title: `Pinne on liiga palju (max ${MY_PINS_MAX})`,
+          title: t('pins.tooMany', { n: MY_PINS_MAX }),
         })
         return
       }
       setMyPins(result.pins)
       if (result.ok) {
         if (result.storageFailed) notifyStorageIssue()
-        setToast({ kind: 'info', title: 'Pin salvestatud' })
+        setToast({ kind: 'info', title: t('pins.saved') })
         markHintSeen()
       }
       setDraftPin(null)
@@ -853,7 +865,7 @@ export default function App() {
       })
       setMyPins(result.pins)
       if (result.ok) {
-        setToast({ kind: 'info', title: 'Pin salvestatud' })
+        setToast({ kind: 'info', title: t('pins.saved') })
       }
       setEditingPinId(null)
       setPinDragEnabled(false)
@@ -867,7 +879,7 @@ export default function App() {
       setMyPins(pins)
       setEditingPinId(null)
       setPinDragEnabled(false)
-      setToast({ kind: 'info', title: 'Pin kustutatud' })
+      setToast({ kind: 'info', title: t('pins.deleted') })
     },
     [setToast],
   )
@@ -917,7 +929,7 @@ export default function App() {
     if (!result.ok) {
       setToast({
         kind: 'error',
-        title: 'Asukoht puudub',
+        title: t('chrome.locationMissing'),
         detail: result.message,
       })
       return
@@ -927,7 +939,7 @@ export default function App() {
       stopFollow()
       setToast({
         kind: 'info',
-        title: 'Oled väljaspool Tallinna',
+        title: t('chrome.outsideTallinn'),
       })
       return
     }
@@ -984,7 +996,7 @@ export default function App() {
         (Math.abs(parking[0] - house[0]) < 1e-6 &&
           Math.abs(parking[1] - house[1]) < 1e-6)
       const label =
-        destSpot?.name || houseLoc.name || houseLoc.label || 'Sihtkoht'
+        destSpot?.name || houseLoc.name || houseLoc.label || t('common.destination')
 
       const openInfoSheet = () => {
         if (routeRunId.current !== runId) return
@@ -1032,9 +1044,9 @@ export default function App() {
         gpsRouteToastShown.current = true
         setToast({
           kind: 'info',
-          title: 'GPS puudub',
+          title: t('geo.gpsMissing'),
           detail:
-            'GPS puudub, marsruut algab kaardi keskelt. Luba asukoht täpsema marsruudi jaoks.',
+            t('geo.gpsMissingRoute'),
         })
       }
 
@@ -1064,7 +1076,7 @@ export default function App() {
             setRouteError(msg)
             setToast({
               kind: 'info',
-              title: 'Marsruuti ei õnnestunud leida',
+              title: t('toasts.routeFail'),
             })
           }
           return null
@@ -1082,8 +1094,8 @@ export default function App() {
         if (p?.walkFailed && routeRunId.current === runId) {
           setToast({
             kind: 'info',
-            title: 'Jalgsi marsruuti ei leitud',
-            detail: 'Näitan ligikaudset teekonda',
+            title: t('toasts.walkRouteMissing'),
+            detail: t('toasts.walkRouteFallback'),
           })
         }
         return p?.walk ?? null
@@ -1102,8 +1114,8 @@ export default function App() {
             if (!drive && walk) {
               setToast({
                 kind: 'info',
-                title: 'Autosõitu ei leitud',
-                detail: 'Näitan ainult jalgsi lõiku',
+                title: t('toasts.driveRouteMissing'),
+                detail: t('toasts.driveWalkOnly'),
               })
             }
             setRoutePlan({
@@ -1122,7 +1134,7 @@ export default function App() {
             if (routeRunId.current !== runId) return
             setToast({
               kind: 'info',
-              title: 'Marsruuti ei õnnestunud leida',
+              title: t('toasts.routeFail'),
             })
             openInfoSheet()
           },
@@ -1496,7 +1508,7 @@ export default function App() {
           if (routeRunId.current === runId) {
             setToast({
               kind: 'info',
-              title: 'Marsruuti ei õnnestunud leida',
+              title: t('toasts.routeFail'),
             })
           }
           return null
@@ -1514,8 +1526,8 @@ export default function App() {
         if (p?.walkFailed && routeRunId.current === runId) {
           setToast({
             kind: 'info',
-            title: 'Jalgsi marsruuti ei leitud',
-            detail: 'Näitan ligikaudset teekonda',
+            title: t('toasts.walkRouteMissing'),
+            detail: t('toasts.walkRouteFallback'),
           })
         }
         return p?.walk ?? null
@@ -1643,7 +1655,7 @@ export default function App() {
       })
       return
     }
-    setToast({ kind: 'loading', title: 'Saadan…' })
+    setToast({ kind: 'loading', title: t('toasts.sending') })
     void (async () => {
       const result = await submitFullReport(parkingId)
       if (!result.ok) {
@@ -1897,8 +1909,8 @@ export default function App() {
                       if (q >= 3 || myPins.length > 0) setIsDropdownOpen(true)
                     }}
                     onKeyDown={handleSearchKeyDown}
-                    placeholder="Otsi aadressi või kohta Eestis"
-                    aria-label="Otsi aadressi või kohta"
+                    placeholder={t("search.placeholder")}
+                    aria-label={t("search.aria")}
                     className={`w-full min-w-0 truncate rounded-2xl border-0 bg-transparent py-2.5 pr-10 pl-10 text-base font-sans outline-none sm:py-3 sm:text-lg ${text} placeholder:truncate placeholder:text-[#8E8E93]`}
                     autoComplete="off"
                     enterKeyHint="search"
@@ -1914,7 +1926,7 @@ export default function App() {
                         setIsDropdownOpen(myPins.length > 0)
                       }}
                       className={`absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer rounded-full p-1.5 ${muted} bg-black/5`}
-                      aria-label="Tühjenda"
+                      aria-label={t("search.clear")}
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -1925,8 +1937,8 @@ export default function App() {
                   data-testid="open-favorites"
                   onClick={() => setFavoritesOpen(true)}
                   className={`cursor-pointer rounded-full p-2.5 ${chip}`}
-                  title="Lemmikparklad"
-                  aria-label="Lemmikparklad"
+                  title={t("chrome.favorites")}
+                  aria-label={t("chrome.favorites")}
                   aria-pressed={favoritesOpen}
                 >
                   <Star className="h-5 w-5" />
@@ -1935,8 +1947,8 @@ export default function App() {
                   type="button"
                   onClick={() => setInfoOpen(true)}
                   className={`cursor-pointer rounded-full p-2.5 ${chip}`}
-                  title="Reeglid"
-                  aria-label="Reeglid"
+                  title={t("chrome.rules")}
+                  aria-label={t("chrome.rules")}
                 >
                   <CircleHelp className="h-5 w-5" />
                 </button>
@@ -1945,8 +1957,8 @@ export default function App() {
                   data-testid="open-teave"
                   onClick={() => setTeaveOpen(true)}
                   className={`cursor-pointer rounded-full p-2.5 ${chip}`}
-                  title="Teave"
-                  aria-label="Teave"
+                  title={t("chrome.teave")}
+                  aria-label={t("chrome.teave")}
                   aria-pressed={teaveOpen}
                 >
                   <Info className="h-5 w-5" />
@@ -1961,8 +1973,8 @@ export default function App() {
                     })
                   }}
                   className={`cursor-pointer rounded-full p-2.5 ${chip}`}
-                  title={dark ? 'Hele režiim' : 'Tume režiim'}
-                  aria-label={dark ? 'Lülita hele režiim' : 'Lülita tume režiim'}
+                  title={dark ? t('chrome.themeLight') : t('chrome.themeDark')}
+                  aria-label={dark ? t('chrome.themeToLight') : t('chrome.themeToDark')}
                 >
                   {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
                 </button>
@@ -2061,7 +2073,7 @@ export default function App() {
                       }`}
                     >
                       <Car className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                      <span>Autoga</span>
+                      <span>{t('route.byCar')}</span>
                       <span className={muted}>
                         {formatDistance(routePlan.drive.distanceMeters)}
                         {' · '}
@@ -2082,8 +2094,8 @@ export default function App() {
                       <Footprints className="h-3.5 w-3.5 shrink-0" aria-hidden />
                       <span>
                         {routePlan.walk.isFallback
-                          ? 'Ligikaudne jalutuskäik'
-                          : 'Jalgsi'}
+                          ? t('route.approxWalk')
+                          : t('route.onFoot')}
                       </span>
                       <span className={muted}>
                         {formatDistance(routePlan.walk.distanceMeters)}
@@ -2098,18 +2110,19 @@ export default function App() {
                               : 'bg-[#FF9500]/15 text-[#C93400]'
                           }`}
                         >
-                          Pikk jalutuskäik
+                          {t('route.longWalk')}
                         </span>
                       ) : null}
                     </p>
                   ) : null}
                   {routePlan.drive || routePlan.walk ? (
                     <p className={`text-[12px] font-medium ${muted}`}>
-                      Kokku ~{' '}
-                      {formatDuration(
-                        (routePlan.drive?.durationSeconds ?? 0) +
-                          (routePlan.walk?.durationSeconds ?? 0),
-                      )}
+                      {t('route.totalApprox', {
+                        duration: formatDuration(
+                          (routePlan.drive?.durationSeconds ?? 0) +
+                            (routePlan.walk?.durationSeconds ?? 0),
+                        ),
+                      })}
                     </p>
                   ) : null}
                 </div>
@@ -2117,8 +2130,8 @@ export default function App() {
                   type="button"
                   onClick={clearRoute}
                   className={`tap-scale flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${chip} focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#007AFF]`}
-                  aria-label="Peida marsruut"
-                  title="Peida marsruut"
+                  aria-label={t("chrome.hideRoute")}
+                  title={t("chrome.hideRoute")}
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -2146,8 +2159,8 @@ export default function App() {
           }}
           disabled={gpsLocating}
           className={fabClass}
-          title={followUser ? 'Jälgin asukohta' : 'Jälgi mind / tsentreeri'}
-          aria-label={followUser ? 'Jälgin asukohta' : 'Jälgi mind'}
+          title={followUser ? t('chrome.locateFollow') : t('chrome.locateTitle')}
+          aria-label={followUser ? t('chrome.locateFollow') : t('chrome.locate')}
           aria-pressed={followUser}
           aria-busy={gpsLocating}
         >
@@ -2169,8 +2182,8 @@ export default function App() {
           type="button"
           onClick={() => setPitch3d((v) => !v)}
           className={fabClass}
-          title={pitch3d ? '2D vaade' : '3D vaade'}
-          aria-label={pitch3d ? '2D vaade' : '3D vaade'}
+          title={pitch3d ? t('chrome.view2d') : t('chrome.view3d')}
+          aria-label={pitch3d ? t('chrome.view2d') : t('chrome.view3d')}
         >
           {pitch3d ? (
             <MapIcon className="h-[22px] w-[22px] text-[#007AFF]" />
@@ -2185,8 +2198,8 @@ export default function App() {
             else openSessionModal()
           }}
           className={`relative ${fabClass}`}
-          title={activeSession ? 'Aktiivne sessioon' : 'Parkimiskell'}
-          aria-label={activeSession ? 'Aktiivne sessioon' : 'Parkimiskell'}
+          title={activeSession ? t('chrome.activeSession') : t('chrome.parkingClock')}
+          aria-label={activeSession ? t('chrome.activeSession') : t('chrome.parkingClock')}
           aria-expanded={timerOpen}
         >
           <Clock3 className={`h-[22px] w-[22px] ${activeSession ? 'text-[#34C759]' : muted}`} />
@@ -2198,8 +2211,8 @@ export default function App() {
           type="button"
           onClick={openProposeNew}
           className="tap-scale flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[#34C759] text-white shadow-[0_4px_16px_rgba(52,199,89,0.35)]"
-          title="Paku uut kohta (ülevaatusse)"
-          aria-label="Paku uut kohta"
+          title={t("chrome.proposeSpotTitle")}
+          aria-label={t("chrome.proposeSpot")}
         >
           <Plus className="h-6 w-6" strokeWidth={2.4} />
         </button>
@@ -2417,7 +2430,7 @@ export default function App() {
         <ModalShell
           onClose={() => setInfoOpen(false)}
           title={
-            cityId === 'parnu' ? 'Pärnu parkimisreeglid' : 'Tallinna parkimisreeglid'
+            cityId === 'parnu' ? t('rules.parnu') : t('rules.tallinn')
           }
         >
           <div className="max-h-[60vh] space-y-3 overflow-y-auto text-xs leading-relaxed text-ink-soft">
@@ -2429,7 +2442,7 @@ export default function App() {
                     <p>
                       • {z.pricePerHour.toFixed(0)} €/h · {z.pricePer24h.toFixed(0)} €/24h
                     </p>
-                    <p>• Ketas {z.freeMinutesWithDisc} min tasuta</p>
+                    <p>• {t('rules.discFree', { n: z.freeMinutesWithDisc })}</p>
                     <p className="mt-1 text-[12px] opacity-80">{z.source}</p>
                   </div>
                 ))}
@@ -2446,50 +2459,47 @@ export default function App() {
             ) : (
               <>
             <div className="rounded-2xl border border-sea/20 bg-sea/8 p-3">
-              <h4 className="mb-1 text-sm font-bold text-sea">Esimesed 15 minutit tasuta</h4>
+              <h4 className="mb-1 text-sm font-bold text-sea">{t('rules.first15')}</h4>
               <p>
-                Avalikel tasulistel linnatänavatel kehtib esimesed 15 minutit tasuta. Pane kell
-                esiklaasile.
+                {t('rules.first15Body')}
               </p>
               <p className="mt-1.5 text-[12px] opacity-90">
-                15 tasuta minutit kehtivad ainult märgitud alguse korral.
+                {t('rules.first15Note')}
               </p>
             </div>
             <div className="rounded-2xl bg-paper-2 p-3">
-              <h4 className="mb-1 text-sm font-bold text-ink">Tsoonide hinnad</h4>
+              <h4 className="mb-1 text-sm font-bold text-ink">{t('rules.zonePrices')}</h4>
               <p className="mb-2 text-[12px] opacity-80">
-                Kontrolli kehtivaid hindu tallinn.ee lehel.
+                {t('rules.zonePricesHint')}
               </p>
               {ZONE_RATE_LIST.map((z) => (
                 <p key={z.code}>
-                  • {z.name} — {String(z.pricePerMinute).replace('.', ',')} €/min (
-                  {z.pricePerHour.toFixed(2).replace('.', ',')} €/h) · {z.hoursNote}
-                  {z.freeMinutes > 0 ? ` · ${z.freeMinutes} min tasuta` : ''}
+                  • {zoneName(z.code)} — {String(z.pricePerMinute).replace('.', ',')} €/min (
+                  {formatMoney(z.pricePerHour)}/h) · {z.hoursNote}
+                  {z.freeMinutes > 0 ? ` · ${t('rules.minFree', { n: z.freeMinutes })}` : ''}
                 </p>
               ))}
             </div>
             <div className="rounded-2xl bg-paper-2 p-3">
-              <h4 className="mb-1 text-sm font-bold text-ink">Kesklinna tasuta kellaajad</h4>
-              <p>• Tööpäeviti tasuline 07:00–19:00</p>
-              <p>• Laupäeval tasuline 08:00–15:00</p>
-              <p>• Pühapäeval tasuta; riigipühal kehtib sama nädalapäeva tasu</p>
+              <h4 className="mb-1 text-sm font-bold text-ink">{t('rules.freeHours')}</h4>
+              <p>• {t('rules.freeHoursWeekday')}</p>
+              <p>• {t('rules.freeHoursSaturday')}</p>
+              <p>• {t('rules.freeHoursSunday')}</p>
             </div>
               </>
             )}
             <div className="rounded-2xl border border-moss/20 bg-moss/8 p-3">
-              <h4 className="mb-1 text-sm font-bold text-moss">Kaart</h4>
+              <h4 className="mb-1 text-sm font-bold text-moss">{t('rules.mapLegend')}</h4>
               <p>
-                Roheline = kontrollitud tasuta · hall = hind teadmata · värvilised =
-                operaatorid. “+” saadab ettepaneku ülevaatusse (GeoJSON ei muutu otse).
+                {t('rules.mapLegendBody')}
               </p>
             </div>
             <div className="rounded-2xl bg-paper-2 p-3">
               <h4 className="mb-1 text-sm font-bold text-ink">
-                Minu pinnid ({myPins.length})
+                {t('rules.myPinsTitle', { n: myPins.length })}
               </h4>
               <p>
-                Vajuta kaardil pikalt, et lisada isiklik pin. Pinnid salvestatakse ainult
-                sellesse seadmesse — teised kasutajad neid ei näe.
+                {t('rules.myPinsBody')}
               </p>
             </div>
             <a
@@ -2498,7 +2508,7 @@ export default function App() {
               onTouchStart={() => prefetchParkingLayers()}
               className="tap-scale block rounded-2xl border border-ink/10 bg-paper-2 px-3 py-2.5 text-center text-xs font-bold text-ink-soft hover:bg-ink/5"
             >
-              Admin / Review (peidetud)
+              {t('rules.adminLink')}
             </a>
           </div>
         </ModalShell>
@@ -2509,7 +2519,7 @@ export default function App() {
           context={reportContext}
           onClose={() => setReportContext(null)}
           onSubmitted={(message) => {
-            setToast({ kind: 'info', title: 'Saadetud ülevaatusse', detail: message })
+            setToast({ kind: 'info', title: t('toasts.submittedReview'), detail: message })
             if (reportContext?.mode === 'PROPOSE_NEW') {
               track('spot_added', { mode: 'PROPOSE_NEW' })
             }

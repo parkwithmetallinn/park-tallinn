@@ -4,6 +4,7 @@
 
 import { Capacitor } from '@capacitor/core'
 import { Geolocation } from '@capacitor/geolocation'
+import { tKey } from '../i18n'
 
 export type GeoPosition = {
   lat: number
@@ -33,19 +34,19 @@ export const LIVE_GEO_OPTIONS: PositionOptions = {
   maximumAge: 0,
 }
 
-/** Estonian user-facing copy for geolocation failures. */
+/** Localized user-facing copy for geolocation failures. */
 export function geoErrorMessage(code: GeoLocateErrorCode): string {
   switch (code) {
     case 'unsupported':
-      return 'Sinu brauser ei toeta asukoha määramist.'
+      return tKey('geo.unsupported')
     case 'denied':
-      return 'Asukoha luba on keelatud. Luba GPS brauseri või seadme seadetes.'
+      return tKey('geo.denied')
     case 'unavailable':
-      return 'Asukohta ei õnnestunud määrata. Proovi uuesti.'
+      return tKey('geo.unavailable')
     case 'timeout':
-      return 'Asukoha päring aegus. Proovi uuesti.'
+      return tKey('geo.timeout')
     default:
-      return 'Asukoha määramine ebaõnnestus.'
+      return tKey('geo.failed')
   }
 }
 

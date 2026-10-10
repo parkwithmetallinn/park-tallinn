@@ -13,6 +13,7 @@ import {
   formatHourlyRate,
   formatSessionFeedbackDetail,
   formatSessionInstant,
+  localizeSessionMessage,
   sessionHourlyRate,
   sessionStartIso,
   startParkingSession,
@@ -34,9 +35,10 @@ import {
 import { canStartParkingSession } from '../data/zones'
 import { fetchPriceQuote } from '../lib/priceQuoteApi'
 import type { ParkingSpot } from '../types'
+import { tKey } from '../i18n'
 
 const SYNC_THROTTLE_MS = 15_000
-const DEFAULT_TIMER_LABEL = 'Määra aeg või vali kellaga koht'
+const defaultTimerLabel = () => tKey('session.timerDefault')
 /** Fire local reminder when prepaid remaining ≤ this many seconds. */
 const REMINDER_THRESHOLD_SEC = 10 * 60
 
@@ -61,7 +63,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
   const [timerSeconds, setTimerSeconds] = useState(0)
   const [timerRunning, setTimerRunning] = useState(false)
   const [timerMode, setTimerMode] = useState<TimerMode>('elapsed')
-  const [timerLabel, setTimerLabel] = useState(DEFAULT_TIMER_LABEL)
+  const [timerLabel, setTimerLabel] = useState(() => defaultTimerLabel())
   const [timerOpen, setTimerOpen] = useState(false)
   const [endsAt, setEndsAt] = useState<string | null>(null)
   const [sessionLoading, setSessionLoading] = useState(false)
@@ -96,8 +98,8 @@ export function useParkingSession(selected: ParkingSpot | null) {
 
       setToast({
         kind: 'info',
-        title: 'Parkimisaeg lõpeb peagi',
-        detail: 'Jäänud umbes 10 minutit',
+        title: tKey('session.endsSoonTitle'),
+        detail: tKey('session.endsSoonBody'),
       })
 
       if (
@@ -105,8 +107,8 @@ export function useParkingSession(selected: ParkingSpot | null) {
         Notification.permission === 'granted'
       ) {
         try {
-          new Notification('Parkimisaeg lõpeb peagi', {
-            body: 'Jäänud umbes 10 minutit',
+          new Notification(tKey('session.endsSoonTitle'), {
+            body: tKey('session.endsSoonBody'),
             tag: `parking-reminder-${currentEndsAt}`,
           })
         } catch {
@@ -136,7 +138,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
   )
 
   const clearLocalSession = useCallback(
-    (label = DEFAULT_TIMER_LABEL) => {
+    (label = defaultTimerLabel()) => {
       persistActive(null)
       setPriceEstimate(null)
       setTimerRunning(false)
@@ -305,24 +307,28 @@ export function useParkingSession(selected: ParkingSpot | null) {
             notFoundToastShownRef.current = true
             setToast({
               kind: 'info',
-              title: 'Aktiivset parkimist pole',
-              detail: outcome.message || 'Kohalik sessioon eemaldati',
+              title: tKey('session.noActive'),
+              detail: localizeSessionMessage(outcome.message, outcome.code) || tKey('session.localCleared'),
             })
             setSessionNotice({
               kind: 'info',
               text: outcome.message
-                ? `Aktiivset parkimist pole — ${outcome.message}`
-                : 'Aktiivset parkimist pole',
+                ? tKey('session.noActiveWithMsg', {
+                    msg: localizeSessionMessage(outcome.message, outcome.code),
+                  })
+                : tKey('session.noActive'),
             })
           }
           return
         }
 
         // ERROR — keep local state
-        setConnectionNotice('Ühendus puudub')
+        setConnectionNotice(tKey('session.connectionLost'))
         setSessionNotice({
           kind: 'info',
-          text: `Ühendus puudub — ${outcome.message}`,
+          text: tKey('session.connectionWithMsg', {
+            msg: localizeSessionMessage(outcome.message, outcome.code),
+          }),
         })
       } finally {
         syncInFlightRef.current = false
@@ -462,20 +468,20 @@ export function useParkingSession(selected: ParkingSpot | null) {
     if (!canStartParkingSession(selected)) {
       showSessionFeedback(
         'info',
-        'Sessiooni ei alustata',
+        tKey('session.cannotStart'),
         selected.type === 'pr' || selected.layer === 'park_ride'
-          ? 'Pargi & reisi'
+          ? tKey('session.parkRide')
           : selected.type === 'timed' || selected.layer === 'timed'
-            ? 'Kellaga koht'
-            : 'Tasuta koht',
+            ? tKey('session.clockSpot')
+            : tKey('session.freeSpot'),
       )
       return
     }
     if (activeSession) {
       showSessionFeedback(
         'error',
-        'Sessioon juba käib',
-        `Lõpeta enne · ${activeSession.zone}`,
+        tKey('session.alreadyRunning'),
+        tKey('session.endFirst', { zone: activeSession.zone }),
       )
       return
     }
@@ -499,7 +505,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
     )
     setSessionAction('start')
     setSessionLoading(true)
-    showSessionFeedback('loading', 'Alustan parkimist…', zone)
+    showSessionFeedback('loading', tKey('session.starting'), zone)
 
     if (!isBrowserOnline()) {
       enqueueOfflineAction('session_start', { zone })
@@ -507,8 +513,8 @@ export function useParkingSession(selected: ParkingSpot | null) {
       setSessionAction(null)
       showSessionFeedback(
         'info',
-        'Offline — salvestatud järjekorda',
-        'Saadetakse ühenduse taastudes',
+        tKey('session.offlineQueued'),
+        tKey('session.offlineQueuedDetail'),
       )
       return
     }
@@ -532,7 +538,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
         hourlyRate: serverRate,
       })
       const serverRateLabel = formatHourlyRate(serverRate)
-      const label = `Sessioon: ${spotLabel}${
+      const label = `${tKey('session.sessionLabel', { name: spotLabel })}${
         serverRateLabel ? ` · ${serverRateLabel}` : ''
       }`
       setTimerLabel(label)
@@ -541,7 +547,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
       setConnectionNotice(null)
       showSessionFeedback(
         'success',
-        'Parkimine alanud',
+        tKey('session.started'),
         formatSessionFeedbackDetail(outcome, [
           details.sessionId ? `ID ${details.sessionId}` : null,
         ]),
@@ -553,8 +559,8 @@ export function useParkingSession(selected: ParkingSpot | null) {
     rollbackSessionSnapshot()
     showSessionFeedback(
       'error',
-      'Sessiooni ei alustatud',
-      outcome.message,
+      tKey('session.startFail'),
+      localizeSessionMessage(outcome.message, outcome.code),
     )
   }, [
     selected,
@@ -591,8 +597,8 @@ export function useParkingSession(selected: ParkingSpot | null) {
       sessionSnapshotRef.current = null
       setToast({
         kind: 'info',
-        title: 'Offline — lõpetamine järjekorras',
-        detail: 'Saadetakse ühenduse taastudes',
+        title: tKey('session.offlineStopQueued'),
+        detail: tKey('session.offlineQueuedDetail'),
       })
       return
     }
@@ -615,12 +621,12 @@ export function useParkingSession(selected: ParkingSpot | null) {
           startMarked: true,
         })
         detail = finalQuote.ok
-          ? `Lõpphind: ${finalQuote.label}`
-          : finalQuote.message
+          ? tKey('session.finalPrice', { price: finalQuote.label })
+          : localizeSessionMessage(finalQuote.message)
       }
       setToast({
         kind: 'success',
-        title: 'Parkimine lõpetatud',
+        title: tKey('session.stopped'),
         detail,
       })
       void queryClient.invalidateQueries({ queryKey: parkingQueryKeys.sessions })
@@ -631,8 +637,8 @@ export function useParkingSession(selected: ParkingSpot | null) {
     rollbackSessionSnapshot()
     setToast({
       kind: 'error',
-      title: 'Lõpetamine ebaõnnestus',
-      detail: outcome.message || 'Proovi uuesti',
+      title: tKey('session.stopFail'),
+      detail: localizeSessionMessage(outcome.message, outcome.code) || tKey('session.tryAgain'),
     })
   }, [
     activeSession,
@@ -648,7 +654,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
    */
   const refreshParkingStatus = useCallback(async () => {
     if (!activeSession && !selectedRef.current) {
-      showSessionFeedback('info', 'Vali parkla või alusta sessiooni')
+      showSessionFeedback('info', tKey('session.pickSpot'))
       return
     }
 
@@ -657,7 +663,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
 
     setSessionLoading(true)
     setSessionAction('status')
-    showSessionFeedback('loading', 'Kontrollin parkimise staatust…')
+    showSessionFeedback('loading', tKey('session.statusChecking'))
 
     try {
       const outcome = await checkParkingStatus()
@@ -677,7 +683,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
         }
         showSessionFeedback(
           'success',
-          'Aktiivne parkimine',
+          tKey('session.statusActive'),
           formatSessionFeedbackDetail(outcome),
         )
         return
@@ -690,17 +696,17 @@ export function useParkingSession(selected: ParkingSpot | null) {
         }
         showSessionFeedback(
           'info',
-          'Aktiivset parkimist pole',
-          outcome.message || 'Aktiivset parkimist ei leitud',
+          tKey('session.noActive'),
+          localizeSessionMessage(outcome.message, outcome.code) || tKey('session.noActiveDetail'),
         )
         return
       }
 
       // ERROR — keep local state; show server/error message only
-      setConnectionNotice('Ühendus puudub')
+      setConnectionNotice(tKey('session.connectionLost'))
       showSessionFeedback('error', 'Staatuse päring ebaõnnestus', outcome.message)
     } catch (err) {
-      setConnectionNotice('Ühendus puudub')
+      setConnectionNotice(tKey('session.connectionLost'))
       showSessionFeedback(
         'error',
         'Staatuse päring ebaõnnestus',
@@ -743,15 +749,18 @@ export function useParkingSession(selected: ParkingSpot | null) {
       setTimerOpen(true)
       setTimerLabel(
         activeSession
-          ? `Ettemaks +${minutes} min · ${activeSession.spotName ?? activeSession.zone}`
-          : `Ettemaks +${minutes} min`,
+          ? tKey('session.prepaidPlusNamed', {
+              n: minutes,
+              name: activeSession.spotName ?? activeSession.zone,
+            })
+          : tKey('session.prepaidPlus', { n: minutes }),
       )
 
       if (!activeSession) {
         showSessionFeedback(
           'info',
-          `Lisatud ${minutes} min`,
-          'Kohalik taimer (sessioon puudub)',
+          tKey('session.addedMinutes', { n: minutes }),
+          tKey('session.prepaidLocal'),
         )
         return
       }
@@ -760,8 +769,8 @@ export function useParkingSession(selected: ParkingSpot | null) {
         enqueueOfflineAction('session_extend', { endsAt: nextEndsAt })
         showSessionFeedback(
           'info',
-          `Lisatud ${minutes} min`,
-          'Offline — pikendus järjekorras',
+          tKey('session.addedMinutes', { n: minutes }),
+          tKey('session.prepaidOffline'),
         )
         return
       }
@@ -775,7 +784,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
       if (outcome.kind === 'ACTIVE') {
         showSessionFeedback(
           'success',
-          `Lisatud ${minutes} min`,
+          tKey('session.addedMinutes', { n: minutes }),
           formatSessionFeedbackDetail(outcome),
         )
         return
@@ -785,16 +794,16 @@ export function useParkingSession(selected: ParkingSpot | null) {
         // Neutral — local timer already updated and stays
         setToast({
           kind: 'info',
-          title: 'Serveris aktiivset sessiooni pole',
-          detail: outcome.message || 'Kohalik taimer jätkub',
+          title: tKey('session.serverNoSession'),
+          detail: localizeSessionMessage(outcome.message, outcome.code) || tKey('session.localTimerContinues'),
         })
         return
       }
 
       setToast({
         kind: 'error',
-        title: 'Pikendamine ebaõnnestus',
-        detail: outcome.message || 'Kohalik taimer jätkub',
+        title: tKey('session.extendFail'),
+        detail: localizeSessionMessage(outcome.message, outcome.code) || tKey('session.localTimerContinues'),
       })
     },
     [

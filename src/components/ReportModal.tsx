@@ -6,6 +6,7 @@ import {
   reportInvalidSchema,
   reportProposeSchema,
 } from '../lib/validation'
+import { useI18n } from '../i18n'
 
 export type ReportModalContext = {
   /** Default request type */
@@ -47,6 +48,7 @@ export function ReportModal({
   onClose: () => void
   onSubmitted?: (message: string) => void
 }) {
+  const { t } = useI18n()
   const [mode, setMode] = useState<ParkingRequestType>(context.mode)
   const [submitting, setSubmitting] = useState(false)
   const openedAtRef = useRef(Date.now())
@@ -167,7 +169,7 @@ export function ReportModal({
             type="button"
             onClick={onClose}
             className="tap-scale flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full bg-slate-100/80 text-[#8E8E93] transition hover:bg-slate-200/80 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#007AFF]"
-            aria-label="Sulge"
+            aria-label={t('common.close')}
           >
             <X className="h-5 w-5" />
           </button>
@@ -176,7 +178,7 @@ export function ReportModal({
         <div
           className="mb-4 grid grid-cols-2 gap-1 rounded-2xl bg-slate-100/80 p-1"
           role="tablist"
-          aria-label="Teate tüüp"
+          aria-label={t('report.typeAria')}
         >
           <button
             type="button"

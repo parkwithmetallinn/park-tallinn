@@ -15,6 +15,8 @@ import {
 } from '../data/zones'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import type { ParkingSpot } from '../types'
+import { useI18n } from '../i18n'
+import { localizeSessionMessage } from '../lib/parkingSession'
 
 const TIME_EXTEND_OPTIONS = [
   { minutes: 15, label: '+15m' },
@@ -69,6 +71,7 @@ export function ParkingSessionModal({
   formatHourlyRate: (rate?: number) => string | undefined
   formatSessionInstant: (iso?: string) => string | undefined
 }) {
+  const { t } = useI18n()
   const ink = dark ? 'text-[#F5F5F7]' : 'text-[#1C1C1E]'
   const muted = dark ? 'text-[#98989D]' : 'text-[#8E8E93]'
   const chip = dark
@@ -120,7 +123,7 @@ export function ParkingSessionModal({
       const outcome = await enablePush()
       setPerm(notificationPermissionState())
       if (outcome.kind === 'ERROR') {
-        setNotifyMsg({ kind: 'error', text: outcome.message })
+        setNotifyMsg({ kind: 'error', text: localizeSessionMessage(outcome.message, outcome.code) })
       } else {
         setNotifyMsg({
           kind: 'success',
@@ -144,7 +147,7 @@ export function ParkingSessionModal({
     try {
       const outcome = await enableEmailNotify(email)
       if (outcome.kind === 'ERROR') {
-        setNotifyMsg({ kind: 'error', text: outcome.message })
+        setNotifyMsg({ kind: 'error', text: localizeSessionMessage(outcome.message, outcome.code) })
       } else {
         setNotifyMsg({
           kind: 'success',
@@ -171,12 +174,12 @@ export function ParkingSessionModal({
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label={activeSession ? 'Aktiivne sessioon' : 'Parkimiskell'}
+        aria-label={activeSession ? t('chrome.activeSession') : t('chrome.parkingClock')}
       >
         <div className="mb-3 flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className={`text-[15px] font-bold ${ink}`}>
-              {activeSession ? 'Aktiivne sessioon' : 'Parkimiskell'}
+              {activeSession ? t('chrome.activeSession') : t('chrome.parkingClock')}
             </p>
             <p className={`truncate text-[12px] ${muted}`}>{timerLabel}</p>
           </div>
@@ -190,7 +193,7 @@ export function ParkingSessionModal({
               type="button"
               onClick={onClose}
               className={`tap-scale flex h-10 w-10 items-center justify-center rounded-full ${chip}`}
-              aria-label="Sulge"
+              aria-label={t('common.close')}
             >
               <X className="h-4 w-4" />
             </button>
@@ -200,7 +203,7 @@ export function ParkingSessionModal({
         {activeSession ? (
           <div className="mb-3 rounded-2xl bg-[#34C759]/12 p-3.5 text-[12px] font-semibold leading-snug text-[#248A3D]">
             <p>
-              {activeSession.spotName || 'Parkla'} · {activeSession.zone}
+              {activeSession.spotName || t('common.lot')} · {activeSession.zone}
               {activeSession.status ? ` · ${activeSession.status}` : ''}
             </p>
             {(formatHourlyRate(activeSession.hourlyRate) ||
@@ -209,7 +212,7 @@ export function ParkingSessionModal({
                 {[
                   formatHourlyRate(activeSession.hourlyRate),
                   formatSessionInstant(activeSession.startedAt)
-                    ? `alates ${formatSessionInstant(activeSession.startedAt)}`
+                    ? t('session.since', { time: formatSessionInstant(activeSession.startedAt)! })
                     : null,
                 ]
                   .filter(Boolean)
@@ -217,7 +220,7 @@ export function ParkingSessionModal({
               </p>
             )}
             <span className="mt-1.5 block text-[12px] font-medium opacity-80">
-              {timerMode === 'elapsed' ? 'Möödunud aeg' : 'Ettemakstud / jäänud'}
+              {timerMode === 'elapsed' ? t('session.elapsedTime') : t('session.prepaidRemaining')}
             </span>
             {priceEstimate ? (
               <p

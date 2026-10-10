@@ -1,5 +1,6 @@
 import { CheckCircle2, Info, Loader2, X, XCircle } from 'lucide-react'
 import { useEffect, useRef } from 'react'
+import { useI18n } from '../i18n'
 
 export type ToastKind = 'success' | 'error' | 'info' | 'loading'
 
@@ -25,6 +26,7 @@ export function Toast({
   toast: ToastState
   onClose: () => void
 }) {
+  const { t } = useI18n()
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
 
@@ -99,10 +101,10 @@ export function Toast({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1 opacity-80 transition hover:opacity-100"
-            aria-label="Sulge"
+            aria-label={t('common.close')}
+            className="rounded-lg p-1 opacity-80 transition hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden />
           </button>
         ) : null}
       </div>

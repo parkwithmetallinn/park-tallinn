@@ -20,16 +20,17 @@ import {
 } from '../lib/nearestParking'
 import type { ParkingSpot } from '../types'
 import { InfoSidePanelShell } from './InfoSidePanel'
+import { formatHourlyRate, getLocale, tKey, useI18n } from '../i18n'
 
 export type { NearestParkingOption }
 
 type PanelFilter = 'all' | 'free' | 'clock' | 'paid'
 
-const TABS: { id: PanelFilter; label: string }[] = [
-  { id: 'all', label: 'Kõik' },
-  { id: 'free', label: 'Odavaim / Tasuta' },
-  { id: 'clock', label: 'Kellaga' },
-  { id: 'paid', label: 'Tasuline' },
+const TAB_META: { id: PanelFilter; labelKey: string }[] = [
+  { id: 'all', labelKey: 'nearest.all' },
+  { id: 'free', labelKey: 'nearest.odavaim' },
+  { id: 'clock', labelKey: 'nearest.kellaga' },
+  { id: 'paid', labelKey: 'nearest.tasuline' },
 ]
 
 /** ~1.4 m/s urban walking pace */
@@ -38,30 +39,31 @@ function walkMinutes(distanceM: number): number {
 }
 
 export function parkingPriceBadge(spot: ParkingSpot): string {
-  if (isUnlimitedFreeParking(spot)) return 'TASUTA'
+  const locale = getLocale()
+  if (isUnlimitedFreeParking(spot)) return tKey('badge.free', undefined, locale)
   if (isClockLimitedParking(spot)) {
     const mins = Math.max(1, Math.round(spot.free_minutes || 15))
-    return `${mins} MIN`
+    return `${mins} ${tKey('badge.min', undefined, locale)}`
   }
-  if (isUnclassifiedParking(spot)) return 'Hind teadmata'
+  if (isUnclassifiedParking(spot)) return tKey('badge.unknown', undefined, locale)
   if (spot.price_per_hour > 0) {
-    return `${spot.price_per_hour.toFixed(2)} €/h`
+    return formatHourlyRate(spot.price_per_hour, locale) || `${spot.price_per_hour.toFixed(2)} €/h`
   }
   if (spot.badge === 'PAID' || spot.zone_code) {
     return spot.zone_code && spot.zone_code !== 'ZONE'
       ? spot.zone_code
-      : 'TASULINE'
+      : tKey('badge.paid', undefined, locale)
   }
   return '—'
 }
 
 /** Compact map pill label (no numbers 1/2/3 — price/type only). */
 export function parkingMapPillLabel(spot: ParkingSpot): string {
-  if (isUnlimitedFreeParking(spot)) return 'TASUTA'
+  if (isUnlimitedFreeParking(spot)) return tKey('badge.free', undefined, getLocale())
   if (isClockLimitedParking(spot)) {
     const mins = Math.max(1, Math.round(spot.free_minutes || 15))
     // Narrow no-break space keeps "15 MIN" from gluing to nearby zone glyphs
-    return `${mins}\u00A0MIN`
+    return `${mins}\u00A0${tKey('badge.min', undefined, getLocale())}`
   }
   if (
     isUnclassifiedParking({
@@ -78,12 +80,12 @@ export function parkingMapPillLabel(spot: ParkingSpot): string {
       badge: spot.badge,
     })
   ) {
-    return 'Hind teadmata'
+    return tKey('badge.unknown', undefined, getLocale())
   }
   if (spot.price_per_hour > 0) {
-    return `${spot.price_per_hour.toFixed(2)} €/h`
+    return formatHourlyRate(spot.price_per_hour, getLocale()) || `${spot.price_per_hour.toFixed(2)} €/h`
   }
-  return 'TASULINE'
+  return tKey('badge.paid', undefined, getLocale())
 }
 
 export function parkingMapPillTone(
@@ -159,6 +161,8 @@ export function NearestParkingPanel({
   /** Filtered option keys currently shown (for map pills / focus sync). */
   onVisibleOptionsChange?: (optionKeys: string[]) => void
 }) {
+  const { t } = useI18n()
+  const TABS = TAB_META.map((tab) => ({ id: tab.id, label: t(tab.labelKey) }))
   const [filter, setFilter] = useState<PanelFilter>('all')
   const cardRefs = useRef<Map<string, HTMLLIElement>>(new Map())
   const filterTouchedRef = useRef(false)
@@ -220,7 +224,7 @@ export function NearestParkingPanel({
 
   return (
     <InfoSidePanelShell
-      title="Lähimad parklad"
+      title={t("nearest.title")}
       dark={dark}
       onClose={onClose}
       variant="compact"
@@ -232,10 +236,10 @@ export function NearestParkingPanel({
               <p
                 className={`text-[12px] font-semibold tracking-wide uppercase ${muted}`}
               >
-                Lähimad parklad
+                {t("nearest.title")}
               </p>
               <h3 className={`mt-0.5 text-[15px] font-bold tracking-tight ${ink}`}>
-                Vali parkla sihtkoha juurde
+                {t("nearest.subtitle")}
               </h3>
               <p className={`mt-1 flex items-start gap-1 text-[12px] ${soft}`}>
                 <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#007AFF]" />
@@ -246,7 +250,7 @@ export function NearestParkingPanel({
               type="button"
               onClick={requestClose}
               className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition active:scale-95 ${chip} ${muted}`}
-              aria-label="Sulge"
+              aria-label={t("common.close")}
             >
               <X className="h-4 w-4" />
             </button>
@@ -255,7 +259,7 @@ export function NearestParkingPanel({
           <div
             className="mb-2.5 flex gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             role="tablist"
-            aria-label="Parkla filter"
+            aria-label={t("nearest.filterAria")}
           >
             {TABS.map((tab) => {
               const active = filter === tab.id
@@ -287,10 +291,10 @@ export function NearestParkingPanel({
 
           {filtered.length === 0 ? (
             <p className={`py-4 text-center text-[13px] font-medium ${muted}`}>
-              Selle filtriga parklaid ei leitud.
+              {t("nearest.emptyFilter")}
             </p>
           ) : (
-            <ul className="space-y-1.5" role="listbox" aria-label="Lähimad parklad">
+            <ul className="space-y-1.5" role="listbox" aria-label={t("nearest.listAria")}>
               {filtered.map(({ spot, distanceM, optionKey }) => {
                 const active = selectedPreviewId === optionKey
                 const badge = parkingPriceBadge(spot)
@@ -306,6 +310,7 @@ export function NearestParkingPanel({
                     <div
                       role="option"
                       aria-selected={active}
+                      aria-label={`${displayNames.get(spot.id) ?? spotDisplayName(spot)}, ${badge}`}
                       tabIndex={0}
                       data-testid={`nearest-parking-card-${optionKey}`}
                       onClick={() => onPreview(optionKey)}
@@ -349,12 +354,12 @@ export function NearestParkingPanel({
                           >
                             {formatDistance(distanceM)}
                             {' · '}
-                            {walk} min kõndi
+                            {t('nearest.walkMin', { n: walk })}
                             {spot.zone_code && spot.zone_code !== 'ZONE'
                               ? ` · ${spot.zone_code}`
                               : ''}
                             {isUnclassifiedParking(spot)
-                              ? ' · Kontrolli kohapeal sildilt'
+                              ? ` · ${t('nearest.checkOnSite')}`
                               : ''}
                           </span>
                         </span>
@@ -370,7 +375,7 @@ export function NearestParkingPanel({
                           }}
                           className="tap-scale mt-2.5 w-full rounded-xl bg-[#007AFF] px-3 py-2.5 text-[13px] font-bold text-white shadow-[0_4px_14px_rgba(0,122,255,0.35)] transition active:scale-[0.98] active:bg-[#0066D6]"
                         >
-                          Vali see parkla
+                          {t("nearest.choose")}
                         </button>
                       ) : null}
                     </div>
@@ -389,7 +394,7 @@ export function NearestParkingPanel({
               onClick={() => onConfirm(previewSpot)}
               className="tap-scale mt-3 w-full rounded-xl bg-[#007AFF] px-3 py-2.5 text-[13px] font-bold text-white shadow-[0_4px_14px_rgba(0,122,255,0.35)] transition active:scale-[0.98]"
             >
-              Vali see parkla
+              {t("nearest.choose")}
             </button>
           ) : null}
         </div>

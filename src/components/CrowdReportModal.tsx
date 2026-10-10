@@ -6,6 +6,7 @@ import {
   markReportSubmitted,
 } from '../lib/reportCooldown'
 import type { ParkingSpot } from '../types'
+import { useI18n } from '../i18n'
 
 /** Only FULL / FREE — API rejects PRICES / CLOSED. */
 export type CrowdStatusType = 'full' | 'free'
@@ -49,6 +50,7 @@ export function CrowdReportModal({
     message: string
   }) => void
 }) {
+  const { t } = useI18n()
   const safeInitial =
     initialStatus === 'free' || initialStatus === 'full' ? initialStatus : 'full'
   const [statusType, setStatusType] = useState<CrowdStatusType>(safeInitial)
@@ -141,7 +143,7 @@ export function CrowdReportModal({
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label="Saada teavitus"
+        aria-label={t('report.send')}
       >
         <div className="mb-3 flex items-start justify-between gap-2">
           <div className="min-w-0">
@@ -158,7 +160,7 @@ export function CrowdReportModal({
             className={`tap-scale flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
               dark ? 'bg-white/10 text-[#F5F5F7]' : 'bg-[#F2F2F7] text-[#1C1C1E]'
             }`}
-            aria-label="Sulge"
+            aria-label={t('common.close')}
           >
             <X className="h-4 w-4" />
           </button>

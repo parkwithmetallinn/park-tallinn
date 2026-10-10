@@ -50,6 +50,7 @@ import { FindParkingActions } from './FindParkingActions'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { InfoSidePanelShell } from './InfoSidePanel'
 import { TypeMapWidget } from './TypeMapWidget'
+import { useI18n } from '../i18n'
 
 export type PanelRouteSummary = {
   label: string
@@ -172,6 +173,7 @@ export function ParkingBottomSheet({
   isFavorite?: boolean
   onToggleFavorite?: () => void
 }) {
+  const { t } = useI18n()
   const { online } = useOnlineStatus()
   const sessionNetBlocked = !online
   const links = navLinks(spot.lat, spot.lng)
@@ -348,7 +350,7 @@ export function ParkingBottomSheet({
                   type="button"
                   onClick={onClearRoute}
                   className={`tap-scale flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${chipBg} ${muted}`}
-                  aria-label="Peida marsruut"
+                  aria-label={t('chrome.hideRoute')}
                   title="Peida marsruut"
                 >
                   <X className="h-3.5 w-3.5" />
@@ -465,7 +467,7 @@ export function ParkingBottomSheet({
                 <span
                   data-testid="spot-address-skeleton"
                   className="inline-block h-[14px] w-[min(100%,14rem)] max-w-full animate-pulse rounded bg-[#E5E5EA]"
-                  aria-label="Aadressi laadimine"
+                  aria-label={t('a11y.addressLoading')}
                 />
               ) : (
                 <span className="truncate">
@@ -490,7 +492,7 @@ export function ParkingBottomSheet({
             data-testid="detail-panel-close"
             onClick={requestClose}
             className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition active:scale-95 ${chipBg} ${muted}`}
-            aria-label="Sulge"
+            aria-label={t('common.close')}
           >
             <X className="h-4 w-4" />
           </button>

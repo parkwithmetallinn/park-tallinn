@@ -7,6 +7,7 @@ import { queryClient } from './lib/queryClient'
 import { prefetchParkingLayers } from './lib/parkingDataCache'
 import { initAnalytics } from './lib/analytics'
 import { clearLegacyPlateStorage } from './lib/storage'
+import { I18nProvider } from './i18n'
 
 // Drop stale license-plate values left from older builds
 clearLegacyPlateStorage()
@@ -30,13 +31,15 @@ initAnalytics()
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      {isAdmin ? (
-        <Suspense fallback={null}>
-          <AdminReviewView />
-        </Suspense>
-      ) : (
-        <App />
-      )}
+      <I18nProvider>
+        {isAdmin ? (
+          <Suspense fallback={null}>
+            <AdminReviewView />
+          </Suspense>
+        ) : (
+          <App />
+        )}
+      </I18nProvider>
     </QueryClientProvider>
   </StrictMode>,
 )
