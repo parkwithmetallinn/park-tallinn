@@ -13,8 +13,9 @@ import {
 } from '../lib/parkingDisplayName'
 import type { NearestParkingOption } from '../lib/nearestParking'
 import {
+  filterOdavaimTasuta,
   isPaidParkingSpot,
-  sortOdavaimTasuta,
+  sortByProximity,
 } from '../lib/nearestParking'
 import type { ParkingSpot } from '../types'
 import { InfoSidePanelShell } from './InfoSidePanel'
@@ -111,15 +112,28 @@ function badgeTone(spot: ParkingSpot, dark?: boolean): string {
   return dark ? 'bg-white/10 text-[#98989D]' : 'bg-[#F2F2F7] text-[#636366]'
 }
 
-function matchesPanelFilter(spot: ParkingSpot, filter: PanelFilter): boolean {
-  if (filter === 'all') return true
+function applyPanelFilter(
+  options: NearestParkingOption[],
+  filter: PanelFilter,
+): NearestParkingOption[] {
   if (filter === 'free') {
-    // Odavaim / Tasuta: unlimited FREE + clock (clock listed strictly below FREE)
-    return isUnlimitedFreeParking(spot) || isClockLimitedParking(spot)
+    return filterOdavaimTasuta(options)
   }
-  if (filter === 'clock') return isClockLimitedParking(spot)
-  // paid — never mix FREE / KELLAGA into Tasuline
-  return isPaidParkingSpot(spot)
+  if (filter === 'clock') {
+    return sortByProximity(
+      options.filter((o) => isClockLimitedParking(o.spot)),
+    )
+  }
+  if (filter === 'paid') {
+    return sortByProximity(options.filter((o) => isPaidParkingSpot(o.spot)))
+  }
+  // Kõik — known spots first, then by proximity
+  return [...options].sort((a, b) => {
+    const au = isUnclassifiedParking(a.spot) ? 1 : 0
+    const bu = isUnclassifiedParking(b.spot) ? 1 : 0
+    if (au !== bu) return au - bu
+    return a.distanceM - b.distanceM
+  })
 }
 
 export function NearestParkingPanel({
@@ -130,6 +144,7 @@ export function NearestParkingPanel({
   onPreview,
   onConfirm,
   onClose,
+  onVisibleOptionsChange,
 }: {
   targetName: string
   options: NearestParkingOption[]
@@ -141,33 +156,50 @@ export function NearestParkingPanel({
   /** Explicit confirmation — opens detail + starts navigation. */
   onConfirm: (spot: ParkingSpot) => void
   onClose: () => void
+  /** Filtered option keys currently shown (for map pills / focus sync). */
+  onVisibleOptionsChange?: (optionKeys: string[]) => void
 }) {
   const [filter, setFilter] = useState<PanelFilter>('all')
   const cardRefs = useRef<Map<string, HTMLLIElement>>(new Map())
+  const filterTouchedRef = useRef(false)
   const muted = dark ? 'text-[#98989D]' : 'text-[#8E8E93]'
   const soft = dark ? 'text-[#EBEBF5]/80' : 'text-[#636366]'
   const chip = dark ? 'bg-white/10' : 'bg-[#F2F2F7]'
   const ink = dark ? 'text-[#F5F5F7]' : 'text-[#1C1C1E]'
 
-  const filtered = useMemo(() => {
-    const list = options.filter((o) => matchesPanelFilter(o.spot, filter))
-    if (filter === 'free') {
-      // FREE always above KELLAGA — even when a clock spot is closer
-      return sortOdavaimTasuta(list)
-    }
-    // Known spots first; unknown (teadmata) at the bottom
-    return [...list].sort((a, b) => {
-      const au = isUnclassifiedParking(a.spot) ? 1 : 0
-      const bu = isUnclassifiedParking(b.spot) ? 1 : 0
-      if (au !== bu) return au - bu
-      return a.distanceM - b.distanceM
-    })
-  }, [options, filter])
+  const filtered = useMemo(
+    () => applyPanelFilter(options, filter),
+    [options, filter],
+  )
 
   const displayNames = useMemo(
     () => uniquifySpotDisplayNames(filtered.map((o) => o.spot)),
     [filtered],
   )
+
+  // Tell parent which keys are visible so map pills match the filter
+  useEffect(() => {
+    onVisibleOptionsChange?.(filtered.map((o) => o.optionKey))
+  }, [filtered, onVisibleOptionsChange])
+
+  // Filter change → focus closest matching spot + route preview
+  useEffect(() => {
+    if (!filterTouchedRef.current) return
+    const top = filtered[0]
+    if (top) onPreview(top.optionKey)
+  }, [filter]) // eslint-disable-line react-hooks/exhaustive-deps -- only on filter tab change
+
+  // If current preview is outside the filtered set, snap to closest match
+  useEffect(() => {
+    if (filtered.length === 0) return
+    if (
+      selectedPreviewId &&
+      filtered.some((o) => o.optionKey === selectedPreviewId)
+    ) {
+      return
+    }
+    onPreview(filtered[0]!.optionKey)
+  }, [filtered, selectedPreviewId, onPreview])
 
   // Keep list card in view when preview comes from a map pill tap
   useEffect(() => {
@@ -233,7 +265,10 @@ export function NearestParkingPanel({
                   type="button"
                   role="tab"
                   aria-selected={active}
-                  onClick={() => setFilter(tab.id)}
+                  onClick={() => {
+                    filterTouchedRef.current = true
+                    setFilter(tab.id)
+                  }}
                   className={`tap-scale shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${
                     active
                       ? dark

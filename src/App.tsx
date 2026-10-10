@@ -214,6 +214,10 @@ export default function App() {
   const [selectedPreviewId, setSelectedPreviewId] = useState<string | null>(
     null,
   )
+  /** Option keys visible under the active nearest-list filter (map pills sync). */
+  const [nearestVisibleKeys, setNearestVisibleKeys] = useState<string[] | null>(
+    null,
+  )
   /** Detail was opened from nearest picker — show "Tagasi nimekirja". */
   const [fromNearestPicker, setFromNearestPicker] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
@@ -982,7 +986,8 @@ export default function App() {
     (lat: number, lng: number): NearestParkingOption[] => {
       return collectNearestAround(allSpots, lat, lng, {
         excludeIds: fullSpotIds,
-        limit: 5,
+        // Larger pool so Odavaim / Kellaga / Tasuline filters have enough rows
+        limit: 15,
       })
     },
     [allSpots, fullSpotIds],
@@ -1434,14 +1439,17 @@ export default function App() {
 
   const nearestPills = useMemo(() => {
     if (!nearestPickerOpen) return []
-    return nearestOptions.map(({ spot, optionKey }) => ({
+    const visible = nearestVisibleKeys
+      ? nearestOptions.filter((o) => nearestVisibleKeys.includes(o.optionKey))
+      : nearestOptions
+    return visible.map(({ spot, optionKey }) => ({
       id: optionKey,
       lat: spot.lat,
       lng: spot.lng,
       label: parkingMapPillLabel(spot),
       tone: parkingMapPillTone(spot),
     }))
-  }, [nearestPickerOpen, nearestOptions])
+  }, [nearestPickerOpen, nearestOptions, nearestVisibleKeys])
 
   const previewFocus = useMemo(() => {
     if (!nearestPickerOpen || !searchLocation) return null
@@ -2357,9 +2365,11 @@ export default function App() {
           selectedPreviewId={selectedPreviewId}
           onPreview={handleNearestPreview}
           onConfirm={handleNearestConfirm}
+          onVisibleOptionsChange={setNearestVisibleKeys}
           onClose={() => {
             setNearestPickerOpen(false)
             setSelectedPreviewId(null)
+            setNearestVisibleKeys(null)
             setSearchSheetOpen(true)
           }}
         />

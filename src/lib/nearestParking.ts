@@ -5,6 +5,7 @@
 import { distanceMeters } from './geo'
 import {
   isClockLimitedParking,
+  isUnclassifiedParking,
   isUnlimitedFreeParking,
 } from './parkingClassification'
 import { spotDisplayName } from './parkingDisplayName'
@@ -318,27 +319,70 @@ export function collectNearestAround(
       diverseEnough ||
       r === radii[radii.length - 1]
     ) {
-      return diversifyNearestParking(clustered, limit)
+      // Distance-sorted pool (larger than 5) so list filters have enough rows
+      return [...clustered]
+        .sort((a, b) => a.distanceM - b.distanceM)
+        .slice(0, Math.max(limit, 12))
     }
   }
-  return diversifyNearestParking(bestPool, limit)
+  return [...bestPool]
+    .sort((a, b) => a.distanceM - b.distanceM)
+    .slice(0, Math.max(limit, 12))
+}
+
+/** Effective €/h for “odavaim” comparisons (unlimited free = 0). */
+export function effectiveHourlyRate(spot: ParkingSpot): number {
+  if (isUnlimitedFreeParking(spot)) return 0
+  if (isUnclassifiedParking(spot)) return Number.POSITIVE_INFINITY
+  if (isClockLimitedParking(spot)) {
+    // Limited free window — cheaper than typical paid, not fully free
+    return spot.price_per_hour > 0 ? spot.price_per_hour : 0.01
+  }
+  if (spot.price_per_hour > 0) return spot.price_per_hour
+  if (isPaidParkingSpot(spot)) return 99
+  return Number.POSITIVE_INFINITY
+}
+
+/** Closest-first by walk distance to the destination. */
+export function sortByProximity(
+  options: NearestParkingOption[],
+): NearestParkingOption[] {
+  return [...options].sort((a, b) => a.distanceM - b.distanceM)
 }
 
 /**
- * Odavaim / Tasuta sort: 100% FREE always above KELLAGA, then by distance.
- * Clock spots never outrank a free lot even if closer.
+ * Odavaim / Tasuta:
+ * - If any fully free spots exist → only those
+ * - Else → only spots at the absolute lowest effective €/h
+ * Always sorted by proximity (closest first).
+ */
+export function filterOdavaimTasuta(
+  options: NearestParkingOption[],
+): NearestParkingOption[] {
+  const free = options.filter((o) => isUnlimitedFreeParking(o.spot))
+  if (free.length > 0) return sortByProximity(free)
+
+  const priced = options.filter((o) => !isUnclassifiedParking(o.spot))
+  if (priced.length === 0) return []
+
+  let minRate = Number.POSITIVE_INFINITY
+  for (const o of priced) {
+    const r = effectiveHourlyRate(o.spot)
+    if (r < minRate) minRate = r
+  }
+  if (!Number.isFinite(minRate)) return []
+
+  return sortByProximity(
+    priced.filter((o) => effectiveHourlyRate(o.spot) === minRate),
+  )
+}
+
+/**
+ * @deprecated Prefer filterOdavaimTasuta + sortByProximity.
+ * Kept for callers that still import the old name.
  */
 export function sortOdavaimTasuta(
   options: NearestParkingOption[],
 ): NearestParkingOption[] {
-  return [...options].sort((a, b) => {
-    const rank = (s: ParkingSpot) => {
-      if (isUnlimitedFreeParking(s)) return 0
-      if (isClockLimitedParking(s)) return 1
-      if (s.price_per_hour <= 0) return 2
-      return 3 + (s.price_per_hour || 99)
-    }
-    const d = rank(a.spot) - rank(b.spot)
-    return d !== 0 ? d : a.distanceM - b.distanceM
-  })
+  return filterOdavaimTasuta(options)
 }
