@@ -1,6 +1,6 @@
 {
-  "appId": "ee.parkimine.app",
-  "appName": "Parkimine",
+  "appId": "com.parkvibe.app",
+  "appName": "ParkVibe",
   "webDir": "dist",
   "server": {
     "androidScheme": "https"
