@@ -45,7 +45,7 @@ export function OfflineBanner() {
                 internetti.
               </p>
               {session ? (
-                <p className="mt-1 text-[11px] font-medium opacity-85">
+                <p className="mt-1 text-[12px] font-medium opacity-85">
                   Sessioon: {session.carNumber} · {session.zone}
                   {startedLabel ? ` · alates ${startedLabel}` : ''}
                   {endsLabel ? ` · lõpp ${endsLabel}` : ''}
@@ -56,7 +56,7 @@ export function OfflineBanner() {
         </div>
         {online && queueLen > 0 ? (
           <Pressable
-            className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-amber-500/20 px-2 py-1 text-[11px] font-bold text-amber-950"
+            className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-amber-500/20 px-2 py-1 text-[12px] font-bold text-amber-950"
             onClick={() => void drainOfflineQueue()}
           >
             <RefreshCw className="h-3 w-3" />

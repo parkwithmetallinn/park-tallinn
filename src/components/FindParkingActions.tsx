@@ -152,7 +152,7 @@ export function FindParkingActions({
                     aria-label={`Vali ${spotDisplayName(alt.spot)}`}
                   >
                     <span
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[10px] font-extrabold text-white"
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[12px] font-extrabold text-white"
                       style={{
                         backgroundColor:
                           alt.outsideFilter ? '#8E8E93' : '#007AFF',
@@ -164,7 +164,7 @@ export function FindParkingActions({
                       <span className="block truncate text-[13px] font-semibold">
                         {spotDisplayName(alt.spot)}
                       </span>
-                      <span className={`block text-[11px] font-medium ${muted}`}>
+                      <span className={`block text-[12px] font-medium ${muted}`}>
                         {formatDistance(alt.distanceM)}
                         {alt.outsideFilter ? ' · Filtrist väljaspool' : ''}
                       </span>

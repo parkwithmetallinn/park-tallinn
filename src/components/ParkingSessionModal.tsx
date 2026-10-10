@@ -186,7 +186,7 @@ export function ParkingSessionModal({
             <p className={`text-[15px] font-bold ${ink}`}>
               {activeSession ? 'Aktiivne sessioon' : 'Parkimiskell'}
             </p>
-            <p className={`truncate text-[11px] ${muted}`}>{timerLabel}</p>
+            <p className={`truncate text-[12px] ${muted}`}>{timerLabel}</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <span
@@ -224,13 +224,13 @@ export function ParkingSessionModal({
                   .join(' · ')}
               </p>
             )}
-            <span className="mt-1.5 block text-[10px] font-medium opacity-80">
+            <span className="mt-1.5 block text-[12px] font-medium opacity-80">
               {timerMode === 'elapsed' ? 'Möödunud aeg' : 'Ettemakstud / jäänud'}
             </span>
             {priceEstimate ? (
               <p
                 data-testid="price-estimate"
-                className="mt-2 rounded-xl bg-[#007AFF]/10 px-2.5 py-1.5 text-[11px] font-semibold text-[#007AFF]"
+                className="mt-2 rounded-xl bg-[#007AFF]/10 px-2.5 py-1.5 text-[12px] font-semibold text-[#007AFF]"
               >
                 {priceEstimate}
               </p>
@@ -240,7 +240,7 @@ export function ParkingSessionModal({
 
         <form className="flex flex-col gap-2.5" onSubmit={onSubmit}>
           <div>
-            <label className={`mb-1 block text-[10px] font-semibold ${muted}`}>
+            <label className={`mb-1 block text-[12px] font-semibold ${muted}`}>
               Auto number
             </label>
             <input
@@ -267,7 +267,7 @@ export function ParkingSessionModal({
                     e.preventDefault()
                     onExtend(opt.minutes)
                   }}
-                  className={`rounded-xl py-2.5 text-[11px] font-bold ${chip} disabled:opacity-55`}
+                  className={`rounded-xl py-2.5 text-[12px] font-bold ${chip} disabled:opacity-55`}
                 >
                   {sessionAction === 'extend' ? '…' : opt.label}
                 </button>
@@ -288,7 +288,7 @@ export function ParkingSessionModal({
                 e.preventDefault()
                 onStop()
               }}
-              className="tap-scale w-full rounded-2xl bg-[#FF3B30] py-3 text-[14px] font-bold text-white disabled:opacity-55"
+              className="tap-scale min-h-11 w-full rounded-2xl bg-[#FF3B30] py-3 text-[14px] font-bold text-white disabled:opacity-55"
             >
               {sessionAction === 'stop' ? 'Lõpetan…' : 'Lõpeta sessioon'}
             </button>
@@ -306,16 +306,16 @@ export function ParkingSessionModal({
                   e.preventDefault()
                   onStart()
                 }}
-                className="tap-scale w-full rounded-2xl bg-[#34C759] py-3 text-[14px] font-bold text-white disabled:opacity-55"
+                className="tap-scale min-h-11 w-full rounded-2xl bg-[#34C759] py-3 text-[14px] font-bold text-white disabled:opacity-55"
               >
                 {sessionAction === 'start' ? 'Alustan…' : 'Alusta sessiooni'}
               </button>
               {!selectedSpot ? (
-                <p className={`text-[11px] font-medium leading-snug ${muted}`}>
+                <p className={`text-[12px] font-medium leading-snug ${muted}`}>
                   Vali kaardilt parkla, et alustada sessiooni.
                 </p>
               ) : selectedSpot && !canStartParkingSession(selectedSpot) ? (
-                <p className={`text-[11px] font-medium leading-snug ${muted}`}>
+                <p className={`text-[12px] font-medium leading-snug ${muted}`}>
                   {sessionStartDisabledHint(selectedSpot)}
                 </p>
               ) : null}
@@ -338,7 +338,7 @@ export function ParkingSessionModal({
         {activeSession ? (
           <div className="mt-3 flex flex-col gap-2" data-testid="session-notify">
             {showIosHint ? (
-              <p className={`text-[11px] font-medium leading-snug ${muted}`}>
+              <p className={`text-[12px] font-medium leading-snug ${muted}`}>
                 iPhone’is: lisa rakendus avakuvale (Jaga → Lisa avakuvale), et
                 saada veebiteavitusi.
               </p>
@@ -363,7 +363,7 @@ export function ParkingSessionModal({
 
             {useEmailFallback ? (
               <div className="flex flex-col gap-2">
-                <label className={`block text-[10px] font-semibold ${muted}`}>
+                <label className={`block text-[12px] font-semibold ${muted}`}>
                   E-post (meeldetuletus)
                 </label>
                 <input
@@ -376,7 +376,7 @@ export function ParkingSessionModal({
                   className={`w-full rounded-xl border px-3 py-2.5 text-[13px] font-medium outline-none focus:ring-2 focus:ring-[#34C759]/30 ${field}`}
                 />
                 <label
-                  className={`flex cursor-pointer items-start gap-2 text-[11px] font-medium leading-snug ${ink}`}
+                  className={`flex cursor-pointer items-start gap-2 text-[12px] font-medium leading-snug ${ink}`}
                 >
                   <input
                     type="checkbox"

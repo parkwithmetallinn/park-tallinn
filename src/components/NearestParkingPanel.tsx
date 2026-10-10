@@ -165,7 +165,7 @@ export function NearestParkingPanel({
           <div className="mb-2.5 flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
               <p
-                className={`text-[10px] font-semibold tracking-wide uppercase ${muted}`}
+                className={`text-[12px] font-semibold tracking-wide uppercase ${muted}`}
               >
                 Lähimad parklad
               </p>
@@ -201,7 +201,7 @@ export function NearestParkingPanel({
                   role="tab"
                   aria-selected={active}
                   onClick={() => setFilter(tab.id)}
-                  className={`tap-scale shrink-0 rounded-full px-3 py-1.5 text-[11px] font-semibold transition ${
+                  className={`tap-scale shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${
                     active
                       ? dark
                         ? 'bg-white text-[#1C1C1E]'
@@ -271,13 +271,13 @@ export function NearestParkingPanel({
                               {spotDisplayName(spot)}
                             </span>
                             <span
-                              className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold tracking-wide ${badgeTone(spot, dark)}`}
+                              className={`shrink-0 rounded-md px-1.5 py-0.5 text-[12px] font-bold tracking-wide ${badgeTone(spot, dark)}`}
                             >
                               {badge}
                             </span>
                           </span>
                           <span
-                            className={`mt-0.5 block text-[11px] font-medium ${muted}`}
+                            className={`mt-0.5 block text-[12px] font-medium ${muted}`}
                           >
                             {formatDistance(distanceM)}
                             {' · '}

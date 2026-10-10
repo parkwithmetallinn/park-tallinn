@@ -23,7 +23,7 @@ export class MapErrorBoundary extends Component<
           <p className="max-w-sm text-xs text-ink-soft">
             Brauser vajab WebGL2 tuge (3D kaart). Proovi teist brauserit või uuenda graafikadraivereid.
           </p>
-          <p className="mt-2 font-mono text-[10px] text-clay">{this.state.error.message}</p>
+          <p className="mt-2 font-mono text-[12px] text-clay">{this.state.error.message}</p>
         </div>
       )
     }

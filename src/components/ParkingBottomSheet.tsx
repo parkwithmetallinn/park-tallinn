@@ -305,7 +305,7 @@ export function ParkingBottomSheet({
                 </p>
                 {routeSummary.driveDistanceM > 0 ||
                 routeSummary.driveDurationS > 0 ? (
-                  <p className="text-[11px] font-semibold text-[#007AFF]">
+                  <p className="text-[12px] font-semibold text-[#007AFF]">
                     Autoga · {formatDistance(routeSummary.driveDistanceM)}
                     {' · '}
                     {formatDuration(routeSummary.driveDurationS)}
@@ -314,7 +314,7 @@ export function ParkingBottomSheet({
                 {routeSummary.walkDistanceM != null &&
                 routeSummary.walkDurationS != null ? (
                   <p
-                    className={`flex flex-wrap items-center gap-1.5 text-[11px] font-semibold ${
+                    className={`flex flex-wrap items-center gap-1.5 text-[12px] font-semibold ${
                       routeSummary.walkIsFallback ? muted : 'text-[#FF9500]'
                     }`}
                   >
@@ -327,13 +327,13 @@ export function ParkingBottomSheet({
                       {formatDuration(routeSummary.walkDurationS)}
                     </span>
                     {routeSummary.longWalk ? (
-                      <span className="rounded-md bg-[#FF9500]/15 px-1.5 py-0.5 text-[10px] font-bold text-[#C93400]">
+                      <span className="rounded-md bg-[#FF9500]/15 px-1.5 py-0.5 text-[12px] font-bold text-[#C93400]">
                         Pikk jalutuskäik
                       </span>
                     ) : null}
                   </p>
                 ) : null}
-                <p className={`text-[10px] font-medium ${muted}`}>
+                <p className={`text-[12px] font-medium ${muted}`}>
                   Kokku ~{' '}
                   {formatDuration(
                     routeSummary.driveDurationS +
@@ -360,19 +360,19 @@ export function ParkingBottomSheet({
           <div className="min-w-0 flex-1">
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <span
-                className="rounded-full px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-white"
+                className="rounded-full px-2.5 py-0.5 text-[12px] font-bold tracking-wide text-white"
                 style={{ backgroundColor: color }}
                 data-testid="category-badge"
               >
                 {categoryBadge}
               </span>
               {distanceLabel ? (
-                <span className="rounded-full bg-[#007AFF]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#007AFF]">
+                <span className="rounded-full bg-[#007AFF]/10 px-2.5 py-0.5 text-[12px] font-semibold text-[#007AFF]">
                   {distanceLabel}
                 </span>
               ) : null}
               {hasActive ? (
-                <span className="rounded-full bg-[#34C759]/15 px-2.5 py-0.5 text-[11px] font-semibold text-[#248A3D]">
+                <span className="rounded-full bg-[#34C759]/15 px-2.5 py-0.5 text-[12px] font-semibold text-[#248A3D]">
                   Aktiivne
                 </span>
               ) : null}
@@ -517,7 +517,7 @@ export function ParkingBottomSheet({
                 : 'bg-[#FF9F0A]/12 text-[#C93400]'
             }`}
           >
-            <p className="text-[10px] font-semibold tracking-wide uppercase opacity-80">
+            <p className="text-[12px] font-semibold tracking-wide uppercase opacity-80">
               {spot.freeNow ? 'Praegu tasuta' : 'Praegu tasuline'}
             </p>
             <p className="mt-0.5 text-[13px] font-semibold">
@@ -530,7 +530,7 @@ export function ParkingBottomSheet({
               </p>
             ) : null}
             {spot.exemptions?.includes('ev_m1') ? (
-              <p className="mt-1 text-[11px] font-semibold">
+              <p className="mt-1 text-[12px] font-semibold">
                 Elektriauto (M1) · mootorratas · invakaart — vabastus
               </p>
             ) : null}
@@ -541,7 +541,7 @@ export function ParkingBottomSheet({
         <div className={`mb-2.5 overflow-hidden rounded-xl ${blockBg}`}>
           <div className="flex items-stretch">
             <div className="flex-1 px-3 py-2.5">
-              <p className={`text-[10px] font-semibold tracking-wide uppercase ${muted}`}>
+              <p className={`text-[12px] font-semibold tracking-wide uppercase ${muted}`}>
                 Hind
               </p>
               <p className={`mt-0.5 text-[15px] font-bold tracking-tight ${ink}`}>
@@ -551,7 +551,7 @@ export function ParkingBottomSheet({
             </div>
             <div className={`w-px ${dark ? 'bg-white/10' : 'bg-black/6'}`} />
             <div className="flex w-[38%] flex-col justify-center px-3 py-2.5">
-              <p className={`text-[10px] font-semibold tracking-wide uppercase ${muted}`}>
+              <p className={`text-[12px] font-semibold tracking-wide uppercase ${muted}`}>
                 Operaator
               </p>
               <p className={`mt-0.5 text-[12px] font-semibold ${ink}`}>{spot.operator}</p>
@@ -560,7 +560,7 @@ export function ParkingBottomSheet({
           {spot.structureType || typeof spot.floors === 'number' ? (
             <div className={`flex items-center justify-between gap-3 border-t px-3 py-2 ${dark ? 'border-white/10' : 'border-black/6'}`}>
               <div>
-                <p className={`text-[10px] font-semibold tracking-wide uppercase ${muted}`}>
+                <p className={`text-[12px] font-semibold tracking-wide uppercase ${muted}`}>
                   Tüüp
                 </p>
                 <p className={`mt-0.5 text-[12px] font-semibold ${ink}`}>
@@ -576,7 +576,7 @@ export function ParkingBottomSheet({
               </div>
               {spot.zone_code ? (
                 <span
-                  className="rounded-full px-2.5 py-1 text-[11px] font-bold text-white"
+                  className="rounded-full px-2.5 py-1 text-[12px] font-bold text-white"
                   style={{ backgroundColor: color }}
                 >
                   {spot.zone_code}
@@ -587,7 +587,7 @@ export function ParkingBottomSheet({
         </div>
 
         <div className="mb-2.5 space-y-1.5">
-          <p className={`text-[10px] font-semibold tracking-wide uppercase ${muted}`}>
+          <p className={`text-[12px] font-semibold tracking-wide uppercase ${muted}`}>
             Navigeeri
           </p>
           <div className="grid grid-cols-3 gap-1.5">
@@ -599,7 +599,7 @@ export function ParkingBottomSheet({
               className="flex flex-col items-center justify-center gap-1 rounded-xl bg-[#33CCFF] px-1.5 py-2.5 text-center transition active:scale-[0.98]"
             >
               <Navigation className="h-4 w-4 text-[#053B4A]" strokeWidth={2.5} />
-              <span className="text-[11px] font-bold text-[#053B4A]">Waze</span>
+              <span className="text-[12px] font-bold text-[#053B4A]">Waze</span>
             </a>
             <a
               href={links.google}
@@ -609,7 +609,7 @@ export function ParkingBottomSheet({
               className="flex flex-col items-center justify-center gap-1 rounded-xl bg-[#4285F4] px-1.5 py-2.5 text-center transition active:scale-[0.98]"
             >
               <MapPin className="h-4 w-4 text-white" strokeWidth={2.5} />
-              <span className="text-[11px] font-bold text-white">Google</span>
+              <span className="text-[12px] font-bold text-white">Google</span>
             </a>
             <button
               type="button"
@@ -620,7 +620,7 @@ export function ParkingBottomSheet({
               className="flex flex-col items-center justify-center gap-1 rounded-xl bg-[#1C1C1E] px-1.5 py-2.5 text-center transition active:scale-[0.98]"
             >
               <MapPin className="h-4 w-4 text-white" strokeWidth={2.5} />
-              <span className="text-[11px] font-bold text-white">Apple</span>
+              <span className="text-[12px] font-bold text-white">Apple</span>
             </button>
           </div>
         </div>
@@ -660,11 +660,11 @@ export function ParkingBottomSheet({
           }}
         >
           <div className="flex items-center justify-between gap-2">
-            <p className={`text-[10px] font-semibold tracking-wide uppercase ${muted}`}>
+            <p className={`text-[12px] font-semibold tracking-wide uppercase ${muted}`}>
               Parkimissessioon
             </p>
             {hasActive ? (
-              <span className="shrink-0 rounded-full bg-[#34C759]/15 px-2 py-0.5 text-[10px] font-bold text-[#248A3D]">
+              <span className="shrink-0 rounded-full bg-[#34C759]/15 px-2 py-0.5 text-[12px] font-bold text-[#248A3D]">
                 Aktiivne
               </span>
             ) : null}
@@ -749,7 +749,7 @@ export function ParkingBottomSheet({
                 blockNav(e)
                 onStopSession()
               }}
-              className="tap-scale flex w-full items-center justify-center gap-2 rounded-2xl bg-[#FF3B30] px-4 py-3.5 text-[15px] font-semibold text-white disabled:opacity-55"
+              className="tap-scale flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-[#FF3B30] px-4 py-3.5 text-[15px] font-semibold text-white disabled:opacity-55"
             >
               <Square className="h-4 w-4 fill-current" />
               {sessionAction === 'stop' ? 'Lõpetan…' : 'Lõpeta sessioon'}
@@ -775,7 +775,7 @@ export function ParkingBottomSheet({
                   if (!carOk || !canStartParkingSession(spot)) return
                   onStartSession()
                 }}
-                className="tap-scale flex w-full items-center justify-center gap-2 rounded-2xl bg-[#34C759] px-4 py-3.5 text-[15px] font-semibold text-white disabled:opacity-55"
+                className="tap-scale flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-[#34C759] px-4 py-3.5 text-[15px] font-semibold text-white disabled:opacity-55"
               >
                 {sessionAction === 'start' ? 'Alustan…' : 'Alusta sessiooni'}
               </button>
@@ -836,7 +836,7 @@ export function ParkingBottomSheet({
           ) : null}
 
           {spot.verifyOnSite || spot.source || spot.lastVerified ? (
-            <div className={`mt-2 rounded-xl px-3 py-2.5 text-[11px] leading-snug ${blockBg} ${soft}`}>
+            <div className={`mt-2 rounded-xl px-3 py-2.5 text-[12px] leading-snug ${blockBg} ${soft}`}>
               {spot.verifyOnSite ? (
                 <p className={`font-bold ${ink}`}>Kontrolli kohapealt silti</p>
               ) : null}

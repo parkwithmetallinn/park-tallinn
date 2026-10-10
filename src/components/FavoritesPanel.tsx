@@ -68,7 +68,7 @@ export function FavoritesPanel({
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
               <p
-                className={`text-[10px] font-semibold tracking-wide uppercase ${muted}`}
+                className={`text-[12px] font-semibold tracking-wide uppercase ${muted}`}
               >
                 Lemmikparklad
               </p>
@@ -87,7 +87,7 @@ export function FavoritesPanel({
                   type="button"
                   data-testid="favorites-clear-all"
                   onClick={() => clearFavorites()}
-                  className={`flex h-8 items-center gap-1 rounded-full px-2.5 text-[11px] font-semibold transition active:scale-95 ${chipBg} ${muted}`}
+                  className={`flex h-8 items-center gap-1 rounded-full px-2.5 text-[12px] font-semibold transition active:scale-95 ${chipBg} ${muted}`}
                   aria-label="Kustuta kõik"
                   title="Kustuta kõik"
                 >
@@ -154,7 +154,7 @@ export function FavoritesPanel({
                             {row.name}
                           </span>
                           <span
-                            className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide ${
+                            className={`mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[12px] font-bold tracking-wide ${
                               dark
                                 ? 'bg-white/10 text-[#EBEBF5]/80'
                                 : 'bg-[#F2F2F7] text-[#636366]'

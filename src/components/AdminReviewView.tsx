@@ -179,7 +179,7 @@ export function AdminReviewView() {
               <Shield className="h-4 w-4 text-[#22C55E]" />
               ParkVibe Admin / Review
             </p>
-            <p className="text-[11px] text-white/55">
+            <p className="text-[12px] text-white/55">
               {pending.length} ootel · overlay {stats.overlays} · suppressed {stats.suppressed}
             </p>
           </div>
@@ -216,7 +216,7 @@ export function AdminReviewView() {
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span
-                      className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
+                      className={`rounded-md px-1.5 py-0.5 text-[12px] font-bold ${
                         r.type === 'PROPOSE_NEW'
                           ? 'bg-[#22C55E]/25 text-[#86EFAC]'
                           : 'bg-[#FF3B30]/25 text-[#FCA5A5]'
@@ -225,7 +225,7 @@ export function AdminReviewView() {
                       {r.type}
                     </span>
                     <span
-                      className={`text-[10px] font-semibold uppercase ${
+                      className={`text-[12px] font-semibold uppercase ${
                         r.status === 'pending'
                           ? 'text-amber-300'
                           : r.status === 'approved'
@@ -239,7 +239,7 @@ export function AdminReviewView() {
                   <p className="mt-1 truncate text-[13px] font-semibold">
                     {r.type === 'PROPOSE_NEW' ? r.name : r.targetName || r.targetFeatureId}
                   </p>
-                  <p className="truncate text-[10px] text-white/45">
+                  <p className="truncate text-[12px] text-white/45">
                     {new Date(r.createdAt).toLocaleString('et-EE')}
                   </p>
                 </Pressable>
@@ -251,7 +251,7 @@ export function AdminReviewView() {
         <section className="flex min-h-0 flex-col">
           <div className="relative min-h-[240px] flex-1">
             <div ref={mapEl} className="absolute inset-0" />
-            <div className="pointer-events-none absolute top-3 left-3 inline-flex items-center gap-1.5 rounded-lg bg-black/90 px-2 py-1 text-[10px] font-semibold text-white">
+            <div className="pointer-events-none absolute top-3 left-3 inline-flex items-center gap-1.5 rounded-lg bg-black/90 px-2 py-1 text-[12px] font-semibold text-white">
               <Satellite className="h-3 w-3" />
               Satellite lookup
             </div>
@@ -266,7 +266,7 @@ export function AdminReviewView() {
                       ? selected.name
                       : selected.targetName || 'Vea teade'}
                   </p>
-                  <p className="text-[11px] text-white/55">
+                  <p className="text-[12px] text-white/55">
                     {selected.lat.toFixed(6)}, {selected.lng.toFixed(6)} · {selected.type}
                   </p>
                 </div>
@@ -275,7 +275,7 @@ export function AdminReviewView() {
                     href={`https://www.openstreetmap.org/?mlat=${selected.lat}&mlon=${selected.lng}#map=18/${selected.lat}/${selected.lng}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 rounded-lg bg-white/10 px-2.5 py-1.5 text-[11px] font-semibold hover:bg-white/15"
+                    className="inline-flex items-center gap-1 rounded-lg bg-white/10 px-2.5 py-1.5 text-[12px] font-semibold hover:bg-white/15"
                   >
                     OSM <ExternalLink className="h-3 w-3" />
                   </a>
@@ -283,7 +283,7 @@ export function AdminReviewView() {
                     href={`https://www.google.com/maps/@?api=1&map_action=map&center=${selected.lat},${selected.lng}&zoom=19`}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 rounded-lg bg-white/10 px-2.5 py-1.5 text-[11px] font-semibold hover:bg-white/15"
+                    className="inline-flex items-center gap-1 rounded-lg bg-white/10 px-2.5 py-1.5 text-[12px] font-semibold hover:bg-white/15"
                   >
                     Google <ExternalLink className="h-3 w-3" />
                   </a>
@@ -292,7 +292,7 @@ export function AdminReviewView() {
 
               <div className="grid gap-2 sm:grid-cols-2">
                 <div className="rounded-xl bg-white/5 px-3 py-2.5 text-[12px]">
-                  <p className="text-[10px] font-bold tracking-wide text-white/40 uppercase">
+                  <p className="text-[12px] font-bold tracking-wide text-white/40 uppercase">
                     Päring
                   </p>
                   {selected.type === 'PROPOSE_NEW' ? (
@@ -305,7 +305,7 @@ export function AdminReviewView() {
                     <p className="mt-1 leading-snug">
                       Põhjus: {reasonLabel(selected.reason)}
                       <br />
-                      ID: <span className="font-mono text-[11px]">{selected.targetFeatureId}</span>
+                      ID: <span className="font-mono text-[12px]">{selected.targetFeatureId}</span>
                     </p>
                   )}
                   {selected.note ? (
@@ -313,7 +313,7 @@ export function AdminReviewView() {
                   ) : null}
                 </div>
                 <div className="rounded-xl bg-white/5 px-3 py-2.5 text-[12px]">
-                  <p className="text-[10px] font-bold tracking-wide text-white/40 uppercase">
+                  <p className="text-[12px] font-bold tracking-wide text-white/40 uppercase">
                     Ametlik andmebaas
                   </p>
                   {selected.type === 'REPORT_INVALID' ? (

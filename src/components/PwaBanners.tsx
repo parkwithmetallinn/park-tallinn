@@ -83,7 +83,7 @@ export function PwaBanners() {
             </span>
             <button
               type="button"
-              className="tap-scale inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-[#007AFF] px-3 text-[12px] font-bold text-white"
+              className="tap-scale inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-[#0055CC] px-3 text-[13px] font-bold text-white"
               onClick={() => void applyServiceWorkerUpdate()}
             >
               <RefreshCw className="h-3.5 w-3.5" />
@@ -106,7 +106,7 @@ export function PwaBanners() {
             </span>
             <button
               type="button"
-              className="tap-scale inline-flex min-h-11 items-center rounded-xl bg-[#007AFF] px-3 text-[12px] font-bold text-white"
+              className="tap-scale inline-flex min-h-11 items-center rounded-xl bg-[#0055CC] px-3 text-[13px] font-bold text-white"
               onClick={() => void onInstall()}
             >
               Lisa

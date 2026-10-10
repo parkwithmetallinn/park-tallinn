@@ -2070,7 +2070,7 @@ export default function App() {
                       </span>
                       {routePlan.longWalk ? (
                         <span
-                          className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
+                          className={`rounded-md px-1.5 py-0.5 text-[12px] font-bold ${
                             dark
                               ? 'bg-[#FF9F0A]/20 text-[#FF9F0A]'
                               : 'bg-[#FF9500]/15 text-[#C93400]'
@@ -2082,7 +2082,7 @@ export default function App() {
                     </p>
                   ) : null}
                   {routePlan.drive || routePlan.walk ? (
-                    <p className={`text-[11px] font-medium ${muted}`}>
+                    <p className={`text-[12px] font-medium ${muted}`}>
                       Kokku ~{' '}
                       {formatDuration(
                         (routePlan.drive?.durationSeconds ?? 0) +
@@ -2211,7 +2211,7 @@ export default function App() {
       {connectionNotice && !selected && !timerOpen ? (
         <p
           data-testid="connection-notice"
-          className={`pointer-events-none absolute bottom-[max(5.5rem,env(safe-area-inset-bottom))] left-1/2 z-40 max-w-[min(90vw,20rem)] -translate-x-1/2 rounded-full px-3 py-1.5 text-center text-[10px] font-semibold ${
+          className={`pointer-events-none absolute bottom-[max(5.5rem,env(safe-area-inset-bottom))] left-1/2 z-40 max-w-[min(90vw,20rem)] -translate-x-1/2 rounded-full px-3 py-1.5 text-center text-[12px] font-semibold ${
             dark ? 'bg-black/50 text-white/80' : 'bg-white/80 text-[#636366]'
           }`}
         >
@@ -2401,7 +2401,7 @@ export default function App() {
                       • {z.pricePerHour.toFixed(0)} €/h · {z.pricePer24h.toFixed(0)} €/24h
                     </p>
                     <p>• Ketas {z.freeMinutesWithDisc} min tasuta</p>
-                    <p className="mt-1 text-[11px] opacity-80">{z.source}</p>
+                    <p className="mt-1 text-[12px] opacity-80">{z.source}</p>
                   </div>
                 ))}
                 <div className="rounded-2xl border border-moss/20 bg-moss/8 p-3">
@@ -2410,7 +2410,7 @@ export default function App() {
                   <p>• Mootorrattad</p>
                   <p>• Invakaardi omanikud</p>
                 </div>
-                <p className="text-[11px] opacity-70">
+                <p className="text-[12px] opacity-70">
                   Kontrolli kohapealt silti. Andmed: OSM + parnu.ee/parkimine.
                 </p>
               </>
@@ -2428,7 +2428,7 @@ export default function App() {
             </div>
             <div className="rounded-2xl bg-paper-2 p-3">
               <h4 className="mb-1 text-sm font-bold text-ink">Tsoonide hinnad</h4>
-              <p className="mb-2 text-[11px] opacity-80">
+              <p className="mb-2 text-[12px] opacity-80">
                 Kontrolli kehtivaid hindu tallinn.ee lehel.
               </p>
               {ZONE_RATE_LIST.map((z) => (

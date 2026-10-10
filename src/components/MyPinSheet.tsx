@@ -175,7 +175,7 @@ export function MyPinSheet({
                 <h3 className="truncate text-[15px] leading-snug font-bold tracking-tight">
                   {title}
                 </h3>
-                <p className={`mt-0.5 text-[11px] leading-snug ${soft}`}>{addrLine}</p>
+                <p className={`mt-0.5 text-[12px] leading-snug ${soft}`}>{addrLine}</p>
               </div>
             </div>
             <button
@@ -188,7 +188,7 @@ export function MyPinSheet({
             </button>
           </div>
 
-          <label htmlFor={nameId} className={`mb-1 block text-[10px] font-semibold tracking-wide uppercase ${muted}`}>
+          <label htmlFor={nameId} className={`mb-1 block text-[12px] font-semibold tracking-wide uppercase ${muted}`}>
             Nimi
           </label>
           <input
@@ -209,7 +209,7 @@ export function MyPinSheet({
             autoComplete="off"
           />
 
-          <label htmlFor={noteId} className={`mb-1 block text-[10px] font-semibold tracking-wide uppercase ${muted}`}>
+          <label htmlFor={noteId} className={`mb-1 block text-[12px] font-semibold tracking-wide uppercase ${muted}`}>
             Märkus
           </label>
           <textarea
@@ -222,7 +222,7 @@ export function MyPinSheet({
             className={`mb-2.5 w-full resize-none rounded-xl border px-3 py-2.5 text-[13px] font-medium outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#007AFF] ${inputCls}`}
           />
 
-          <p className={`mb-1.5 text-[10px] font-semibold tracking-wide uppercase ${muted}`}>
+          <p className={`mb-1.5 text-[12px] font-semibold tracking-wide uppercase ${muted}`}>
             Värv
           </p>
           <div className="mb-3 flex flex-wrap gap-1" role="listbox" aria-label="Pinni värv">
@@ -319,7 +319,7 @@ export function MyPinSheet({
             </div>
           ) : null}
 
-          <p className={`mt-3 flex items-center justify-center gap-1.5 text-[11px] font-medium ${muted}`}>
+          <p className={`mt-3 flex items-center justify-center gap-1.5 text-[12px] font-medium ${muted}`}>
             <Lock className="h-3 w-3 shrink-0" aria-hidden />
             Ainult sina näed seda pinni
           </p>

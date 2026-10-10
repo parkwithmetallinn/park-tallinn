@@ -2940,7 +2940,7 @@ export const MapView = memo(forwardRef<
       <button
         type="button"
         onClick={() => setDistrictDebug((v) => !v)}
-        className="district-qa-btn absolute bottom-28 left-3 z-[1] rounded-md border border-slate-300 bg-white/95 px-2.5 py-1.5 text-[11px] font-medium text-slate-700 shadow-sm hover:bg-white"
+        className="district-qa-btn absolute bottom-28 left-3 z-[1] rounded-md border border-slate-300 bg-white/95 px-2.5 py-1.5 text-[12px] font-medium text-slate-700 shadow-sm hover:bg-white"
         title="Toggle district QA reference points"
       >
         {districtDebug ? 'District QA: ON' : 'District QA'}

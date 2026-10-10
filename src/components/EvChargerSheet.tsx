@@ -41,7 +41,7 @@ export function EvChargerSheet({
             <div className="min-w-0 flex-1">
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <span
-                  className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-[#042F2E]"
+                  className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[12px] font-bold tracking-wide text-[#042F2E]"
                   style={{
                     background: `linear-gradient(135deg, ${EV_COLOR_CYAN}, ${EV_COLOR_BLUE})`,
                   }}
@@ -50,7 +50,7 @@ export function EvChargerSheet({
                   EV
                 </span>
                 <span
-                  className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold tracking-wide ${
+                  className={`rounded-full px-2.5 py-0.5 text-[12px] font-bold tracking-wide ${
                     free
                       ? dark
                         ? 'bg-[#00FF00]/20 text-[#86EFAC]'
@@ -95,7 +95,7 @@ export function EvChargerSheet({
               }`}
             >
               <p
-                className={`mb-1.5 flex items-center gap-1.5 text-[10px] font-bold tracking-wide uppercase ${
+                className={`mb-1.5 flex items-center gap-1.5 text-[12px] font-bold tracking-wide uppercase ${
                   dark ? 'text-[#67E8F9]' : 'text-[#0284C7]'
                 }`}
               >

@@ -76,73 +76,77 @@ function localApiPlugin(env: Record<string, string>): Plugin {
       })
     })
 
+  // Shared by Vite dev + preview so local Lighthouse/preview don't 404 /api/*
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const apiMiddleware = async (req: any, res: any, next: () => void) => {
+    const path = req.url?.split('?')[0] ?? ''
+    const loader = routes[path]
+    if (!loader) {
+      next()
+      return
+    }
+
+    try {
+      const mod = await loader()
+      const handler = mod.default
+
+      let body: unknown = undefined
+      if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+        body = await readBody(req as never)
+      }
+
+      const fakeReq = {
+        method: req.method,
+        headers: req.headers as Record<string, string | string[] | undefined>,
+        body,
+        url: req.url,
+        query: Object.fromEntries(
+          new URL(req.url || '/', 'http://local').searchParams,
+        ),
+        socket: { remoteAddress: req.socket?.remoteAddress },
+      }
+
+      let statusCode = 200
+      const fakeRes = {
+        setHeader(k: string, v: string) {
+          res.setHeader(k, v)
+        },
+        status(n: number) {
+          statusCode = n
+          return this
+        },
+        json(payload: unknown) {
+          res.statusCode = statusCode
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify(payload))
+        },
+        end(payload?: unknown) {
+          res.statusCode = statusCode
+          if (payload !== undefined) res.end(payload as never)
+          else res.end()
+        },
+      }
+
+      await handler(fakeReq, fakeRes)
+    } catch (err) {
+      res.statusCode = 500
+      res.setHeader('Content-Type', 'application/json')
+      res.end(
+        JSON.stringify({
+          success: false,
+          message: err instanceof Error ? err.message : 'Server error',
+        }),
+      )
+    }
+  }
+
   return {
     name: 'local-api',
     configureServer(server) {
-      server.middlewares.use(async (req, res, next) => {
-        const path = req.url?.split('?')[0] ?? ''
-        const loader = routes[path]
-        if (!loader) {
-          next()
-          return
-        }
-
-        try {
-          const mod = await loader()
-          const handler = mod.default
-
-          let body: unknown = undefined
-          if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
-            body = await readBody(req as never)
-          }
-
-          const fakeReq = {
-            method: req.method,
-            headers: req.headers as Record<
-              string,
-              string | string[] | undefined
-            >,
-            body,
-            url: req.url,
-            query: Object.fromEntries(
-              new URL(req.url || '/', 'http://local').searchParams,
-            ),
-            socket: { remoteAddress: req.socket?.remoteAddress },
-          }
-
-          let statusCode = 200
-          const fakeRes = {
-            setHeader(k: string, v: string) {
-              res.setHeader(k, v)
-            },
-            status(n: number) {
-              statusCode = n
-              return this
-            },
-            json(payload: unknown) {
-              res.statusCode = statusCode
-              res.setHeader('Content-Type', 'application/json')
-              res.end(JSON.stringify(payload))
-            },
-            end(payload?: unknown) {
-              res.statusCode = statusCode
-              if (payload !== undefined) res.end(payload as never)
-              else res.end()
-            },
-          }
-
-          await handler(fakeReq, fakeRes)
-        } catch (err) {
-          res.statusCode = 500
-          res.setHeader('Content-Type', 'application/json')
-          res.end(
-            JSON.stringify({
-              success: false,
-              message: err instanceof Error ? err.message : 'Server error',
-            }),
-          )
-        }
-      })
+      server.middlewares.use(apiMiddleware)
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(apiMiddleware)
     },
   }
 }

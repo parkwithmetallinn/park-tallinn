@@ -116,7 +116,7 @@ a.tap-scale {
 }
 
 .maplibre-root .maplibregl-ctrl-attrib {
-  font-size: 10px;
+  font-size: 12px;
   background: rgb(241 245 249 / 0.85) !important;
 }
 
@@ -986,7 +986,7 @@ a.tap-scale {
 }
 
 .ml-badge {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   color: #fff;
   padding: 2px 8px;

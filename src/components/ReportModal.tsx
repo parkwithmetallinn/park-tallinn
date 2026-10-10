@@ -303,7 +303,7 @@ export function ReportModal({
                   className={fieldClass}
                 />
               </div>
-              <p className="text-[11px] font-medium text-[#8E8E93]">
+              <p className="text-[12px] font-medium text-[#8E8E93]">
                 Koordinaadid: {context.lat.toFixed(5)}, {context.lng.toFixed(5)}
               </p>
             </>
@@ -311,7 +311,7 @@ export function ReportModal({
             <>
               <div className="rounded-xl bg-slate-100/80 px-3 py-2.5 text-[13px] font-semibold text-[#1C1C1E]">
                 {context.target?.name ?? 'Valitud koht'}
-                <span className="mt-0.5 block text-[11px] font-medium text-[#8E8E93]">
+                <span className="mt-0.5 block text-[12px] font-medium text-[#8E8E93]">
                   {context.target?.id} · {context.target?.layer}
                 </span>
               </div>

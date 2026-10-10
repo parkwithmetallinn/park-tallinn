@@ -145,7 +145,7 @@ export function SearchDropdown({
         {showPinsSection ? (
           <div className="px-1 pb-1">
             <p
-              className={`px-3 pt-2 pb-1 text-[10px] font-semibold tracking-wide uppercase ${muted}`}
+              className={`px-3 pt-2 pb-1 text-[12px] font-semibold tracking-wide uppercase ${muted}`}
             >
               Minu pinnid
             </p>

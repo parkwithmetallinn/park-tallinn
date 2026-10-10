@@ -44,7 +44,7 @@ export function LocationInfoSheet({
         <>
           <div className="mb-2.5 flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <p className={`text-[10px] font-semibold tracking-wide uppercase ${muted}`}>
+              <p className={`text-[12px] font-semibold tracking-wide uppercase ${muted}`}>
                 Valitud asukoht
               </p>
               <h3 className="mt-0.5 text-[15px] leading-snug font-bold tracking-tight">
@@ -54,7 +54,7 @@ export function LocationInfoSheet({
                 <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#007AFF]" />
                 <span className="line-clamp-2">{location.label}</span>
               </p>
-              <p className={`mt-1 font-mono text-[11px] font-semibold tracking-wide ${muted}`}>
+              <p className={`mt-1 font-mono text-[12px] font-semibold tracking-wide ${muted}`}>
                 {coords}
               </p>
             </div>
@@ -68,7 +68,7 @@ export function LocationInfoSheet({
             </button>
           </div>
 
-          <p className={`mb-1.5 text-[10px] font-semibold tracking-wide uppercase ${muted}`}>
+          <p className={`mb-1.5 text-[12px] font-semibold tracking-wide uppercase ${muted}`}>
             Navigeeri
           </p>
           <div className="mb-2.5 grid grid-cols-3 gap-1.5">
@@ -79,7 +79,7 @@ export function LocationInfoSheet({
               className="flex min-h-11 flex-col items-center justify-center gap-1 rounded-xl bg-[#33CCFF] px-1.5 py-2.5 text-center transition active:scale-[0.98]"
             >
               <Navigation className="h-4 w-4 text-[#053B4A]" strokeWidth={2.5} />
-              <span className="text-[11px] font-bold text-[#053B4A]">Waze</span>
+              <span className="text-[12px] font-bold text-[#053B4A]">Waze</span>
             </a>
             <a
               href={links.google}
@@ -88,7 +88,7 @@ export function LocationInfoSheet({
               className="flex min-h-11 flex-col items-center justify-center gap-1 rounded-xl bg-[#4285F4] px-1.5 py-2.5 text-center transition active:scale-[0.98]"
             >
               <MapPin className="h-4 w-4 text-white" strokeWidth={2.5} />
-              <span className="text-[11px] font-bold text-white">Google</span>
+              <span className="text-[12px] font-bold text-white">Google</span>
             </a>
             <button
               type="button"
@@ -97,7 +97,7 @@ export function LocationInfoSheet({
               aria-label="Ava Apple Maps"
             >
               <MapPin className="h-4 w-4 text-white" strokeWidth={2.5} />
-              <span className="text-[11px] font-bold text-white">Apple</span>
+              <span className="text-[12px] font-bold text-white">Apple</span>
             </button>
           </div>
 
