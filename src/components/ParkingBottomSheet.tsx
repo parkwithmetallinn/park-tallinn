@@ -655,7 +655,7 @@ export function ParkingBottomSheet({
           />
         ) : null}
 
-        {/* Session controls — one-tap start (no license plate) */}
+        {/* Sessiooni nupud — ühe puudutusega alustamine */}
         <div
           id="parking-session-section"
           className={`space-y-3 border-t pt-3 ${dark ? 'border-white/10' : 'border-black/5'}`}

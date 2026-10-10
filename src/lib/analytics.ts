@@ -1,7 +1,7 @@
 /**
  * Cookieless analytics — Plausible or Cloudflare Web Analytics.
  * Respects Do Not Track / Global Privacy Control. Never logs coordinates,
- * search text, or session/plate codes.
+ * search text, or session identifiers.
  */
 
 type AnalyticsEvent =

@@ -52,29 +52,23 @@ export function saveCustomSpot(spot: ParkingSpot): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(existing))
 }
 
-export function loadCarNumber(): string {
-  try {
-    return localStorage.getItem(CAR_NUMBER_KEY)?.trim() ?? ''
-  } catch {
-    return ''
-  }
-}
-
-export function saveCarNumber(value: string): void {
-  try {
-    localStorage.setItem(CAR_NUMBER_KEY, value.trim().toUpperCase())
-  } catch {
-    /* ignore */
-  }
-}
-
 export function loadActiveSession(): ActiveParkingSession | null {
   try {
     const raw = localStorage.getItem(ACTIVE_SESSION_KEY)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as ActiveParkingSession
-    if (!parsed?.carNumber || !parsed?.zone) return null
-    return parsed
+    const parsed = JSON.parse(raw) as ActiveParkingSession & {
+      carNumber?: string
+    }
+    const zone = String(parsed?.zone ?? '').trim()
+    if (!zone) return null
+    // Drop legacy plate field if present in older snapshots
+    return {
+      zone,
+      spotName: parsed.spotName,
+      startedAt: parsed.startedAt,
+      status: parsed.status || 'ACTIVE',
+      hourlyRate: parsed.hourlyRate,
+    }
   } catch {
     return null
   }
@@ -86,7 +80,14 @@ export function saveActiveSession(session: ActiveParkingSession | null): void {
       localStorage.removeItem(ACTIVE_SESSION_KEY)
       return
     }
-    localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(session))
+    const clean: ActiveParkingSession = {
+      zone: session.zone,
+      spotName: session.spotName,
+      startedAt: session.startedAt,
+      status: session.status,
+      hourlyRate: session.hourlyRate,
+    }
+    localStorage.setItem(ACTIVE_SESSION_KEY, JSON.stringify(clean))
   } catch {
     /* ignore */
   }

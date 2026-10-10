@@ -111,11 +111,9 @@ export async function enablePush(_unused?: string): Promise<SessionOutcome> {
 
 /** Register email fallback reminder via the `notify` action. */
 export async function enableEmailNotify(
-  emailOrCarNumber: string,
-  emailMaybe?: string,
+  email: string,
 ): Promise<SessionOutcome> {
-  // Back-compat: enableEmailNotify(email) or enableEmailNotify(_ignored, email)
-  const addr = (emailMaybe ?? emailOrCarNumber).trim()
+  const addr = email.trim()
   if (!addr || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) {
     return { kind: 'ERROR', message: 'Sisesta kehtiv e-posti aadress' }
   }

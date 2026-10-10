@@ -5,8 +5,8 @@
  * N8N_WEBHOOK_URL + N8N_API_KEY (server env) and injects X-N8N-API-KEY.
  *
  * Body:  { action: "start"|"stop"|"status"|"extend"|"notify", zone?, endsAt?, pushSubscription?, email? }
- * Privacy: license plate (carNumber) is NEVER included in the outbound fetch body —
- * it stays only in local device memory / React state.
+ * License plates are never collected, stored, or sent from the client.
+ * - start/stop: { action, zone }
  * - extend: { action: "extend", endsAt } — endsAt ISO, 1 min–24 h ahead
  * - notify: { action: "notify", pushSubscription?, email? } — reminder channel
  * - "ei leitud aktiivset" → NOT_FOUND (normal, never ERROR)
@@ -30,7 +30,6 @@ export type ParkingSessionAction =
 
 export type ParkingSessionRequest = {
   action: ParkingSessionAction
-  carNumber?: string
   zone?: string
   /** ISO timestamp — required for extend */
   endsAt?: string
@@ -42,7 +41,6 @@ export type ParkingSessionRequest = {
 
 export type ParkingSessionDetails = {
   sessionId?: string
-  carNumber?: string
   zone?: string
   /** Hourly rate in EUR from the backend */
   hourlyRate?: number
@@ -94,7 +92,6 @@ export type SessionOutcome =
 
 /** Local snapshot of an ACTIVE backend session (for stop / status UI). */
 export type ActiveParkingSession = {
-  carNumber: string
   zone: string
   spotName?: string
   startedAt?: string
@@ -152,10 +149,22 @@ export function normalizeSessionDetails(raw: unknown): ParkingSessionDetails | n
   const endTime =
     asString(d.endTime) ?? asString(d.endedAt) ?? asString(d.end_time)
 
+  const rest: Record<string, unknown> = { ...d }
+  for (const key of [
+    'carNumber',
+    'car_number',
+    'plate',
+    'licence',
+    'license',
+    'regNo',
+    'reg_no',
+  ]) {
+    delete rest[key]
+  }
+
   return {
-    ...d,
+    ...rest,
     sessionId: asString(d.sessionId) ?? asString(d.session_id) ?? asString(d.id),
-    carNumber: asString(d.carNumber) ?? asString(d.car_number) ?? asString(d.plate),
     zone: asString(d.zone) ?? asString(d.zoneCode) ?? asString(d.zone_code),
     hourlyRate,
     startTime,
@@ -208,8 +217,7 @@ function unwrapPayload(data: unknown): Record<string, unknown> | null {
       'session_details' in obj ||
       'activeSessions' in obj ||
       'active_sessions' in obj ||
-      'carNumber' in obj ||
-      'car_number' in obj ||
+      'zone' in obj ||
       'status' in obj
 
     if (hasSessionShape) return obj
@@ -236,7 +244,7 @@ function coerceSessionCandidate(raw: unknown): ParkingSessionDetails | null {
   if (Array.isArray(raw)) {
     for (const item of raw) {
       const n = normalizeSessionDetails(asRecord(item)?.json ?? item)
-      if (n && (n.carNumber || n.zone || n.status || n.startTime)) return n
+      if (n && (n.zone || n.status || n.startTime)) return n
     }
     return null
   }
@@ -250,19 +258,18 @@ function coerceSessionCandidate(raw: unknown): ParkingSessionDetails | null {
 
 function extractSessionDetails(
   d: Record<string, unknown>,
-  preferPlate?: string,
 ): ParkingSessionDetails | null {
   const nested = coerceSessionCandidate(
     d.sessionDetails ?? d.session_details ?? d.session ?? d.data,
   )
-  if (nested && (nested.carNumber || nested.zone || nested.status || nested.startTime)) {
+  if (nested && (nested.zone || nested.status || nested.startTime)) {
     return nested
   }
 
   const flat = normalizeSessionDetails(d)
   if (
     flat &&
-    (flat.carNumber || flat.zone) &&
+    flat.zone &&
     (flat.status || flat.startTime || flat.hourlyRate != null)
   ) {
     return flat
@@ -272,17 +279,6 @@ function extractSessionDetails(
     d.activeSessions ?? d.active_sessions ?? d.sessions ?? d.data,
   )
   if (list.length === 0) return null
-  if (preferPlate) {
-    const plate = preferPlate.trim().toUpperCase()
-    const mine = list.find(
-      (s) => String(s.carNumber ?? '').toUpperCase() === plate && isActiveSessionStatus(s),
-    )
-    if (mine) return mine
-    const anyMine = list.find(
-      (s) => String(s.carNumber ?? '').toUpperCase() === plate,
-    )
-    if (anyMine && isActiveSessionStatus(anyMine)) return anyMine
-  }
   const firstActive = list.find((s) => isActiveSessionStatus(s))
   return firstActive ?? list[0] ?? null
 }
@@ -290,7 +286,6 @@ function extractSessionDetails(
 function parseWebhookBody(
   data: unknown,
   action: ParkingSessionAction,
-  preferPlate?: string,
 ): ParkingSessionResponse {
   const d = unwrapPayload(data)
   if (!d) {
@@ -309,7 +304,7 @@ function parseWebhookBody(
     asNumber(d.count) ??
     (activeSessions.length > 0 ? activeSessions.length : undefined)
 
-  const sessionDetails = extractSessionDetails(d, preferPlate)
+  const sessionDetails = extractSessionDetails(d)
 
   const hasActive = isActiveSessionStatus(sessionDetails)
   const explicitSuccess =
@@ -451,11 +446,7 @@ export function toSessionOutcome(
   }
 }
 
-/**
- * Build the outbound session webhook body.
- * Privacy (App Store / UGC): never put the license plate on the wire —
- * carNumber stays only in local device memory / UI state.
- */
+/** Build the outbound session webhook body (action + zone / endsAt / notify). */
 function buildPayload(body: ParkingSessionRequest): Record<string, unknown> {
   const action = body.action
 
@@ -534,13 +525,10 @@ async function postSession(
     )
   }
 
-  const preferPlate = body.carNumber?.trim()
-
   if (!res.ok) {
     const normalized = parseWebhookBody(
       parsed ?? { success: false, message: text.slice(0, 240) },
       body.action,
-      preferPlate,
     )
     // Active session in body despite non-2xx — still surface as ACTIVE
     if (isActiveSessionStatus(normalized.sessionDetails)) {
@@ -596,7 +584,7 @@ async function postSession(
     !('sessionDetails' in (parsed as object)) &&
     !('activeSessions' in (parsed as object)) &&
     !('count' in (parsed as object)) &&
-    !('carNumber' in (parsed as object)) &&
+    !('zone' in (parsed as object)) &&
     !('status' in (parsed as object))
   ) {
     return toSessionOutcome(
@@ -610,7 +598,7 @@ async function postSession(
   }
 
   return toSessionOutcome(
-    parseWebhookBody(parsed, body.action, preferPlate),
+    parseWebhookBody(parsed, body.action),
     body.action,
     { httpStatus: res.status, invalidJson },
   )
@@ -621,14 +609,12 @@ import { parseParkingSessionBody } from './validation'
 function validateRequest(input: ParkingSessionRequest): string | null {
   const parsed = parseParkingSessionBody({
     action: input.action,
-    carNumber: input.carNumber?.trim() || undefined,
     zone: input.zone?.trim() || undefined,
     endsAt: input.endsAt?.trim() || undefined,
     pushSubscription: input.pushSubscription,
     email: input.email?.trim() || undefined,
   })
   if (!parsed) {
-    // Plate UI removed — never ask for auto number; surface zone/payload errors only.
     if (input.action === 'start' && !input.zone?.trim()) {
       return 'Tsoon puudub'
     }
@@ -658,7 +644,6 @@ export async function sendParkingSession(
 
   const body: ParkingSessionRequest = {
     action: input.action,
-    carNumber: input.carNumber?.trim() || undefined,
     zone: input.zone?.trim() || undefined,
     endsAt: input.endsAt?.trim() || undefined,
     pushSubscription: input.pushSubscription,
@@ -669,52 +654,41 @@ export async function sendParkingSession(
 }
 
 export function startParkingSession(
-  input: { carNumber: string; zone: string },
+  input: { zone: string },
   signal?: AbortSignal,
 ): Promise<SessionOutcome> {
-  return sendParkingSession(
-    { action: 'start', carNumber: input.carNumber, zone: input.zone },
-    signal,
-  )
+  return sendParkingSession({ action: 'start', zone: input.zone }, signal)
 }
 
 export function stopParkingSession(
-  input: { carNumber: string; zone: string },
+  input: { zone: string },
   signal?: AbortSignal,
 ): Promise<SessionOutcome> {
-  return sendParkingSession(
-    { action: 'stop', carNumber: input.carNumber, zone: input.zone },
-    signal,
-  )
+  return sendParkingSession({ action: 'stop', zone: input.zone }, signal)
 }
 
 /**
- * Status for a specific car (carNumber required).
- * POST body is exactly:
- *   { "action": "status", "carNumber": "123DFG" }
+ * Status check — POST body: { "action": "status" }.
  * Never starts or stops a session; never includes zone.
  */
 export function checkParkingStatus(
-  input: { carNumber: string },
   signal?: AbortSignal,
 ): Promise<SessionOutcome> {
-  const carNumber = input.carNumber.trim().toUpperCase()
-  return sendParkingSession({ action: 'status', carNumber }, signal)
+  return sendParkingSession({ action: 'status' }, signal)
 }
 
 /**
  * Extend prepaid end time on the server.
- * POST body: { "action": "extend", "carNumber", "endsAt" }
+ * POST body: { "action": "extend", "endsAt" }
  * NOT_FOUND ("ei leitud aktiivset") is a normal outcome.
  */
 export function extendParkingSession(
-  input: { carNumber: string; endsAt: string },
+  input: { endsAt: string },
   signal?: AbortSignal,
 ): Promise<SessionOutcome> {
   return sendParkingSession(
     {
       action: 'extend',
-      carNumber: input.carNumber,
       endsAt: input.endsAt,
     },
     signal,
@@ -820,7 +794,7 @@ export function isActiveSessionStatus(
     return true
   }
   return Boolean(
-    (details.carNumber || details.zone || details.startTime || details.startedAt) &&
+    (details.zone || details.startTime || details.startedAt) &&
       !details.endTime &&
       !details.endedAt,
   )
@@ -830,16 +804,9 @@ export function activeSessionFromDetails(
   details: ParkingSessionDetails,
   fallback?: Partial<ActiveParkingSession>,
 ): ActiveParkingSession | null {
-  // Plate is never collected from the user — keep a local marker only.
-  const carNumber = String(
-    fallback?.carNumber || details.carNumber || 'KOHALIK',
-  )
-    .trim()
-    .toUpperCase()
   const zone = String(details.zone ?? fallback?.zone ?? '').trim()
   if (!zone) return null
   return {
-    carNumber,
     zone,
     spotName: fallback?.spotName,
     startedAt: sessionStartIso(details) ?? fallback?.startedAt,

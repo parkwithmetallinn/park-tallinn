@@ -31,8 +31,6 @@ import {
   type TimerMode,
 } from '../lib/storage'
 
-/** Internal marker stored on ActiveParkingSession — never a user license plate. */
-const LOCAL_SESSION_ID = 'KOHALIK'
 import { canStartParkingSession } from '../data/zones'
 import { fetchPriceQuote } from '../lib/priceQuoteApi'
 import type { ParkingSpot } from '../types'
@@ -242,7 +240,6 @@ export function useParkingSession(selected: ParkingSpot | null) {
       fallback?: Partial<ActiveParkingSession>,
     ) => {
       const synced = activeSessionFromDetails(details, {
-        carNumber: fallback?.carNumber,
         zone: fallback?.zone,
         spotName: fallback?.spotName ?? selectedRef.current?.name,
         hourlyRate: fallback?.hourlyRate,
@@ -284,9 +281,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
       lastSyncAtRef.current = now
 
       try {
-        const outcome = await checkParkingStatus({
-          carNumber: LOCAL_SESSION_ID,
-        })
+        const outcome = await checkParkingStatus()
 
         if (outcome.kind === 'ACTIVE') {
           const synced = applyActiveDetails(outcome.details, local)
@@ -492,7 +487,6 @@ export function useParkingSession(selected: ParkingSpot | null) {
     const rateLabel = formatHourlyRate(hourlyRate)
     const spotLabel = selected.name || zone
     persistActive({
-      carNumber: LOCAL_SESSION_ID,
       zone,
       spotName: selected.name,
       startedAt: optimisticStartedAt,
@@ -508,10 +502,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
     showSessionFeedback('loading', 'Alustan parkimist…', zone)
 
     if (!isBrowserOnline()) {
-      enqueueOfflineAction('session_start', {
-        carNumber: LOCAL_SESSION_ID,
-        zone,
-      })
+      enqueueOfflineAction('session_start', { zone })
       setSessionLoading(false)
       setSessionAction(null)
       showSessionFeedback(
@@ -522,10 +513,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
       return
     }
 
-    const outcome = await startParkingSession({
-      carNumber: LOCAL_SESSION_ID,
-      zone,
-    })
+    const outcome = await startParkingSession({ zone })
 
     setSessionLoading(false)
     setSessionAction(null)
@@ -537,7 +525,6 @@ export function useParkingSession(selected: ParkingSpot | null) {
       const serverRate = sessionHourlyRate(details) ?? hourlyRate
       const resolvedZone = String(details.zone ?? zone)
       persistActive({
-        carNumber: LOCAL_SESSION_ID,
         zone: resolvedZone,
         spotName: selected.name,
         startedAt,
@@ -598,10 +585,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
     setSessionLoading(true)
 
     if (!isBrowserOnline()) {
-      enqueueOfflineAction('session_stop', {
-        carNumber: LOCAL_SESSION_ID,
-        zone: session.zone,
-      })
+      enqueueOfflineAction('session_stop', { zone: session.zone })
       setSessionLoading(false)
       setSessionAction(null)
       sessionSnapshotRef.current = null
@@ -613,10 +597,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
       return
     }
 
-    const outcome = await stopParkingSession({
-      carNumber: LOCAL_SESSION_ID,
-      zone: session.zone,
-    })
+    const outcome = await stopParkingSession({ zone: session.zone })
 
     setSessionLoading(false)
     setSessionAction(null)
@@ -664,7 +645,6 @@ export function useParkingSession(selected: ParkingSpot | null) {
   /**
    * Status ONLY — show exactly what the server said.
    * No local "taimer jätkub" fallback when server did not confirm ACTIVE.
-   * License plate is never collected or sent.
    */
   const refreshParkingStatus = useCallback(async () => {
     if (!activeSession && !selectedRef.current) {
@@ -680,13 +660,10 @@ export function useParkingSession(selected: ParkingSpot | null) {
     showSessionFeedback('loading', 'Kontrollin parkimise staatust…')
 
     try {
-      const outcome = await checkParkingStatus({
-        carNumber: LOCAL_SESSION_ID,
-      })
+      const outcome = await checkParkingStatus()
 
       if (outcome.kind === 'ACTIVE') {
         const synced = applyActiveDetails(outcome.details, {
-          carNumber: LOCAL_SESSION_ID,
           zone: activeSession?.zone || selectedRef.current?.zone_code,
           spotName: activeSession?.spotName ?? selectedRef.current?.name,
           hourlyRate: activeSession?.hourlyRate,
@@ -780,10 +757,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
       }
 
       if (!isBrowserOnline()) {
-        enqueueOfflineAction('session_extend', {
-          carNumber: LOCAL_SESSION_ID,
-          endsAt: nextEndsAt,
-        })
+        enqueueOfflineAction('session_extend', { endsAt: nextEndsAt })
         showSessionFeedback(
           'info',
           `Lisatud ${minutes} min`,
@@ -794,10 +768,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
 
       setSessionAction('extend')
       setSessionLoading(true)
-      const outcome = await extendParkingSession({
-        carNumber: LOCAL_SESSION_ID,
-        endsAt: nextEndsAt,
-      })
+      const outcome = await extendParkingSession({ endsAt: nextEndsAt })
       setSessionLoading(false)
       setSessionAction(null)
 
@@ -841,19 +812,13 @@ export function useParkingSession(selected: ParkingSpot | null) {
       if (action.type === 'session_start') {
         const zone = String(action.payload.zone ?? '')
         if (!zone) return true
-        const outcome = await startParkingSession({
-          carNumber: LOCAL_SESSION_ID,
-          zone,
-        })
+        const outcome = await startParkingSession({ zone })
         return outcome.kind === 'ACTIVE'
       }
       if (action.type === 'session_stop') {
         const zone = String(action.payload.zone ?? '')
         if (!zone) return true
-        const outcome = await stopParkingSession({
-          carNumber: LOCAL_SESSION_ID,
-          zone,
-        })
+        const outcome = await stopParkingSession({ zone })
         return outcome.kind === 'NOT_FOUND' || outcome.kind === 'ACTIVE'
       }
       if (action.type === 'session_extend') {
@@ -869,10 +834,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
         ) {
           return true
         }
-        const outcome = await extendParkingSession({
-          carNumber: LOCAL_SESSION_ID,
-          endsAt: queuedEndsAt,
-        })
+        const outcome = await extendParkingSession({ endsAt: queuedEndsAt })
         return outcome.kind === 'ACTIVE' || outcome.kind === 'NOT_FOUND'
       }
       return true

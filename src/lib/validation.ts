@@ -1,14 +1,5 @@
 import { z } from 'zod'
 
-/** Estonian-ish plate / session code: letters+digits, existing UI allows ≥2 chars. */
-export const carNumberSchema = z
-  .string()
-  .trim()
-  .toUpperCase()
-  .min(2)
-  .max(12)
-  .regex(/^[A-Z0-9ÄÖÜÕ\- ]+$/i)
-
 export const zoneCodeSchema = z
   .string()
   .trim()
@@ -49,28 +40,12 @@ const emailSchema = z.string().trim().email().max(254)
 export const parkingSessionBodySchema = z
   .object({
     action: parkingSessionActionSchema,
-    carNumber: carNumberSchema.optional(),
     zone: zoneCodeSchema.optional(),
     endsAt: z.string().trim().min(1).optional(),
     pushSubscription: pushSubscriptionSchema.optional(),
     email: emailSchema.optional(),
   })
   .superRefine((val, ctx) => {
-    if (
-      val.action === 'start' ||
-      val.action === 'stop' ||
-      val.action === 'status' ||
-      val.action === 'extend' ||
-      val.action === 'notify'
-    ) {
-      if (!val.carNumber) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['carNumber'],
-          message: 'carNumber required',
-        })
-      }
-    }
     if (val.action === 'start' && !val.zone) {
       ctx.addIssue({
         code: 'custom',
