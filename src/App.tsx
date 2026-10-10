@@ -119,7 +119,7 @@ import { useParkingSession } from './hooks/useParkingSession'
 import { useSearchGeocode } from './hooks/useSearchGeocode'
 import { clampSearchQuery } from './lib/validation'
 import { track } from './lib/analytics'
-import { getCurrentPositionOnce } from './lib/geolocation'
+import { useLiveLocation } from './hooks/useLiveLocation'
 
 import { parkingIndex } from './lib/spatialIndex'
 import { loadCustomSpots } from './lib/storage'
@@ -190,12 +190,14 @@ export default function App() {
   }, [remoteFreeIds, fullSpotIds])
   const [alternatives, setAlternatives] = useState<AlternativeParking[]>([])
   const [noAlternatives, setNoAlternatives] = useState(false)
-  const [userLocation, setUserLocation] = useState<[number, number]>(() => {
-    const id = getInitialCity()
-    return CITIES[id].center
-  })
-  const [hasGps, setHasGps] = useState(false)
-  const [gpsLocating, setGpsLocating] = useState(false)
+  const {
+    userLocation,
+    hasGps,
+    gpsLocating,
+    followUser,
+    stopFollow,
+    locateAndFollow,
+  } = useLiveLocation(CITIES[getInitialCity()].center)
   const [flyTarget, setFlyTarget] = useState<[number, number] | null>(null)
   const [flyZoom, setFlyZoom] = useState<number | undefined>(undefined)
   const [flyKey, setFlyKey] = useState(0)
@@ -305,18 +307,7 @@ export default function App() {
     }
   }, [])
 
-  useEffect(() => {
-    if (!('geolocation' in navigator)) return
-    const id = navigator.geolocation.watchPosition(
-      (pos) => {
-        setUserLocation([pos.coords.latitude, pos.coords.longitude])
-        setHasGps(true)
-      },
-      () => setHasGps(false),
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 },
-    )
-    return () => navigator.geolocation.clearWatch(id)
-  }, [])
+  // Live GPS watch owned by useLiveLocation (clearWatch on unmount)
 
   // Nominatim geocoding owned by useSearchGeocode (debounce + pending Enter)
 
@@ -951,39 +942,24 @@ export default function App() {
     setSearchSheetOpen(true)
   }, [searchLocation])
 
-  /** FAB "Minu asukoht" — request a fresh GPS fix, then flyTo. */
+  /** FAB "Jälgi mind" — fresh GPS fix, enable auto-follow, snap camera. */
   const locateMe = useCallback(async () => {
     if (gpsLocating) return
-    setGpsLocating(true)
-    try {
-      const result = await getCurrentPositionOnce()
-      if (!result.ok) {
-        setHasGps(false)
-        setToast({
-          kind: 'error',
-          title: 'Asukoht puudub',
-          detail: result.message,
-        })
-        return
-      }
-      const { lat, lng } = result.position
-      setUserLocation([lat, lng])
-      setHasGps(true)
-      setFlyMode('fly')
-      setFlyTarget([lat, lng])
-      setFlyZoom(16)
-      setFlyKey((k) => k + 1)
-    } catch {
-      setHasGps(false)
+    const result = await locateAndFollow()
+    if (!result.ok) {
       setToast({
         kind: 'error',
         title: 'Asukoht puudub',
-        detail: 'Asukoha määramine ebaõnnestus.',
+        detail: result.message,
       })
-    } finally {
-      setGpsLocating(false)
+      return
     }
-  }, [gpsLocating, setToast])
+    const { lat, lng } = result.position
+    setFlyMode('fly')
+    setFlyTarget([lat, lng])
+    setFlyZoom(16)
+    setFlyKey((k) => k + 1)
+  }, [gpsLocating, locateAndFollow, setToast])
 
   /** Collect 3–5 nearest roadside/lot spots around the SEARCH destination. */
   const collectNearestOptions = useCallback(
@@ -1812,6 +1788,8 @@ export default function App() {
             filter={filter}
             theme={theme}
             userLocation={userLocation}
+            followUser={followUser}
+            onUserMapGesture={stopFollow}
             flyTarget={flyTarget}
             flyKey={flyKey}
             flyZoom={flyZoom}
@@ -2192,15 +2170,22 @@ export default function App() {
           }}
           disabled={gpsLocating}
           className={fabClass}
-          title="Minu asukoht"
-          aria-label="Minu asukoht"
+          title={followUser ? 'Jälgin asukohta' : 'Jälgi mind / tsentreeri'}
+          aria-label={followUser ? 'Jälgin asukohta' : 'Jälgi mind'}
+          aria-pressed={followUser}
           aria-busy={gpsLocating}
         >
           {gpsLocating ? (
             <Loader2 className="h-[22px] w-[22px] animate-spin text-[#007AFF]" />
           ) : (
             <LocateFixed
-              className={`h-[22px] w-[22px] ${hasGps ? 'text-[#007AFF]' : muted}`}
+              className={`h-[22px] w-[22px] ${
+                followUser
+                  ? 'text-[#007AFF]'
+                  : hasGps
+                    ? 'text-[#007AFF]/80'
+                    : muted
+              }`}
             />
           )}
         </button>

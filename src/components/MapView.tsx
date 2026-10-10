@@ -896,6 +896,10 @@ export const MapView = memo(forwardRef<
     /** Basemap + overlay theme (light | dark). */
     theme?: ThemeMode
     userLocation: [number, number]
+    /** When true, ease the camera to each live GPS update (follow me). */
+    followUser?: boolean
+    /** Fired on user pan/zoom/rotate — parent should disable follow. */
+    onUserMapGesture?: () => void
     flyTarget: [number, number] | null
     flyKey: number
     flyZoom?: number
@@ -983,6 +987,8 @@ export const MapView = memo(forwardRef<
     filter,
     theme = 'light',
     userLocation,
+    followUser = false,
+    onUserMapGesture,
     flyTarget,
     flyKey,
     flyZoom,
@@ -1039,6 +1045,8 @@ export const MapView = memo(forwardRef<
   const onLongPressRef = useRef(onLongPress)
   const onMyPinClickRef = useRef(onMyPinClick)
   const onMyPinDragEndRef = useRef(onMyPinDragEnd)
+  const onUserMapGestureRef = useRef(onUserMapGesture)
+  const followUserRef = useRef(followUser)
   const editingPinIdRef = useRef(editingPinId)
   const pinDragEnabledRef = useRef(pinDragEnabled)
   const routeAnimatingRef = useRef(false)
@@ -1132,6 +1140,8 @@ export const MapView = memo(forwardRef<
   onLongPressRef.current = onLongPress
   onMyPinClickRef.current = onMyPinClick
   onMyPinDragEndRef.current = onMyPinDragEnd
+  onUserMapGestureRef.current = onUserMapGesture
+  followUserRef.current = followUser
   myPinsRef.current = myPins
   editingPinIdRef.current = editingPinId
   pinDragEnabledRef.current = pinDragEnabled
@@ -2216,6 +2226,46 @@ export const MapView = memo(forwardRef<
       userMarkerRef.current.setLngLat([userLocation[1], userLocation[0]])
     }
   }, [userLocation, ready])
+
+  // Live GPS follow — ease camera to blue-dot without changing zoom
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready || !followUser) return
+    if (routeAnimatingRef.current) return
+    if (nearestPillsRef.current.length > 0) return
+    map.easeTo({
+      center: [userLocation[1], userLocation[0]],
+      duration: prefersReducedMotion() ? 0 : 350,
+      essential: true,
+    })
+  }, [userLocation, followUser, ready])
+
+  // User pan/zoom/rotate breaks follow-me until they tap re-center
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    const notify = () => onUserMapGestureRef.current?.()
+    const onDragStart = () => notify()
+    const onZoomStart = (e: { originalEvent?: Event }) => {
+      if (e.originalEvent) notify()
+    }
+    const onRotateStart = (e: { originalEvent?: Event }) => {
+      if (e.originalEvent) notify()
+    }
+    const onPitchStart = (e: { originalEvent?: Event }) => {
+      if (e.originalEvent) notify()
+    }
+    map.on('dragstart', onDragStart)
+    map.on('zoomstart', onZoomStart)
+    map.on('rotatestart', onRotateStart)
+    map.on('pitchstart', onPitchStart)
+    return () => {
+      map.off('dragstart', onDragStart)
+      map.off('zoomstart', onZoomStart)
+      map.off('rotatestart', onRotateStart)
+      map.off('pitchstart', onPitchStart)
+    }
+  }, [ready])
 
   useEffect(() => {
     const map = mapRef.current
