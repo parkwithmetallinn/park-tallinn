@@ -42,6 +42,7 @@ export const en: MessageTree = {
   chrome: {
     favorites: 'Favorite lots',
     rules: 'Rules',
+    privacy: 'Privacy',
     teave: 'About',
     themeLight: 'Light mode',
     themeDark: 'Dark mode',
@@ -145,6 +146,12 @@ export const en: MessageTree = {
       'Parking data and rules come from community map data (OpenStreetMap) and may be outdated. Always check signs on site.',
     privacy: 'Privacy policy',
     contact: 'Contact',
+  },
+  privacy: {
+    agree: 'I agree',
+    remindersBefore: 'We use this only for reminders, see ',
+    remindersLink: 'Privacy',
+    consentRequired: 'Please agree to receive reminders',
   },
   geo: {
     denied: 'Location permission denied. Enable GPS in browser or device settings.',

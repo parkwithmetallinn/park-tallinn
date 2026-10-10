@@ -42,6 +42,7 @@ export const ru: MessageTree = {
   chrome: {
     favorites: 'Избранные',
     rules: 'Правила',
+    privacy: 'Конфиденциальность',
     teave: 'О приложении',
     themeLight: 'Светлая тема',
     themeDark: 'Тёмная тема',
@@ -145,6 +146,12 @@ export const ru: MessageTree = {
       'Данные и правила парковки взяты из OpenStreetMap и могут устареть. Всегда сверяйтесь с дорожными знаками на месте.',
     privacy: 'Политика конфиденциальности',
     contact: 'Контакт',
+  },
+  privacy: {
+    agree: 'Согласен',
+    remindersBefore: 'Используем только для напоминаний, см. ',
+    remindersLink: 'Конфиденциальность',
+    consentRequired: 'Подтвердите согласие на напоминания',
   },
   geo: {
     denied: 'Доступ к геолокации запрещён. Включите GPS в настройках.',

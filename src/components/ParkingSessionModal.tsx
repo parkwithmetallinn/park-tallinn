@@ -25,9 +25,6 @@ const TIME_EXTEND_OPTIONS = [
   { minutes: 120, label: '+2h' },
 ] as const
 
-const EMAIL_CONSENT_LABEL =
-  'Nõustun, et saadetakse meeldetuletus 10 min enne lõppu; aadress kustutatakse sessiooni lõppedes'
-
 /**
  * Isolated floating parking-session modal (clock FAB).
  * Never mounts inside the left detail sidebar — exclusive of ParkingBottomSheet.
@@ -50,6 +47,7 @@ export function ParkingSessionModal({
   onExtend,
   formatHourlyRate,
   formatSessionInstant,
+  onOpenPrivacy,
 }: {
   dark?: boolean
   timerSeconds: number
@@ -70,6 +68,8 @@ export function ParkingSessionModal({
   onExtend: (minutes: number) => void
   formatHourlyRate: (rate?: number) => string | undefined
   formatSessionInstant: (iso?: string) => string | undefined
+  /** Opens the in-app Privacy policy modal. */
+  onOpenPrivacy?: () => void
 }) {
   const { t } = useI18n()
   const ink = dark ? 'text-[#F5F5F7]' : 'text-[#1C1C1E]'
@@ -83,11 +83,14 @@ export function ParkingSessionModal({
   const panel = dark
     ? 'border-white/10 bg-[#1C1C1E]/95 text-[#F5F5F7]'
     : 'border-black/8 bg-white/95 text-[#1C1C1E]'
+  const linkClass =
+    'font-semibold text-[#007AFF] underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#007AFF]'
 
   const [perm, setPerm] = useState<NotificationPermission | 'unsupported'>(
     () => notificationPermissionState(),
   )
   const [pushBusy, setPushBusy] = useState(false)
+  const [pushConsent, setPushConsent] = useState(false)
   const [notifyMsg, setNotifyMsg] = useState<{
     kind: 'success' | 'error' | 'info'
     text: string
@@ -96,6 +99,24 @@ export function ParkingSessionModal({
   const [emailConsent, setEmailConsent] = useState(false)
   const [emailBusy, setEmailBusy] = useState(false)
   const [showIosHint] = useState(() => needsIosHomeScreenHint())
+
+  const privacyNote = (
+    <p className={`text-[12px] font-medium leading-snug ${muted}`}>
+      {t('privacy.remindersBefore')}
+      {onOpenPrivacy ? (
+        <button
+          type="button"
+          data-testid="session-privacy-link"
+          onClick={onOpenPrivacy}
+          className={linkClass}
+        >
+          {t('privacy.remindersLink')}
+        </button>
+      ) : (
+        <span className="font-semibold">{t('privacy.remindersLink')}</span>
+      )}
+    </p>
+  )
 
   const { online } = useOnlineStatus()
   const sessionNetBlocked = !online
@@ -118,6 +139,10 @@ export function ParkingSessionModal({
 
   const onEnablePush = async () => {
     setNotifyMsg(null)
+    if (!pushConsent) {
+      setNotifyMsg({ kind: 'error', text: t('privacy.consentRequired') })
+      return
+    }
     setPushBusy(true)
     try {
       const outcome = await enablePush()
@@ -140,7 +165,7 @@ export function ParkingSessionModal({
   const onSendEmail = async () => {
     setNotifyMsg(null)
     if (!emailConsent) {
-      setNotifyMsg({ kind: 'error', text: 'Nõustu meeldetuletuse saatmisega' })
+      setNotifyMsg({ kind: 'error', text: t('privacy.consentRequired') })
       return
     }
     setEmailBusy(true)
@@ -323,14 +348,30 @@ export function ParkingSessionModal({
             ) : null}
 
             {!useEmailFallback && !pushOk ? (
-              <button
-                type="button"
-                disabled={pushBusy || sessionLoading}
-                onClick={() => void onEnablePush()}
-                className={`w-full rounded-xl px-3 py-2.5 text-[12px] font-bold ${chip} disabled:opacity-55`}
-              >
-                {pushBusy ? 'Luban…' : 'Luba teavitused'}
-              </button>
+              <div className="flex flex-col gap-2">
+                {privacyNote}
+                <label
+                  className={`flex cursor-pointer items-start gap-2 text-[12px] font-medium leading-snug ${ink}`}
+                >
+                  <input
+                    type="checkbox"
+                    data-testid="push-consent"
+                    checked={pushConsent}
+                    onChange={(e) => setPushConsent(e.target.checked)}
+                    disabled={pushBusy || sessionLoading}
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded border accent-[#34C759]"
+                  />
+                  <span>{t('privacy.agree')}</span>
+                </label>
+                <button
+                  type="button"
+                  disabled={pushBusy || sessionLoading || !pushConsent}
+                  onClick={() => void onEnablePush()}
+                  className={`w-full rounded-xl px-3 py-2.5 text-[12px] font-bold ${chip} disabled:opacity-55`}
+                >
+                  {pushBusy ? 'Luban…' : 'Luba teavitused'}
+                </button>
+              </div>
             ) : null}
 
             {pushOk ? (
@@ -353,17 +394,19 @@ export function ParkingSessionModal({
                   disabled={emailBusy || sessionLoading}
                   className={`w-full rounded-xl border px-3 py-2.5 text-[13px] font-medium outline-none focus:ring-2 focus:ring-[#34C759]/30 ${field}`}
                 />
+                {privacyNote}
                 <label
                   className={`flex cursor-pointer items-start gap-2 text-[12px] font-medium leading-snug ${ink}`}
                 >
                   <input
                     type="checkbox"
+                    data-testid="email-consent"
                     checked={emailConsent}
                     onChange={(e) => setEmailConsent(e.target.checked)}
                     disabled={emailBusy || sessionLoading}
                     className="mt-0.5 h-4 w-4 shrink-0 rounded border accent-[#34C759]"
                   />
-                  <span>{EMAIL_CONSENT_LABEL}</span>
+                  <span>{t('privacy.agree')}</span>
                 </label>
                 <button
                   type="button"

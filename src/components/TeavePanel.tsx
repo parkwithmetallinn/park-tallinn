@@ -2,14 +2,19 @@ import { ExternalLink } from 'lucide-react'
 import { ModalShell } from './ModalShell'
 import { LOCALES, useI18n, type Locale } from '../i18n'
 
-/** Set when the public privacy policy page is ready. */
+/** Set when a public privacy policy URL is preferred over the in-app modal. */
 const PRIVACY_POLICY_URL = ''
 
 /**
- * About / Teave — map credits, accuracy disclaimer, privacy placeholder,
- * and language selection (persisted in localStorage).
+ * About / Teave — map credits, accuracy disclaimer, privacy, language.
  */
-export function TeavePanel({ onClose }: { onClose: () => void }) {
+export function TeavePanel({
+  onClose,
+  onOpenPrivacy,
+}: {
+  onClose: () => void
+  onOpenPrivacy?: () => void
+}) {
   const { t, locale, setLocale } = useI18n()
   const privacyUrl = PRIVACY_POLICY_URL.trim()
 
@@ -92,6 +97,15 @@ export function TeavePanel({ onClose }: { onClose: () => void }) {
               {t('teave.privacy')}
               <ExternalLink className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
             </a>
+          ) : onOpenPrivacy ? (
+            <button
+              type="button"
+              data-testid="teave-open-privacy"
+              onClick={onOpenPrivacy}
+              className="font-semibold text-[#007AFF] underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#007AFF]"
+            >
+              {t('teave.privacy')}
+            </button>
           ) : (
             <p className="font-medium text-ink">
               {t('teave.privacy')}{' '}

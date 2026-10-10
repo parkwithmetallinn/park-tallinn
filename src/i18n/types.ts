@@ -49,6 +49,7 @@ export type MessageTree = {
   chrome: {
     favorites: string
     rules: string
+    privacy: string
     teave: string
     themeLight: string
     themeDark: string
@@ -151,6 +152,12 @@ export type MessageTree = {
     accuracyBody: string
     privacy: string
     contact: string
+  }
+  privacy: {
+    agree: string
+    remindersBefore: string
+    remindersLink: string
+    consentRequired: string
   }
   geo: {
     denied: string

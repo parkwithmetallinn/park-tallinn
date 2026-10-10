@@ -11,6 +11,7 @@ import {
   Moon,
   Plus,
   Search,
+  Shield,
   Star,
   Sun,
   X,
@@ -20,6 +21,7 @@ import { MapErrorBoundary } from './components/MapErrorBoundary'
 import { MapView, type MapViewHandle } from './components/MapView'
 import { ModalShell } from './components/ModalShell'
 import { TeavePanel } from './components/TeavePanel'
+import { PrivacyPanel } from './components/PrivacyPanel'
 import { LocationInfoSheet } from './components/LocationInfoSheet'
 import {
   NearestParkingPanel,
@@ -242,6 +244,7 @@ export default function App() {
   const [fromNearestPicker, setFromNearestPicker] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
   const [teaveOpen, setTeaveOpen] = useState(false)
+  const [privacyOpen, setPrivacyOpen] = useState(false)
   const [favoritesOpen, setFavoritesOpen] = useState(false)
   const [reportContext, setReportContext] = useState<ReportModalContext | null>(null)
   const [approvedOverlays, setApprovedOverlays] = useState<ParkingSpot[]>([])
@@ -1954,6 +1957,17 @@ export default function App() {
                 </button>
                 <button
                   type="button"
+                  data-testid="open-privacy"
+                  onClick={() => setPrivacyOpen(true)}
+                  className={`cursor-pointer rounded-full p-2.5 ${chip}`}
+                  title={t('chrome.privacy')}
+                  aria-label={t('chrome.privacy')}
+                  aria-pressed={privacyOpen}
+                >
+                  <Shield className="h-5 w-5" />
+                </button>
+                <button
+                  type="button"
                   data-testid="open-teave"
                   onClick={() => setTeaveOpen(true)}
                   className={`cursor-pointer rounded-full p-2.5 ${chip}`}
@@ -2246,6 +2260,7 @@ export default function App() {
           }}
           formatHourlyRate={formatHourlyRate}
           formatSessionInstant={formatSessionInstant}
+          onOpenPrivacy={() => setPrivacyOpen(true)}
         />
       ) : null}
       {connectionNotice && !selected && !timerOpen ? (
@@ -2424,7 +2439,19 @@ export default function App() {
 
       <Toast toast={toast} onClose={dismissToast} />
 
-      {teaveOpen ? <TeavePanel onClose={() => setTeaveOpen(false)} /> : null}
+      {teaveOpen ? (
+        <TeavePanel
+          onClose={() => setTeaveOpen(false)}
+          onOpenPrivacy={() => {
+            setTeaveOpen(false)
+            setPrivacyOpen(true)
+          }}
+        />
+      ) : null}
+
+      {privacyOpen ? (
+        <PrivacyPanel onClose={() => setPrivacyOpen(false)} />
+      ) : null}
 
       {infoOpen ? (
         <ModalShell

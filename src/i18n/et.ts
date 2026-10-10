@@ -43,6 +43,7 @@ export const et: MessageTree = {
   chrome: {
     favorites: 'Lemmikparklad',
     rules: 'Reeglid',
+    privacy: 'Privaatsus',
     teave: 'Teave',
     themeLight: 'Hele režiim',
     themeDark: 'Tume režiim',
@@ -146,6 +147,12 @@ export const et: MessageTree = {
       'Parkimisandmed ja reeglid pärinevad kogukonna kaardiandmetest (OpenStreetMap) ning võivad olla aegunud. Kontrolli alati tingimusi kohapeal liiklusmärgilt.',
     privacy: 'Privaatsuspoliitika',
     contact: 'Kontakt',
+  },
+  privacy: {
+    agree: 'Nõustun',
+    remindersBefore: 'Kasutame ainult meeldetuletusteks, vaata ',
+    remindersLink: 'Privaatsust',
+    consentRequired: 'Nõustu meeldetuletuse saatmisega',
   },
   geo: {
     denied: 'Asukoha luba on keelatud. Luba GPS brauseri või seadme seadetes.',
