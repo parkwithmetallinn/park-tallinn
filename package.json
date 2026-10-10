@@ -19,6 +19,7 @@
     "test:pricing": "node --experimental-strip-types --test scripts/test-pricing.mjs",
     "test:reports": "node --experimental-strip-types --test scripts/test-group-reports.mjs",
     "test:zones": "npx --yes tsx --test scripts/test-zone-detect.mjs",
+    "test:zones-sync": "node --experimental-strip-types --test scripts/test-zones-sync.mjs",
     "precompute:addresses": "node scripts/precompute-addresses.mjs",
     "cap:sync": "npm run build && npx cap sync",
     "cap:ios": "npm run build && npx cap sync ios && npx cap open ios",
