@@ -1,7 +1,7 @@
 /**
  * Human-facing parking lot titles — never show generic OSM structure words
  * like "Surface" / "Zone" as the primary name.
- * Never expose internal spot IDs (spot-102, OSM way ids) in the UI.
+ * Never expose internal spot IDs or ugly index suffixes ("KESKLINN - 2").
  */
 
 import type { ParkingLayerKey, ParkingSpot } from '../types'
@@ -17,11 +17,25 @@ const WEAK_AREA_ONLY_RE = /^parkla\s*[-–,]\s*(tallinn|pärnu|parnu|tartu|narva
 
 const CITY_ONLY_RE = /^(tallinn|pärnu|parnu|tartu|narva)$/i
 
+/** Tallinn municipal paid-zone labels — areas, not unique lot titles. */
+const AREA_ZONE_LABELS: Record<string, string> = {
+  KESKLINN: 'Kesklinn',
+  VANALINN: 'Vanalinn',
+  SÜDALINN: 'Südalinn',
+  SUDALINN: 'Südalinn',
+  PIRITA: 'Pirita',
+}
+
+const AREA_ZONE_NAME_RE =
+  /^(kesklinn|vanalinn|südalinn|sudalinn|pirita)(\s*(parkla|tsoon))?$/i
+
 export function isGenericParkingName(name: string | null | undefined): boolean {
   const n = (name ?? '').trim()
   if (!n) return true
   if (GENERIC_NAME_RE.test(n)) return true
   if (WEAK_AREA_ONLY_RE.test(n)) return true
+  if (AREA_ZONE_NAME_RE.test(n)) return true
+  if (AREA_ZONE_LABELS[n.toUpperCase()]) return true
   if (GENERIC_PREFIX_RE.test(n) && n.length <= 24) return true
   return false
 }
@@ -31,6 +45,51 @@ function cleanZoneCode(zone: string | null | undefined): string {
   if (!z) return ''
   if (/^(ZONE|FREE|PAID|P|UNKNOWN|TASUTA|TASULINE|KELL)$/i.test(z)) return ''
   return z
+}
+
+/** Operator / municipal area label (Kesklinn), or '' for real lot codes (EP264). */
+function areaLabelFromZone(zone: string | null | undefined): string {
+  const z = cleanZoneCode(zone)
+  if (!z) return ''
+  return AREA_ZONE_LABELS[z.toUpperCase()] ?? ''
+}
+
+/** Real lot/operator codes — EP264, SN1, CP-ST — not municipal area names. */
+function lotZoneCode(zone: string | null | undefined): string {
+  const z = cleanZoneCode(zone)
+  if (!z) return ''
+  if (AREA_ZONE_LABELS[z.toUpperCase()]) return ''
+  return z
+}
+
+function titleCaseStreet(street: string): string {
+  const s = street.trim()
+  if (!s) return ''
+  // Keep short acronyms; soften ALL-CAPS street blobs
+  if (s === s.toUpperCase() && s.length > 3 && !/^[A-Z]{1,4}\d/.test(s)) {
+    return s
+      .toLowerCase()
+      .replace(/(^|[\s/-])(\S)/g, (_, p, c) => `${p}${c.toUpperCase()}`)
+  }
+  return s
+}
+
+/** "Liivalaia tn" / "Liivalaia / Gonsiori" → "Liivalaia" */
+function shortStreetLabel(street: string): string {
+  let s = titleCaseStreet(street)
+  if (!s) return ''
+  // Prefer left side of "A / B"
+  s = s.split('/')[0]?.trim() || s
+  // Drop trailing type words
+  s = s
+    .replace(
+      /\s+(tn|tee|pst|puiestee|mnt|maantee|tänav|street|rd|road)\.?$/i,
+      '',
+    )
+    .trim()
+  // Drop house number for short label in parentheses
+  s = s.replace(/\s+\d+[A-Za-z]?$/u, '').trim()
+  return s
 }
 
 /** "Akadeemia tee 23, Mustamäe, Tallinn" → "Mustamäe" */
@@ -48,22 +107,12 @@ function districtFromAddress(address: string | null | undefined): string {
   return ''
 }
 
-function withHumanDisambiguator(
-  base: string,
-  zone: string,
-  district: string,
-): string {
-  if (zone && !base.includes(zone)) return `${base} (${zone})`
-  if (district && !base.includes(district)) return `${base} (${district})`
-  return base
-}
-
 function operatorLabel(
   operator: string | null | undefined,
   layer?: ParkingLayerKey | string | null,
 ): string {
   const op = (operator ?? '').trim()
-  if (op && !/^unknown$/i.test(op)) return op
+  if (op && !/^unknown$/i.test(op) && !/^tallinna\s+linn$/i.test(op)) return op
   switch (layer) {
     case 'europark':
       return 'EuroPark'
@@ -72,15 +121,11 @@ function operatorLabel(
     case 'citypark':
       return 'Citypark'
     case 'uhisteenused':
-      return 'AS Ühisteenused'
+      return 'Ühisteenused'
     case 'parkit':
       return 'Parkit'
     case 'park_ride':
       return 'Pargi ja Reisi'
-    case 'municipal':
-    case 'free_street':
-    case 'timed':
-      return 'Tallinna Linn'
     default:
       return ''
   }
@@ -89,55 +134,103 @@ function operatorLabel(
 function streetFromAddress(address: string | null | undefined): string {
   const a = (address ?? '').trim()
   if (!a) return ''
-  // "Kursi 3, Tallinn" → "Kursi 3"
   const first = a.split(',')[0]?.trim() || a
   if (CITY_ONLY_RE.test(first)) return ''
+  if (AREA_ZONE_NAME_RE.test(first)) return ''
   return first
 }
 
 /**
+ * Prefer "Kesklinn (Liivalaia)" / "Kesklinn (EP264)" over bare "KESKLINN"
+ * or collision junk like "KESKLINN (KESKLINN · 2)".
+ */
+function areaWithQualifier(
+  area: string,
+  street: string,
+  lotCode: string,
+  operator: string,
+): string {
+  const streetShort = shortStreetLabel(street)
+  if (streetShort && !area.toLowerCase().includes(streetShort.toLowerCase())) {
+    return `${area} (${streetShort})`
+  }
+  if (lotCode && !area.includes(lotCode)) {
+    return `${area} (${lotCode})`
+  }
+  if (operator && !area.toLowerCase().includes(operator.toLowerCase())) {
+    return `${area} (${operator})`
+  }
+  return area
+}
+
+/**
  * Title fallback chain (human-readable only):
- * 1. Real `name`
+ * 1. Real distinct `name` (not just "Kesklinn")
  * 2. Street (+ house) + "parkla"
- * 3. Street + parkla + zone / linnaosa
- * 4. Zone code alone (EP264)
- * 5. District + zone  e.g. "Kesklinn (EP264)"
- * 6. Operator + zone
- * Never invent streets; never show internal spot IDs.
+ * 3. Area + street / lot code  e.g. "Kesklinn (Liivalaia)" / "Kesklinn (EP264)"
+ * 4. Lot zone code alone (EP264)
+ * 5. Operator parkla
+ * Never invent streets; never show index numbers.
  */
 export function parkingDisplayName(input: ParkingNameInput): string {
   const rawName = (input.name ?? '').trim()
-  if (rawName && !isGenericParkingName(rawName)) return rawName
-
-  const zone = cleanZoneCode(input.zone_code || input.zone)
-  const street = (input['addr:street'] ?? '').trim()
+  const zoneRaw = input.zone_code || input.zone
+  const area = areaLabelFromZone(zoneRaw)
+  const lotCode = lotZoneCode(zoneRaw)
+  const streetTag = (input['addr:street'] ?? '').trim()
   const hn = (input['addr:housenumber'] ?? '').trim()
   const fromAddr = streetFromAddress(input.address)
   const district = districtFromAddress(input.address)
+  const op = operatorLabel(input.operator, input.layer)
 
-  if (street && hn) return `${street} ${hn} parkla`
-  if (street) return withHumanDisambiguator(`${street} parkla`, zone, district)
+  // Keep rich names like "Kesklinn · Liivalaia" / "EuroPark Solaris"
+  if (rawName && !isGenericParkingName(rawName)) {
+    // Soft-clean accidental ugly index suffixes from older caches
+    const cleaned = rawName
+      .replace(/\s*\(([^)]+)\s*[·\-]\s*\d+\)\s*$/u, ' ($1)')
+      .replace(/\s*[·\-]\s*\d+\s*$/u, '')
+      .trim()
+    return cleaned || rawName
+  }
+
+  if (streetTag && hn) return `${titleCaseStreet(streetTag)} ${hn} parkla`
+  if (streetTag) {
+    const base = `${titleCaseStreet(streetTag)} parkla`
+    if (lotCode) return `${base} (${lotCode})`
+    if (area) return `${area} (${shortStreetLabel(streetTag)})`
+    return base
+  }
 
   if (fromAddr && !CITY_ONLY_RE.test(fromAddr)) {
-    const streetOnly = fromAddr.replace(/\s+\d+[A-Za-z]?$/, '').trim()
+    const streetOnly = fromAddr.replace(/\s+\d+[A-Za-z]?$/u, '').trim()
     const hasHouse = streetOnly.length >= 3 && streetOnly !== fromAddr
-    if (hasHouse) return `${fromAddr} parkla`
-    if (streetOnly && streetOnly.length >= 3) {
-      return withHumanDisambiguator(`${streetOnly} parkla`, zone, district)
+    if (hasHouse) {
+      return lotCode
+        ? `${titleCaseStreet(fromAddr)} parkla (${lotCode})`
+        : `${titleCaseStreet(fromAddr)} parkla`
     }
-    return withHumanDisambiguator(`${fromAddr} parkla`, zone, district)
+    const streetLabel = shortStreetLabel(streetOnly || fromAddr)
+    if (area && streetLabel) return `${area} (${streetLabel})`
+    if (streetLabel) {
+      return lotCode
+        ? `${streetLabel} parkla (${lotCode})`
+        : `${streetLabel} parkla`
+    }
   }
 
-  if (zone && district) return `${district} (${zone})`
-  if (zone) return zone
+  if (area) {
+    return areaWithQualifier(area, fromAddr || streetTag, lotCode, op)
+  }
+
+  if (district && lotCode) return `${district} (${lotCode})`
+  if (lotCode) return lotCode
   if (district) return `${district} parkla`
 
-  const op = operatorLabel(input.operator, input.layer)
-  if (op && op !== 'Tallinna Linn') {
-    return withHumanDisambiguator(`${op} parkla`, zone, district)
+  if (op) {
+    return lotCode ? `${op} (${lotCode})` : `${op} parkla`
   }
 
-  if (fromAddr) return withHumanDisambiguator(`Parkla, ${fromAddr}`, zone, district)
+  if (fromAddr) return `Parkla, ${titleCaseStreet(fromAddr)}`
   return 'Parkla'
 }
 
@@ -162,23 +255,38 @@ export function spotDisplayName(spot: ParkingSpot): string {
     address: spot.address,
     layer: spot.layer,
     id: spot.id,
+    'addr:street': (spot as { 'addr:street'?: string })['addr:street'],
+    'addr:housenumber': (spot as { 'addr:housenumber'?: string })[
+      'addr:housenumber'
+    ],
   })
+}
+
+function sameText(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase()
 }
 
 /**
  * Ensure every spot in a list gets a unique human-readable display name.
- * Prefer zone code / linnaosa — never append internal spot IDs.
+ * Prefer street / lot zone code — never "KESKLINN (KESKLINN · 2)".
  */
 export function uniquifySpotDisplayNames(
   spots: readonly ParkingSpot[],
 ): Map<string, string> {
-  const base = spots.map((s) => ({
-    id: s.id,
-    name: spotDisplayName(s),
-    zone: cleanZoneCode(s.zone_code),
-    district: districtFromAddress(s.address),
-    street: streetFromAddress(s.address),
-  }))
+  const base = spots.map((s) => {
+    const zoneRaw = s.zone_code
+    return {
+      id: s.id,
+      name: spotDisplayName(s),
+      area: areaLabelFromZone(zoneRaw) || districtFromAddress(s.address),
+      lotCode: lotZoneCode(zoneRaw),
+      street: shortStreetLabel(
+        streetFromAddress(s.address) ||
+          ((s as { 'addr:street'?: string })['addr:street'] ?? ''),
+      ),
+      operator: operatorLabel(s.operator, s.layer),
+    }
+  })
 
   const counts = new Map<string, number>()
   for (const row of base) {
@@ -190,24 +298,70 @@ export function uniquifySpotDisplayNames(
 
   for (const row of base) {
     let name = row.name
+
     if ((counts.get(row.name) ?? 0) > 1) {
-      if (row.zone && !name.includes(row.zone)) {
-        name = `${row.name} (${row.zone})`
-      } else if (row.district && !name.includes(row.district)) {
-        name = `${row.name} (${row.district})`
-      } else if (row.street && !name.includes(row.street)) {
-        name = `${row.street} parkla${row.zone ? ` (${row.zone})` : ''}`
+      // Rebuild collisions with street / lot code — never repeat the same token
+      if (row.area && row.street && !sameText(row.area, row.street)) {
+        name = `${row.area} (${row.street})`
+      } else if (row.area && row.lotCode) {
+        name = `${row.area} (${row.lotCode})`
+      } else if (row.street && row.lotCode) {
+        name = `${row.street} (${row.lotCode})`
+      } else if (row.street && !name.toLowerCase().includes(row.street.toLowerCase())) {
+        name = `${name} (${row.street})`
+      } else if (row.lotCode && !name.includes(row.lotCode)) {
+        name = `${name} (${row.lotCode})`
+      } else if (
+        row.operator &&
+        !name.toLowerCase().includes(row.operator.toLowerCase())
+      ) {
+        name = `${name} (${row.operator})`
       }
     }
-    let final = name
-    let n = 2
-    while (used.has(final)) {
-      // Human ordinal only — never OSM / spot ids
-      final = row.zone
-        ? `${name.replace(/\s*\([^)]*\)\s*$/, '')} (${row.zone} · ${n})`
-        : `${name} · ${n}`
-      n += 1
+
+    // Strip accidental ugly index forms
+    name = name
+      .replace(/\s*\(([^)]+)\s*[·\-]\s*\d+\)\s*$/u, ' ($1)')
+      .replace(/\s*[·\-]\s*\d+\s*$/u, '')
+      .trim()
+
+    // If still "Area (Area)", fall back to street or lot code alone
+    const paren = name.match(/^(.+?)\s*\((.+?)\)\s*$/)
+    if (paren && sameText(paren[1], paren[2])) {
+      if (row.street) name = `${paren[1]} (${row.street})`
+      else if (row.lotCode) name = `${paren[1]} (${row.lotCode})`
+      else if (row.operator) name = `${paren[1]} (${row.operator})`
+      else name = paren[1]
     }
+
+    let final = name
+    // Last-resort uniqueness without raw indexes: append unused street/lot/op pieces
+    const extras = [row.street, row.lotCode, row.operator, row.area].filter(
+      (x): x is string => Boolean(x && x.trim()),
+    )
+    let ei = 0
+    while (used.has(final) && ei < extras.length) {
+      const extra = extras[ei++]
+      if (!final.toLowerCase().includes(extra.toLowerCase())) {
+        final = `${name} (${extra})`
+      }
+    }
+    // Absolute last resort — still human, no " - 2"
+    if (used.has(final)) {
+      final = row.lotCode
+        ? row.lotCode
+        : row.street
+          ? `${row.street} parkla`
+          : `${name} parkla`
+      let k = 0
+      while (used.has(final) && k < extras.length) {
+        const extra = extras[k++]
+        if (extra && !final.toLowerCase().includes(extra.toLowerCase())) {
+          final = `${final.replace(/\s*parkla$/i, '').trim()} (${extra})`
+        }
+      }
+    }
+
     used.add(final)
     out.set(row.id, final)
   }
