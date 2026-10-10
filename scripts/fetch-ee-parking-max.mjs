@@ -5,7 +5,7 @@
  * Primary: Geofabrik Estonia PBF → Python/pyosmium extract
  * Fallback: tiled Overpass API (slower; use when PBF unavailable)
  *
- * Writes: public/data/ee_parking_max.raw.geojson
+ * Writes: data-source/ee_parking_max.raw.geojson
  * Then run: node scripts/build-ee-parking-max.mjs
  *
  * Usage:

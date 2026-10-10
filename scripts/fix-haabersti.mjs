@@ -23,7 +23,7 @@ import difference from '@turf/difference'
 import { featureCollection, feature, point } from '@turf/helpers'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const OUT_GEO = join(ROOT, 'public/data/districts.geojson')
+const OUT_GEO = join(ROOT, 'data-source/districts.geojson')
 const OUT_JSON = join(ROOT, 'src/data/districts.json')
 
 const LINNA_URL =

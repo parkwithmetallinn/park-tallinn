@@ -30,9 +30,6 @@ dist/
 !.env.example
 !.env.mobile.example
 
-# Intermediate nationwide parking extract (rebuild: npm run fetch:parking-max)
-public/data/ee_parking_max.raw.geojson
-
 # App / agent artifacts
 uploads/
 agent-tools/

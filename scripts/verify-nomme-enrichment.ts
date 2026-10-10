@@ -11,7 +11,7 @@ import { splitMasterCollection } from '../src/lib/estoniaParkingMaster'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const streetsJson = readFileSync(
-  resolve(ROOT, 'public/data/tallinn_free_streets.geojson'),
+  resolve(ROOT, 'data-source/tallinn_free_streets.geojson'),
   'utf8',
 )
 const lotsJson = readFileSync(

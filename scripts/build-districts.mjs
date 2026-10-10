@@ -1,5 +1,5 @@
 /**
- * Rebuild public/data/districts.geojson from Tallinn GIS Linnaosad (+ Vanalinn asum).
+ * Rebuild data-source/districts.geojson (+ src/data/districts.json) from Tallinn GIS.
  *
  * Steps: fetch → EPSG:4326 → drop Aegna island part from Kesklinn labels only
  * (geometry keeps mainland; Aegna removed for city map clarity) → ocean clip →
@@ -25,7 +25,7 @@ import { featureCollection, feature, polygon, multiPolygon } from '@turf/helpers
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
-const OUT = join(ROOT, 'public/data/districts.geojson')
+const OUT = join(ROOT, 'data-source/districts.geojson')
 const TMP = join(ROOT, '.tmp/districts-build')
 
 const LINNA_URL =

@@ -1,6 +1,6 @@
 /**
- * Tallinn district overlays from public/data/districts.geojson
- * (bundled via src/data/districts.json).
+ * Tallinn district overlays from src/data/districts.json
+ * (regenerated from data-source/districts.geojson).
  */
 import districtsData from '../data/districts.json'
 import type { DistrictZone } from '../types'

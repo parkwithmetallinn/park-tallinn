@@ -10,8 +10,8 @@
  *   node scripts/precompute-addresses.mjs --limit=50
  *   node scripts/precompute-addresses.mjs --resume
  *
- * Reads:  public/data/estonia_parking_master.geojson
- * Writes: public/data/estonia_parking_addresses.json
+ * Reads:  data-source/estonia_parking_master.geojson
+ * Writes: data-source/estonia_parking_addresses.json
  *         .cache/address-precompute-progress.json
  *
  * Prefer In-AKS (Maa-amet) nearest gazetteer. Falls back to Nominatim.
@@ -24,8 +24,8 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '..')
-const INPUT = path.join(root, 'public/data/estonia_parking_master.geojson')
-const OUTPUT = path.join(root, 'public/data/estonia_parking_addresses.json')
+const INPUT = path.join(root, 'data-source/estonia_parking_master.geojson')
+const OUTPUT = path.join(root, 'data-source/estonia_parking_addresses.json')
 const PROGRESS = path.join(root, '.cache/address-precompute-progress.json')
 
 const args = new Set(process.argv.slice(2))

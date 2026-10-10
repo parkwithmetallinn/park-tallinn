@@ -22,9 +22,11 @@ import { fileURLToPath } from 'node:url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(__dirname, '..')
 const DATA = join(ROOT, 'public/data')
+/** Build inputs / intermediates — not shipped in the web/Capacitor app. */
+const DATA_SOURCE = join(ROOT, 'data-source')
 const OUT = join(DATA, 'ee_parking_max.geojson')
-const CITY_ZONES_OUT = join(DATA, 'city_zones.geojson')
-const RAW = join(DATA, 'ee_parking_max.raw.geojson')
+const CITY_ZONES_OUT = join(DATA_SOURCE, 'city_zones.geojson')
+const RAW = join(DATA_SOURCE, 'ee_parking_max.raw.geojson')
 
 const DEDUPE_M = 10
 const STREET_CLUSTER_M = 100
@@ -686,11 +688,12 @@ function materializePointLots(features) {
 
 function main() {
   mkdirSync(DATA, { recursive: true })
+  mkdirSync(DATA_SOURCE, { recursive: true })
   const zones = buildCityZones()
 
   const sources = [
     [RAW, 'overpass_max'],
-    [join(DATA, 'estonia_parking_master.geojson'), 'estonia_master'],
+    [join(DATA_SOURCE, 'estonia_parking_master.geojson'), 'estonia_master'],
     [join(DATA, 'parnu_parking_master.geojson'), 'parnu_master'],
   ]
 

@@ -11,9 +11,9 @@ Lots: ONLY allowlisted OSM ways matched to verified official listings
 (Tallinn GIS P&R, terviserajad.ee trailheads). No approximated polygons.
 
 Reads:  /tmp/estonia.osm.pbf (or $EE_OSM_PBF)
-        public/data/districts.geojson
-Writes: public/data/nomme_free_streets.geojson
-        public/data/nomme_verified_lots.geojson
+        data-source/districts.geojson
+Writes: data-source/nomme_free_streets.geojson
+        public/data/nomme_verified_lots.geojson  (shipped — runtime allowlist)
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ from shapely.geometry import LineString, mapping, shape
 
 ROOT = Path(__file__).resolve().parents[1]
 PBF = Path(os.environ.get("EE_OSM_PBF", "/tmp/estonia.osm.pbf"))
-DISTRICTS = ROOT / "public" / "data" / "districts.geojson"
-STREETS_OUT = ROOT / "public" / "data" / "nomme_free_streets.geojson"
+DISTRICTS = ROOT / "data-source" / "districts.geojson"
+STREETS_OUT = ROOT / "data-source" / "nomme_free_streets.geojson"
 LOTS_OUT = ROOT / "public" / "data" / "nomme_verified_lots.geojson"
 
 # Verified OSM way IDs → metadata. Every lot must have a real geometry source.

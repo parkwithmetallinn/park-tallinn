@@ -10,9 +10,9 @@ Also refreshes Nõmme verified lots via the sibling extract-nomme-parking.py
 allowlist (invoked separately).
 
 Reads:  /tmp/estonia.osm.pbf (or $EE_OSM_PBF)
-        public/data/districts.geojson
+        data-source/districts.geojson
         src/data/parking.ts paid-zone rings (embedded JSON below is generated)
-Writes: public/data/tallinn_free_streets.geojson
+Writes: data-source/tallinn_free_streets.geojson
 """
 
 from __future__ import annotations
@@ -28,9 +28,9 @@ from shapely.ops import unary_union
 
 ROOT = Path(__file__).resolve().parents[1]
 PBF = Path(os.environ.get("EE_OSM_PBF", "/tmp/estonia.osm.pbf"))
-DISTRICTS = ROOT / "public" / "data" / "districts.geojson"
+DISTRICTS = ROOT / "data-source" / "districts.geojson"
 PARKING_TS = ROOT / "src" / "data" / "parking.ts"
-OUT = ROOT / "public" / "data" / "tallinn_free_streets.geojson"
+OUT = ROOT / "data-source" / "tallinn_free_streets.geojson"
 
 PUBLIC_HIGHWAYS = {
     "residential",

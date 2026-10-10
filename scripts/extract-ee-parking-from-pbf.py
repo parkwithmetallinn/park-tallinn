@@ -3,7 +3,7 @@
 Extract maximum Estonian parking coverage from a Geofabrik PBF into GeoJSON.
 
 Reads:  /tmp/estonia.osm.pbf (or $EE_OSM_PBF)
-Writes: public/data/ee_parking_max.raw.geojson
+Writes: data-source/ee_parking_max.raw.geojson
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from pathlib import Path
 import osmium
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "public" / "data" / "ee_parking_max.raw.geojson"
+OUT = ROOT / "data-source" / "ee_parking_max.raw.geojson"
 PBF = Path(os.environ.get("EE_OSM_PBF", "/tmp/estonia.osm.pbf"))
 
 

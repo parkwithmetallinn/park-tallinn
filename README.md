@@ -95,13 +95,19 @@ Sildid ei kattu: `text-allow-overlap` / `icon-allow-overlap` on `false`; madalam
 
 ## Andmed
 
-- `public/data/estonia_parking_master.geojson` / `ee_parking_max.geojson` — Eesti OSM-stiilis parkimiskiht. Laadimisel kasutatakse **ainult lot-polügoone**; street_side / curb LineString’id jäetakse tühjaks (`src/lib/estoniaParkingMaster.ts`).
+**Rakendusse (Vite `public/` → `dist/`) lähevad ainult runtime-failid:**
+
+- `public/data/ee_parking_max.geojson` — Eesti OSM-stiilis parkimiskiht. Laadimisel kasutatakse **ainult lot-polügoone**; street_side / curb LineString’id jäetakse tühjaks (`src/lib/estoniaParkingMaster.ts`).
 - `public/data/nomme_verified_lots.geojson` — **ainult** verifitseeritud Nõmme platsid (Laagri P&R, Nõmme–Harku terviseraja parklaid). Juhuslikke OSM-lotte Nõmmel ei kuvata (`src/lib/nommeEnrichment.ts`).
-- Klassifikatsioon (ainult lotid): **Tasuta** = roheline (ainult verifitseeritud piiramatu 24/7 tasuta); **Kellaga** = kollane (kellaga / aegpiirang); **Tasuline** = punane; märgendita / unknown → **hall** (mitte roheline).
-- `public/data/parnu_parking_master.geojson` — Pärnu OSM-parkimine (bbox extract). Tsoonireeglid (`src/data/parnuZones.ts` + `freeRules`) määravad FREE/KELL sildid, hinnad ja „praegu tasuta“. gis.parnu.ee FeatureServer ei olnud build-keskkonnast kättesaadav; ametlik ajakava on parnu.ee/parkimine järgi.
-- `src/data/parnuChargers.ts` — EV seemned (Eleport Niidu 18b 200 kW, Neste 200 kW, Tesla Supercharger).
-- `public/data/districts.geojson` — ametlikud Tallinna 8 linnaosa + Vanalinn (Tallinn GIS → EPSG:4326, ≤5 m simplify, mere mask, topoloogia). Ehita: `npm run build:districts`. Kontrolli: `npm run check:districts`.
-- Lotid: täide klassifikatsiooni värviga (punane / kollane / roheline / hall), 2px ääris; klõps avab bottom sheet’i (operaator, hind, tasuta minutid + Waze / Google / Apple). Otsingu Destination Interceptor suunab ≤400 m lähima parkla tsentroidile.
+- `public/data/parnu_parking_master.geojson` — Pärnu OSM-parkimine (bbox extract). Tsoonireeglid (`src/data/parnuZones.ts` + `freeRules`) määravad FREE/KELL sildid, hinnad ja „praegu tasuta“.
+- `public/data/ev_chargers.geojson` — EV laadijad (OSM extract).
+- Klassifikatsioon (ainult lotid): **Tasuta** = roheline; **Kellaga** = kollane; **Tasuline** = punane; unknown → **hall**.
+- `src/data/parnuChargers.ts` — EV seemned (Eleport / Neste / Tesla).
+- `src/data/districts.json` — Tallinna linnaosad (bundled). Allikas regeneratsiooniks: `data-source/districts.geojson` (`npm run build:districts` / `check:districts`).
+
+**Build / regeneratsioon (ei lähe äppi):** `data-source/` — nt `ee_parking_max.raw.geojson`, `estonia_parking_master.geojson`, `tallinn_free_streets.geojson`, `nomme_free_streets.geojson`, `city_zones.geojson`, `districts.geojson`.
+
+Lotid: täide klassifikatsiooni värviga, 2px ääris; klõps avab bottom sheet’i. Otsingu Destination Interceptor suunab ≤400 m lähima parkla tsentroidile.
 
 ## Funktsioonid
 
@@ -115,31 +121,34 @@ Sildid ei kattu: `text-allow-overlap` / `icon-allow-overlap` on `false`; madalam
 ## Parkimissessioon (n8n)
 
 Bottom sheet / kellapaneel saadavad POST same-origin `/api/parkimine` proxy kaudu
-(server lisab `X-N8N-API-KEY` `N8N_API_KEY` keskkonnamuutujast):
+(server lisab `X-N8N-API-KEY` `N8N_API_KEY` keskkonnamuutujast).
+Klient **ei kogu ega saada** sõiduki numbrimärki — ainult `action` + `zone` / `endsAt` / meeldetuletused:
 
 ```json
-{ "action": "start", "carNumber": "123ABC", "zone": "KESKLINN" }
+{ "action": "start", "zone": "KESKLINN" }
 ```
 
 ```json
-{ "action": "stop", "carNumber": "123ABC", "zone": "KESKLINN" }
-```
-
-```json
-{ "action": "status", "carNumber": "123ABC" }
+{ "action": "stop", "zone": "KESKLINN" }
 ```
 
 ```json
 { "action": "status" }
 ```
 
-Server toetab ainult `start` | `stop` | `status` (extend puudub). Ettemakstud minutid on ainult kohalik taimer (`endsAt` localStorage’is).
+```json
+{ "action": "extend", "endsAt": "2026-10-11T12:00:00.000Z" }
+```
 
-- **start** / **stop** — nõuavad `carNumber` + `zone`
-- **status** ühe numbriga — body on täpselt `{ action, carNumber }` (ilma zone’ta)
-- **status** ilma `carNumber`-ita (või **Kõik** nupp) — `{ activeSessions[], count }`
+```json
+{ "action": "notify", "email": "nimi@email.ee" }
+```
+
+- **start** / **stop** — nõuavad `zone` (ilma numbrimärgita)
+- **status** — `{ activeSessions[], count }` või aktiivse sessiooni detailid
+- **extend** / **notify** — ettemaksu pikendus ja push/e-posti meeldetuletus
 - Vastused normaliseeritakse `ACTIVE` | `NOT_FOUND` | `ERROR` (`src/lib/parkingSession.ts`). `NOT_FOUND` ei ole viga.
-- App load / window focus / visibilitychange (≤1× / 15 s) kutsub `status` kui kohalik sessioon olemas: ACTIVE → sync; NOT_FOUND → kustuta + info toast; ERROR → hoia kohalikku olekut + „ühendus puudub“.
+- App load / window focus / visibilitychange (≤1× / 15 s) kutsub `status` kui kohalik sessioon olemas.
 - Header Auth lisab ainult proxy: `X-N8N-API-KEY` = `N8N_API_KEY` (klient päist ei saada)
 - Tasuta / kellaga / P&R kohtadel sessiooni alustamine on keelatud (`src/data/zones.ts`)
 - Tsoonihinnad: Vanalinn 6.00 · Südalinn 4.80 · Kesklinn 1.50 · Pirita 0.60 €/h (kontrolli tallinn.ee)

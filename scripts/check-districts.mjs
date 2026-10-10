@@ -1,5 +1,5 @@
 /**
- * Automated QA for public/data/districts.geojson.
+ * Automated QA for data-source/districts.geojson.
  * Exits 1 on any failure.
  *
  * Usage: node scripts/check-districts.mjs
@@ -16,7 +16,7 @@ import { point, featureCollection } from '@turf/helpers'
 import bbox from '@turf/bbox'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const PATH = join(ROOT, 'public/data/districts.geojson')
+const PATH = join(ROOT, 'data-source/districts.geojson')
 
 /**
  * Task reference hints, verified against Tallinn GIS Linnaosad.

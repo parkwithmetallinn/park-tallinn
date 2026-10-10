@@ -20,7 +20,7 @@ function loadJson(rel: string) {
 
 // Stub fetch for enrichment overlay URLs used inside enrichNommeParking via
 // prepare path — we verify overlays + master filter logic directly here.
-const streetsRaw = loadJson('public/data/nomme_free_streets.geojson')
+const streetsRaw = loadJson('data-source/nomme_free_streets.geojson')
 const lotsRaw = loadJson('public/data/nomme_verified_lots.geojson')
 const master = loadJson('public/data/ee_parking_max.geojson')
 

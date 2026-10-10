@@ -47,7 +47,7 @@ async function main() {
 
   const raw = JSON.parse(
     fs.readFileSync(
-      new URL('../public/data/estonia_parking_master.geojson', import.meta.url),
+      new URL('../data-source/estonia_parking_master.geojson', import.meta.url),
       'utf8',
     ),
   )
