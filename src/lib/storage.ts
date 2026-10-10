@@ -3,9 +3,27 @@ import type { ActiveParkingSession } from './parkingSession'
 import type { ParkingSpot } from '../types'
 
 const STORAGE_KEY = 'park_tallinn_custom_spots'
+/** @deprecated Plate UI removed — kept only so cleanup can target the old key. */
 const CAR_NUMBER_KEY = 'park_tallinn_car_number'
 const ACTIVE_SESSION_KEY = 'park_tallinn_active_session'
 const TIMER_STATE_KEY = 'park_tallinn_timer_state'
+
+/**
+ * One-time privacy cleanup: drop legacy license-plate localStorage keys.
+ * Does not touch favorites, myPins hint, or master cache meta.
+ */
+export function clearLegacyPlateStorage(): void {
+  try {
+    localStorage.removeItem(CAR_NUMBER_KEY)
+  } catch {
+    /* private mode / quota */
+  }
+  try {
+    sessionStorage.removeItem(CAR_NUMBER_KEY)
+  } catch {
+    /* ignore */
+  }
+}
 
 export type TimerMode = 'elapsed' | 'prepaid'
 

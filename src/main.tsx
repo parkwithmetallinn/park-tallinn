@@ -6,6 +6,10 @@ import App from './App.tsx'
 import { queryClient } from './lib/queryClient'
 import { prefetchParkingLayers } from './lib/parkingDataCache'
 import { initAnalytics } from './lib/analytics'
+import { clearLegacyPlateStorage } from './lib/storage'
+
+// Drop stale license-plate values left from older builds
+clearLegacyPlateStorage()
 
 const AdminReviewView = lazy(() =>
   import('./components/AdminReviewView.tsx').then((m) => ({
