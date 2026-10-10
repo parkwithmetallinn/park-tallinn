@@ -33,6 +33,7 @@ import {
   type TimerMode,
 } from '../lib/storage'
 import { canStartParkingSession } from '../data/zones'
+import { fetchPriceQuote } from '../lib/priceQuoteApi'
 import type { ParkingSpot } from '../types'
 
 const SYNC_THROTTLE_MS = 15_000
@@ -74,6 +75,8 @@ export function useParkingSession(selected: ParkingSpot | null) {
   const [toast, setToast] = useState<ToastState>(null)
   /** Small persistent notice when status sync fails (never clears the session). */
   const [connectionNotice, setConnectionNotice] = useState<string | null>(null)
+  /** Live price estimate while a paid-zone session is active (hinnang, mitte arve). */
+  const [priceEstimate, setPriceEstimate] = useState<string | null>(null)
 
   const sessionSnapshotRef = useRef<SessionSnapshot | null>(null)
   const lastSyncAtRef = useRef(0)
@@ -137,6 +140,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
   const clearLocalSession = useCallback(
     (label = DEFAULT_TIMER_LABEL) => {
       persistActive(null)
+      setPriceEstimate(null)
       setTimerRunning(false)
       setTimerSeconds(0)
       persistTimer('elapsed', null)
@@ -145,6 +149,25 @@ export function useParkingSession(selected: ParkingSpot | null) {
     },
     [persistActive, persistTimer],
   )
+
+  const refreshPriceEstimate = useCallback(async (session: ActiveParkingSession) => {
+    const startTime = session.startedAt
+    if (!startTime || !session.zone) {
+      setPriceEstimate(null)
+      return
+    }
+    const view = await fetchPriceQuote({
+      zone: session.zone,
+      startTime,
+      endTime: new Date().toISOString(),
+      startMarked: true,
+    })
+    if (view.ok) {
+      setPriceEstimate(view.label)
+    } else {
+      setPriceEstimate(view.message)
+    }
+  }, [])
 
   const startElapsedTimer = useCallback(
     (startedAt?: string, label?: string) => {
@@ -420,6 +443,27 @@ export function useParkingSession(selected: ParkingSpot | null) {
     return () => clearInterval(id)
   }, [timerMode, timerRunning, endsAt, maybeFirePrepaidReminder])
 
+  // Live price estimate while a session is active
+  useEffect(() => {
+    if (!activeSession?.startedAt || !activeSession.zone) {
+      setPriceEstimate(null)
+      return
+    }
+    let cancelled = false
+    const run = async () => {
+      if (cancelled) return
+      await refreshPriceEstimate(activeSession)
+    }
+    void run()
+    const id = window.setInterval(() => {
+      void run()
+    }, 30_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [activeSession, refreshPriceEstimate])
+
   const handleCarNumberChange = useCallback((value: string) => {
     setCarNumber(value)
     saveCarNumber(value)
@@ -564,6 +608,10 @@ export function useParkingSession(selected: ParkingSpot | null) {
       return
     }
 
+    const stopStartedAt = session.startedAt
+    const stopZone = session.zone
+    const stopEndIso = new Date().toISOString()
+
     captureSessionSnapshot()
     clearLocalSession()
     clearSessionFeedback()
@@ -598,9 +646,22 @@ export function useParkingSession(selected: ParkingSpot | null) {
       // Success or already stopped — local state already cleared
       sessionSnapshotRef.current = null
       setConnectionNotice(null)
+      let detail: string | undefined
+      if (stopStartedAt && stopZone) {
+        const finalQuote = await fetchPriceQuote({
+          zone: stopZone,
+          startTime: stopStartedAt,
+          endTime: stopEndIso,
+          startMarked: true,
+        })
+        detail = finalQuote.ok
+          ? `Lõpphind: ${finalQuote.label}`
+          : finalQuote.message
+      }
       setToast({
         kind: 'success',
         title: 'Parkimine lõpetatud',
+        detail,
       })
       void queryClient.invalidateQueries({ queryKey: parkingQueryKeys.sessions })
       return
@@ -852,6 +913,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
     sessionAction,
     activeSession,
     sessionNotice,
+    priceEstimate,
     toast,
     setToast,
     dismissToast,

@@ -40,6 +40,7 @@ export function ParkingSessionModal({
   sessionAction,
   activeSession,
   sessionNotice,
+  priceEstimate,
   selectedSpot,
   onClose,
   onStart,
@@ -59,6 +60,8 @@ export function ParkingSessionModal({
   sessionAction: 'start' | 'stop' | 'status' | 'extend' | null
   activeSession: ActiveParkingSession | null
   sessionNotice: { kind: 'success' | 'error' | 'info' | 'loading'; text: string } | null
+  /** Live price estimate while session is active (hinnang, mitte arve). */
+  priceEstimate?: string | null
   /** Optional context spot when starting without an open detail card */
   selectedSpot: ParkingSpot | null
   onClose: () => void
@@ -219,6 +222,14 @@ export function ParkingSessionModal({
             <span className="mt-1.5 block text-[10px] font-medium opacity-80">
               {timerMode === 'elapsed' ? 'Möödunud aeg' : 'Ettemakstud / jäänud'}
             </span>
+            {priceEstimate ? (
+              <p
+                data-testid="price-estimate"
+                className="mt-2 rounded-xl bg-[#007AFF]/10 px-2.5 py-1.5 text-[11px] font-semibold text-[#007AFF]"
+              >
+                {priceEstimate}
+              </p>
+            ) : null}
           </div>
         ) : null}
 

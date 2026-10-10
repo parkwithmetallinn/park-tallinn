@@ -109,6 +109,7 @@ export function ParkingBottomSheet({
   sessionAction,
   activeSession,
   sessionNotice,
+  priceEstimate,
   routeSummary,
   onClearRoute,
   dark,
@@ -137,6 +138,8 @@ export function ParkingBottomSheet({
   sessionAction?: 'start' | 'stop' | 'status' | 'extend' | null
   activeSession?: ActiveParkingSession | null
   sessionNotice?: { kind: 'success' | 'error' | 'info' | 'loading'; text: string } | null
+  /** Live price estimate while session is active (hinnang, mitte arve). */
+  priceEstimate?: string | null
   /** Drive/walk summary lives in the panel — never floats over filter pills. */
   routeSummary?: PanelRouteSummary | null
   onClearRoute?: () => void
@@ -665,6 +668,17 @@ export function ParkingBottomSheet({
               {hasActive && startedLabel ? ` · alates ${startedLabel}` : ''}
             </p>
           )}
+
+          {hasActive && priceEstimate ? (
+            <p
+              data-testid="price-estimate"
+              className={`rounded-xl px-3 py-2 text-[12px] font-semibold leading-snug ${
+                dark ? 'bg-white/8 text-[#EBEBF5]' : 'bg-[#007AFF]/08 text-[#007AFF]'
+              }`}
+            >
+              {priceEstimate}
+            </p>
+          ) : null}
 
           {hasActive && onExtendMinutes ? (
             <div className="grid grid-cols-4 gap-2">

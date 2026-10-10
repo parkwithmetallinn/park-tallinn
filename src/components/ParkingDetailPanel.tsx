@@ -47,6 +47,8 @@ export function ParkingDetailPanel({
     kind: 'success' | 'error' | 'info' | 'loading'
     text: string
   } | null
+  /** Live price estimate while session is active (hinnang, mitte arve). */
+  priceEstimate?: string | null
   routeSummary?: PanelRouteSummary | null
   onClearRoute?: () => void
   dark?: boolean

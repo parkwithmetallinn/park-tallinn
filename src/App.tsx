@@ -249,6 +249,7 @@ export default function App() {
     sessionAction,
     activeSession,
     sessionNotice,
+    priceEstimate,
     toast,
     setToast,
     dismissToast,
@@ -2170,6 +2171,7 @@ export default function App() {
           sessionAction={sessionAction}
           activeSession={activeSession}
           sessionNotice={sessionNotice}
+          priceEstimate={priceEstimate}
           selectedSpot={null}
           onClose={closeSessionModal}
           onStart={() => {
@@ -2234,6 +2236,7 @@ export default function App() {
           sessionAction={sessionAction}
           activeSession={activeSession}
           sessionNotice={sessionNotice}
+          priceEstimate={priceEstimate}
           routeSummary={
             routeSummaryReady && routePlan
               ? {
@@ -2397,6 +2400,9 @@ export default function App() {
                 Avalikel tasulistel linnatänavatel kehtib esimesed 15 minutit tasuta. Pane kell
                 esiklaasile.
               </p>
+              <p className="mt-1.5 text-[12px] opacity-90">
+                15 tasuta minutit kehtivad ainult märgitud alguse korral.
+              </p>
             </div>
             <div className="rounded-2xl bg-paper-2 p-3">
               <h4 className="mb-1 text-sm font-bold text-ink">Tsoonide hinnad</h4>
@@ -2405,7 +2411,8 @@ export default function App() {
               </p>
               {ZONE_RATE_LIST.map((z) => (
                 <p key={z.code}>
-                  • {z.name} ({z.code}) — {z.pricePerHour.toFixed(2)} €/h
+                  • {z.name} — {String(z.pricePerMinute).replace('.', ',')} €/min (
+                  {z.pricePerHour.toFixed(2).replace('.', ',')} €/h) · {z.hoursNote}
                   {z.freeMinutes > 0 ? ` · ${z.freeMinutes} min tasuta` : ''}
                 </p>
               ))}
@@ -2414,7 +2421,7 @@ export default function App() {
               <h4 className="mb-1 text-sm font-bold text-ink">Kesklinna tasuta kellaajad</h4>
               <p>• Tööpäeviti tasuline 07:00–19:00</p>
               <p>• Laupäeval tasuline 08:00–15:00</p>
-              <p>• Pühapäeval ja riigipühadel tasuta</p>
+              <p>• Pühapäeval tasuta; riigipühal kehtib sama nädalapäeva tasu</p>
             </div>
               </>
             )}

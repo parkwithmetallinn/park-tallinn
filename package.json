@@ -16,6 +16,7 @@
     "check:districts": "node scripts/check-districts.mjs",
     "test:districts": "node scripts/check-districts.mjs",
     "test:address": "node scripts/test-is-real-address.mjs",
+    "test:pricing": "node --experimental-strip-types --test scripts/test-pricing.mjs",
     "precompute:addresses": "node scripts/precompute-addresses.mjs",
     "cap:sync": "npm run build && npx cap sync",
     "cap:ios": "npm run build && npx cap sync ios && npx cap open ios",
