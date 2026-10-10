@@ -1635,6 +1635,33 @@ const GEOM_LAYER_IDS = [
   PRECISE_MULTISTOREY_BADGE_LAYER,
 ] as const
 
+/** Lot / provider text badges that collide with nearest-picker price pills. */
+const PARKING_TEXT_LABEL_LAYER_IDS = [
+  PARKING_LOTS_LABEL_LAYER,
+  PRECISE_LABEL_LAYER,
+  PRECISE_MULTISTOREY_BADGE_LAYER,
+  ...PARKING_PROVIDERS.map((k) => `${PARKING_LAYER_META[k].id}-label`),
+] as const
+
+/**
+ * Hide parking zone/badge labels while nearest price pills are visible
+ * (avoids "KI" + "15 MIN" stacking into "KI15 MINN").
+ */
+export function setParkingTextLabelsVisible(
+  map: MapLibreMapType,
+  visible: boolean,
+) {
+  const vis = visible ? 'visible' : 'none'
+  for (const id of PARKING_TEXT_LABEL_LAYER_IDS) {
+    if (!map.getLayer(id)) continue
+    try {
+      map.setLayoutProperty(id, 'visibility', vis)
+    } catch {
+      /* ok */
+    }
+  }
+}
+
 /**
  * Hide parking polygons until the basemap has finished its first paint.
  * Street/road polyline overlays stay permanently disabled.

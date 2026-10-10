@@ -15,7 +15,12 @@ export function mapLabelForLayer(
 
   const z = (zoneCode ?? '').trim()
   // Skip placeholder / English category codes — show real codes only (e.g. EP264)
-  if (z && !/^(ZONE|FREE|PAID|P|UNKNOWN|TASUTA|TASULINE)$/i.test(z)) {
+  // Also skip ultra-short 1–2 letter codes ("KI") that collide with "15 MIN" pills.
+  if (
+    z &&
+    z.length >= 3 &&
+    !/^(ZONE|FREE|PAID|P|UNKNOWN|TASUTA|TASULINE|KELL)$/i.test(z)
+  ) {
     return z.length <= 8 ? z : z.slice(0, 8)
   }
 

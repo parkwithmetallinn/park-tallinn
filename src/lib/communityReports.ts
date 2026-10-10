@@ -4,6 +4,10 @@
  */
 
 import { apiUrl } from './apiBase'
+import {
+  canSubmitReport,
+  markReportSubmitted,
+} from './reportCooldown'
 
 export type CommunityReport = {
   parkingId: string
@@ -14,6 +18,7 @@ export type CommunityReport = {
 }
 
 export const COMMUNITY_REPORTS_POLL_MS = 25_000
+const FETCH_TIMEOUT_MS = 10_000
 
 export function parseCommunityReports(data: unknown): CommunityReport[] {
   const raw = Array.isArray(data)
@@ -69,13 +74,19 @@ export async function fetchCommunityReports(
   return parseCommunityReports(data)
 }
 
-/** Publish a community full/free mark (best-effort). */
+/** Publish a community full/free mark (best-effort, 10s timeout + 5-min cooldown). */
 export async function postCommunityFullReport(input: {
   spotId: string
   lat?: number
   lng?: number
   isFull?: boolean
 }): Promise<CommunityReport[]> {
+  const id = String(input.spotId || '').trim()
+  if (!id) return []
+  if (!canSubmitReport(id)) return []
+
+  const ac = new AbortController()
+  const timer = window.setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS)
   try {
     const res = await fetch(apiUrl('/api/reports'), {
       method: 'POST',
@@ -84,16 +95,24 @@ export async function postCommunityFullReport(input: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        parkingId: input.spotId,
+        parkingId: id,
         statusType: input.isFull === false ? 'FREE' : 'FULL',
         comment: '',
       }),
+      signal: ac.signal,
     })
     if (!res.ok) return []
+    markReportSubmitted(id)
     const data: unknown = await res.json()
     return parseCommunityReports(data)
-  } catch {
+  } catch (err) {
+    const aborted =
+      (err as Error)?.name === 'AbortError' || ac.signal.aborted
+    // Late server success + retry would double-count — lock for 5 minutes.
+    if (aborted) markReportSubmitted(id)
     return []
+  } finally {
+    window.clearTimeout(timer)
   }
 }
 

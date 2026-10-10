@@ -59,7 +59,8 @@ export function parkingMapPillLabel(spot: ParkingSpot): string {
   if (isUnlimitedFreeParking(spot)) return 'TASUTA'
   if (isClockLimitedParking(spot)) {
     const mins = Math.max(1, Math.round(spot.free_minutes || 15))
-    return `${mins} MIN`
+    // Narrow no-break space keeps "15 MIN" from gluing to nearby zone glyphs
+    return `${mins}\u00A0MIN`
   }
   if (
     isUnclassifiedParking({

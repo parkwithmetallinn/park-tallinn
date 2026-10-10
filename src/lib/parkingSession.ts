@@ -12,10 +12,7 @@
  * - "ei leitud aktiivset" → NOT_FOUND (normal, never ERROR)
  */
 
-import { apiUrl } from './apiBase'
-
-/** Same-origin proxy — the only client endpoint. */
-const PARKING_WEBHOOK_PROXY = '/api/parkimine'
+import { parkingSessionWebhookUrl } from './apiBase'
 
 function webhookHeaders(): Headers {
   const headers = new Headers()
@@ -631,29 +628,17 @@ function validateRequest(input: ParkingSessionRequest): string | null {
     email: input.email?.trim() || undefined,
   })
   if (!parsed) {
-    // Reuse existing error strings — no new UX copy
-    if (!input.carNumber?.trim()) {
-      return 'Sisesta auto number'
-    }
+    // Plate UI removed — never ask for auto number; surface zone/payload errors only.
     if (input.action === 'start' && !input.zone?.trim()) {
+      return 'Tsoon puudub'
+    }
+    if (input.action === 'stop' && !input.zone?.trim()) {
       return 'Tsoon puudub'
     }
     if (input.action === 'extend' && !input.endsAt?.trim()) {
       return 'Vigane päring'
     }
-    if (input.action === 'extend') {
-      return 'Vigane päring'
-    }
-    if (input.action === 'notify') {
-      if (!input.pushSubscription && !input.email?.trim()) {
-        return 'Vigane päring'
-      }
-      return 'Vigane päring'
-    }
-    if (input.action === 'stop' && !input.zone?.trim()) {
-      return 'Tsoon puudub'
-    }
-    return 'Sisesta auto number'
+    return 'Vigane päring'
   }
   return null
 }
@@ -680,7 +665,7 @@ export async function sendParkingSession(
     email: input.email?.trim() || undefined,
   }
 
-  return postSession(apiUrl(PARKING_WEBHOOK_PROXY), body, signal)
+  return postSession(parkingSessionWebhookUrl(), body, signal)
 }
 
 export function startParkingSession(

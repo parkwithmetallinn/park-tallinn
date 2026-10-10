@@ -268,23 +268,32 @@ function sameText(a: string, b: string): boolean {
 
 /**
  * Ensure every spot in a list gets a unique human-readable display name.
- * Prefer street / lot zone code — never "KESKLINN (KESKLINN · 2)".
+ * Prefer street / lot zone code — never "KESKLINN (KESKLINN · 2)" or
+ * repeated "Kesklinn parkla" rows.
  */
 export function uniquifySpotDisplayNames(
   spots: readonly ParkingSpot[],
 ): Map<string, string> {
   const base = spots.map((s) => {
     const zoneRaw = s.zone_code
+    const rawZone = cleanZoneCode(zoneRaw)
     return {
       id: s.id,
       name: spotDisplayName(s),
       area: areaLabelFromZone(zoneRaw) || districtFromAddress(s.address),
       lotCode: lotZoneCode(zoneRaw),
+      /** Any non-empty zone token (incl. municipal area codes) for disambiguation */
+      zoneToken: rawZone,
       street: shortStreetLabel(
         streetFromAddress(s.address) ||
           ((s as { 'addr:street'?: string })['addr:street'] ?? ''),
       ),
       operator: operatorLabel(s.operator, s.layer),
+      // Stable human tip when two lots share street+zone (not an index suffix)
+      tip:
+        Number.isFinite(s.lat) && Number.isFinite(s.lng)
+          ? `${s.lat.toFixed(3)}°/${s.lng.toFixed(3)}°`
+          : '',
     }
   })
 
@@ -298,24 +307,36 @@ export function uniquifySpotDisplayNames(
 
   for (const row of base) {
     let name = row.name
+    const weakAreaParkla =
+      AREA_ZONE_NAME_RE.test(name) ||
+      /^(kesklinn|vanalinn|südalinn|pirita)\s+parkla$/i.test(name)
 
-    if ((counts.get(row.name) ?? 0) > 1) {
-      // Rebuild collisions with street / lot code — never repeat the same token
+    if ((counts.get(row.name) ?? 0) > 1 || weakAreaParkla) {
+      // Rebuild collisions with street / zone code — never repeat the same token
       if (row.area && row.street && !sameText(row.area, row.street)) {
         name = `${row.area} (${row.street})`
+      } else if (row.street && row.zoneToken && !sameText(row.street, row.zoneToken)) {
+        name = `${row.street} (${row.zoneToken})`
       } else if (row.area && row.lotCode) {
         name = `${row.area} (${row.lotCode})`
+      } else if (row.area && row.zoneToken && !sameText(row.area, row.zoneToken)) {
+        name = `${row.area} (${row.zoneToken})`
       } else if (row.street && row.lotCode) {
         name = `${row.street} (${row.lotCode})`
       } else if (row.street && !name.toLowerCase().includes(row.street.toLowerCase())) {
-        name = `${name} (${row.street})`
+        name = `${name.replace(/\s*parkla$/i, '').trim()} (${row.street})`
+      } else if (
+        row.zoneToken &&
+        !name.toUpperCase().includes(row.zoneToken.toUpperCase())
+      ) {
+        name = `${name.replace(/\s*parkla$/i, '').trim()} (${row.zoneToken})`
       } else if (row.lotCode && !name.includes(row.lotCode)) {
-        name = `${name} (${row.lotCode})`
+        name = `${name.replace(/\s*parkla$/i, '').trim()} (${row.lotCode})`
       } else if (
         row.operator &&
         !name.toLowerCase().includes(row.operator.toLowerCase())
       ) {
-        name = `${name} (${row.operator})`
+        name = `${name.replace(/\s*parkla$/i, '').trim()} (${row.operator})`
       }
     }
 
@@ -330,15 +351,21 @@ export function uniquifySpotDisplayNames(
     if (paren && sameText(paren[1], paren[2])) {
       if (row.street) name = `${paren[1]} (${row.street})`
       else if (row.lotCode) name = `${paren[1]} (${row.lotCode})`
-      else if (row.operator) name = `${paren[1]} (${row.operator})`
+      else if (row.zoneToken && !sameText(paren[1], row.zoneToken)) {
+        name = `${paren[1]} (${row.zoneToken})`
+      } else if (row.operator) name = `${paren[1]} (${row.operator})`
       else name = paren[1]
     }
 
     let final = name
-    // Last-resort uniqueness without raw indexes: append unused street/lot/op pieces
-    const extras = [row.street, row.lotCode, row.operator, row.area].filter(
-      (x): x is string => Boolean(x && x.trim()),
-    )
+    const extras = [
+      row.street,
+      row.lotCode,
+      row.zoneToken,
+      row.operator,
+      row.area,
+      row.tip,
+    ].filter((x): x is string => Boolean(x && x.trim()))
     let ei = 0
     while (used.has(final) && ei < extras.length) {
       const extra = extras[ei++]
@@ -352,7 +379,11 @@ export function uniquifySpotDisplayNames(
         ? row.lotCode
         : row.street
           ? `${row.street} parkla`
-          : `${name} parkla`
+          : row.zoneToken
+            ? row.zoneToken
+            : row.tip
+              ? `${name} (${row.tip})`
+              : `${name} parkla`
       let k = 0
       while (used.has(final) && k < extras.length) {
         const extra = extras[k++]

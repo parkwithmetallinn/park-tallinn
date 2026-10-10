@@ -80,6 +80,7 @@ import {
   setDistrictHover,
   setParkingLayerVisibility,
   setParkingOverlaysRevealed,
+  setParkingTextLabelsVisible,
 } from '../map/ensureOverlays'
 import {
   PARKING_LAYER_META,
@@ -268,11 +269,22 @@ function ensureNearestPricePillLayers(map: MapLibreMapType) {
           12,
           11,
         ],
-        'text-allow-overlap': true,
-        'text-ignore-placement': true,
+        // Collision-safe — prevents "KI" + "15 MIN" merging into "KI15 MINN"
+        'text-allow-overlap': false,
+        'text-ignore-placement': false,
+        'icon-allow-overlap': false,
+        'icon-ignore-placement': false,
+        'text-padding': 6,
+        'text-optional': false,
         'text-anchor': 'center',
         'text-pitch-alignment': 'viewport',
         'text-rotation-alignment': 'viewport',
+        'symbol-sort-key': [
+          'case',
+          ['boolean', ['get', 'active'], false],
+          0,
+          1,
+        ],
       },
       paint: {
         'text-color': [
@@ -323,6 +335,32 @@ function ensureNearestPricePillLayers(map: MapLibreMapType) {
   }
 }
 
+/** Drop pills that sit on top of each other (keeps active + first of each cluster). */
+function dedupePillsByProximity(
+  pills: NearestMapPill[],
+  activeId: string | null,
+  minMeters = 28,
+): NearestMapPill[] {
+  if (pills.length <= 1) return pills
+  const ranked = [...pills].sort((a, b) => {
+    if (a.id === activeId) return -1
+    if (b.id === activeId) return 1
+    return 0
+  })
+  const kept: NearestMapPill[] = []
+  const mPerDegLat = 111_320
+  for (const p of ranked) {
+    const clash = kept.some((k) => {
+      const dLat = (p.lat - k.lat) * mPerDegLat
+      const dLng =
+        (p.lng - k.lng) * mPerDegLat * Math.cos((p.lat * Math.PI) / 180)
+      return Math.hypot(dLat, dLng) < minMeters
+    })
+    if (!clash) kept.push(p)
+  }
+  return kept
+}
+
 function setNearestPricePillData(
   map: MapLibreMapType,
   pills: NearestMapPill[],
@@ -331,14 +369,16 @@ function setNearestPricePillData(
   ensureNearestPricePillLayers(map)
   const src = map.getSource(NEAREST_PILLS_SOURCE)
   if (!src || !('setData' in src) || typeof src.setData !== 'function') return
+  const visible = dedupePillsByProximity(pills, activeId)
   src.setData({
     type: 'FeatureCollection',
-    features: pills.map((p) => ({
+    features: visible.map((p) => ({
       type: 'Feature',
       id: p.id,
       properties: {
         id: p.id,
-        label: p.label,
+        // Normalize whitespace so "15 MIN" never glues to a neighbor glyph
+        label: String(p.label || '').replace(/\s+/g, ' ').trim(),
         tone: p.tone,
         active: p.id === activeId,
       },
@@ -2531,6 +2571,11 @@ export const MapView = memo(forwardRef<
     if (nearestPills.length === 0) {
       nearestPillsFitKeyRef.current = ''
       setPreviewLinkData(map, null)
+      // Restore zone/badge labels when the nearest picker closes
+      setParkingTextLabelsVisible(map, true)
+    } else {
+      // Hide underlying "KI"/zone badges so they don't glue onto "15 MIN" pills
+      setParkingTextLabelsVisible(map, false)
     }
     setNearestPricePillData(map, nearestPills, nearestActivePillId)
   }, [nearestPills, nearestActivePillId, ready])
