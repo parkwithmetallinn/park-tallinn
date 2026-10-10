@@ -35,6 +35,11 @@ import {
   type PreciseParkingFeature,
 } from '../lib/preciseParkingPolygons'
 import {
+  applyVerifiedTypeToProps,
+  type ProposedParkingType,
+  type TypeVoteVerification,
+} from '../lib/typeVotes'
+import {
   STREET_PARKING_HIT_LAYER,
   STREET_PARKING_LINE_LAYER,
   STREET_PARKING_SOURCE,
@@ -626,6 +631,26 @@ function withoutParnuEvFeatures<
  * Apply moderation suppress list, spatial dedupe (polygon > street), then
  * top filter chips — both GeoJSON sources update together.
  */
+function patchFeaturesWithTypeVotes<
+  T extends { properties: { id: string } & Record<string, unknown> },
+>(
+  features: T[],
+  typeVotes: Map<string, TypeVoteVerification>,
+): T[] {
+  if (typeVotes.size === 0) return features
+  return features.map((f) => {
+    const v = typeVotes.get(f.properties.id)
+    if (!v) return f
+    return {
+      ...f,
+      properties: applyVerifiedTypeToProps(
+        f.properties,
+        v.verifiedType as ProposedParkingType,
+      ),
+    }
+  })
+}
+
 function applyDualLayerFilter(
   map: MapLibreMapType,
   filter: FilterId,
@@ -634,6 +659,7 @@ function applyDualLayerFilter(
   suppressedIds: Set<string> = new Set(),
   cityId: CityId = 'tallinn',
   alertIds: Set<string> = new Set(),
+  typeVotes: Map<string, TypeVoteVerification> = new Map(),
 ) {
   const layers = filterToLayers(filter)
 
@@ -663,22 +689,28 @@ function applyDualLayerFilter(
     const polysAlerts: PreciseParkingCollection = preciseFc
       ? {
           type: 'FeatureCollection',
-          features: withoutParnuEvFeatures(
-            withoutSuppressed(preciseFc.features, suppressedIds).filter((f) =>
-              keep(f.properties.id),
+          features: patchFeaturesWithTypeVotes(
+            withoutParnuEvFeatures(
+              withoutSuppressed(preciseFc.features, suppressedIds).filter((f) =>
+                keep(f.properties.id),
+              ),
+              cityId,
             ),
-            cityId,
+            typeVotes,
           ),
         }
       : empty
     const streetsAlerts: StreetParkingCollection = streetFc
       ? {
           type: 'FeatureCollection',
-          features: withoutParnuEvFeatures(
-            withoutSuppressed(streetFc.features, suppressedIds).filter((f) =>
-              keep(f.properties.id),
+          features: patchFeaturesWithTypeVotes(
+            withoutParnuEvFeatures(
+              withoutSuppressed(streetFc.features, suppressedIds).filter((f) =>
+                keep(f.properties.id),
+              ),
+              cityId,
             ),
-            cityId,
+            typeVotes,
           ),
         }
       : empty
@@ -694,9 +726,12 @@ function applyDualLayerFilter(
   const polys: PreciseParkingCollection | null = preciseFc
     ? {
         type: 'FeatureCollection',
-        features: withoutParnuEvFeatures(
-          withoutSuppressed(preciseFc.features, suppressedIds),
-          cityId,
+        features: patchFeaturesWithTypeVotes(
+          withoutParnuEvFeatures(
+            withoutSuppressed(preciseFc.features, suppressedIds),
+            cityId,
+          ),
+          typeVotes,
         ),
       }
     : null
@@ -704,9 +739,12 @@ function applyDualLayerFilter(
   let streets: StreetParkingCollection | null = streetFc
     ? {
         type: 'FeatureCollection',
-        features: withoutParnuEvFeatures(
-          withoutSuppressed(streetFc.features, suppressedIds),
-          cityId,
+        features: patchFeaturesWithTypeVotes(
+          withoutParnuEvFeatures(
+            withoutSuppressed(streetFc.features, suppressedIds),
+            cityId,
+          ),
+          typeVotes,
         ),
       }
     : null
@@ -881,6 +919,8 @@ export const MapView = memo(forwardRef<
     fullSpotIds?: Set<string> | string[]
     /** Community "vabu kohti" report ids (green markers). */
     freeSpotIds?: Set<string> | string[]
+    /** Community-verified parking types (unknown → FREE/TIMED/PAID). */
+    typeVerifications?: Map<string, TypeVoteVerification>
     /** Left/bottom info panel open — shift camera so pin stays visible. */
     infoPanelOpen?: boolean
     /** Active city layer (Tallinn default — keeps existing data path). */
@@ -930,6 +970,7 @@ export const MapView = memo(forwardRef<
     suppressedFeatureIds,
     fullSpotIds,
     freeSpotIds,
+    typeVerifications,
     infoPanelOpen = false,
     cityId = 'tallinn',
     myPins = [],
@@ -995,8 +1036,12 @@ export const MapView = memo(forwardRef<
   const suppressedRef = useRef<Set<string>>(new Set())
   /** Active community isFull alert ids (for Hoiatusega filter + markers). */
   const alertIdsRef = useRef<Set<string>>(new Set())
+  /** Community-verified parking types for map paint overrides. */
+  const typeVotesRef = useRef<Map<string, TypeVoteVerification>>(new Map())
   const loadGenRef = useRef(0)
   const [ready, setReady] = useState(false)
+
+  typeVotesRef.current = typeVerifications ?? new Map()
 
   const alertMarkerSpecs = useMemo((): CommunityStatusMarker[] => {
     const fullIds = new Set(
@@ -1488,6 +1533,7 @@ export const MapView = memo(forwardRef<
         suppressedRef.current,
         cityIdRef.current,
         alertIdsRef.current,
+        typeVotesRef.current,
       )
       disableSymbolLayerFades(map)
       applySelectionHighlight(map, selectedIdRef.current)
@@ -1641,6 +1687,7 @@ export const MapView = memo(forwardRef<
             suppressedRef.current,
             cityIdRef.current,
             alertIdsRef.current,
+            typeVotesRef.current,
           )
           const spots = preciseCollectionToSpots({
             type: 'FeatureCollection',
@@ -1670,6 +1717,7 @@ export const MapView = memo(forwardRef<
             suppressedRef.current,
             cityIdRef.current,
             alertIdsRef.current,
+            typeVotesRef.current,
           )
           onStreetSpotsLoadedRef.current?.([])
           applySelectionHighlight(map, selectedIdRef.current)
@@ -1961,6 +2009,7 @@ export const MapView = memo(forwardRef<
         suppressedRef.current,
         cityIdRef.current,
         alertIdsRef.current,
+        typeVotesRef.current,
       )
       const spots = preciseCollectionToSpots({
         type: 'FeatureCollection',
@@ -1985,6 +2034,7 @@ export const MapView = memo(forwardRef<
           suppressedRef.current,
           cityIdRef.current,
           alertIdsRef.current,
+          typeVotesRef.current,
         )
         const lots = preciseCollectionToSpots({
           type: 'FeatureCollection',
@@ -2077,6 +2127,7 @@ export const MapView = memo(forwardRef<
       suppressedRef.current,
       cityIdRef.current,
       alertIdsRef.current,
+      typeVotesRef.current,
     )
     // EV chargers: show under Kõik + Elektriautolaadijad
     if (evFcRef.current) {
@@ -2090,6 +2141,23 @@ export const MapView = memo(forwardRef<
     applySelectionHighlight(map, selectedIdRef.current)
     ;(map as MapLibreMapType & { __refreshViewport?: () => void }).__refreshViewport?.()
   }, [filter, ready, suppressedFeatureIds])
+
+  // Re-paint lots when community type verifications arrive / change
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    applyDualLayerFilter(
+      map,
+      filterRef.current,
+      preciseFcRef.current,
+      streetRawFcRef.current ?? streetFcRef.current,
+      suppressedRef.current,
+      cityIdRef.current,
+      alertIdsRef.current,
+      typeVotesRef.current,
+    )
+    applySelectionHighlight(map, selectedIdRef.current)
+  }, [typeVerifications, ready])
 
   useEffect(() => {
     const map = mapRef.current
@@ -2331,6 +2399,7 @@ export const MapView = memo(forwardRef<
         suppressedRef.current,
         cityIdRef.current,
         alertIdsRef.current,
+        typeVotesRef.current,
       )
       void (
         map as MapLibreMapType & { __refreshViewport?: () => void }

@@ -40,6 +40,8 @@ export const PARKING_POLYGONS_URL = '/data/ee_parking_max.geojson'
 export const PRECISE_PARKING_SOURCE = 'parking-polygons'
 export const PRECISE_FILL_LAYER = 'parking-fill'
 export const PRECISE_OUTLINE_LAYER = 'parking-outline'
+/** Dashed outline for unknown-price lots (gray / crowdsource). */
+export const PRECISE_OUTLINE_UNKNOWN_LAYER = 'parking-outline-unknown'
 export const PRECISE_OUTLINE_UNDERGROUND_LAYER = 'parking-outline-underground'
 export const PRECISE_MULTISTOREY_BADGE_LAYER = 'parking-multistorey-badge'
 export const PRECISE_LABEL_LAYER = 'parking-fill-label'
@@ -60,6 +62,8 @@ export type PreciseParkingProps = {
   color: string
   /** True only for verified free public parking (matches Tasuta filter + green). */
   verified_free: boolean
+  /** True when pricing/type is unknown — dashed outline + "?" marker. */
+  pricing_unknown?: boolean
   /** Feature area m² — larger lots win label collision (symbol-sort-key). */
   area_m2: number
   labelRank: number
@@ -512,6 +516,20 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
       badge,
       name,
     })
+    const pricing_unknown = isUnclassifiedParking({
+      layer,
+      price_per_hour,
+      free_minutes,
+      zone_code,
+      operator,
+      verified_free: verified_free && layer === 'free_street',
+      type: layer === 'timed' ? 'timed' : structureType,
+      name,
+      badge,
+      color,
+    })
+    // Unknown lots show "?" on the map instead of an operator code.
+    const mapBadge = pricing_unknown ? '?' : badge
 
     const descParts = [
       str(p.description),
@@ -533,11 +551,12 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
         floors,
         free_minutes,
         price_per_hour,
-        badge,
+        badge: mapBadge,
         address,
         desc: descParts.length ? descParts.join(' · ') : undefined,
         color,
         verified_free: verified_free && layer === 'free_street',
+        pricing_unknown,
         area_m2,
         labelRank,
         floors_label: structureType === 'multi_storey' ? `P+${floors}` : '',

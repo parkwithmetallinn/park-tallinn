@@ -48,6 +48,11 @@ import { streetLineColor } from '../map/streetLineTheme'
 import { FindParkingActions } from './FindParkingActions'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { InfoSidePanelShell } from './InfoSidePanel'
+import { TypeMapWidget } from './TypeMapWidget'
+import type {
+  ProposedParkingType,
+  TypeVoteVerification,
+} from '../lib/typeVotes'
 
 export type PanelRouteSummary = {
   label: string
@@ -96,8 +101,8 @@ function priceSummary(spot: ParkingSpot): { headline: string; detail: string } {
     }
   }
   return {
-    headline: spot.timeLimit || 'Määramata',
-    detail: spot.operator || 'Kontrolli silti',
+    headline: 'Hind teadmata',
+    detail: spot.operator || 'Kontrolli silti kohapeal',
   }
 }
 
@@ -132,6 +137,7 @@ export function ParkingBottomSheet({
   onSelectAlternative,
   isFavorite = false,
   onToggleFavorite,
+  onTypeVoteVerified,
 }: {
   spot: ParkingSpot
   distanceLabel?: string | null
@@ -170,6 +176,13 @@ export function ParkingBottomSheet({
   /** Lemmikparkla — filled yellow star when saved. */
   isFavorite?: boolean
   onToggleFavorite?: () => void
+  /** Unknown-lot type vote succeeded (maybe verified). */
+  onTypeVoteVerified?: (payload: {
+    verifiedType: ProposedParkingType | null
+    verified: boolean
+    message: string
+    results: TypeVoteVerification[]
+  }) => void
 }) {
   const { online } = useOnlineStatus()
   const sessionNetBlocked = !online
@@ -495,18 +508,24 @@ export function ParkingBottomSheet({
         </div>
 
         {unclassified ? (
-          <div
-            data-testid="unclassified-warning"
-            role="status"
-            className={`mb-2.5 rounded-xl px-3 py-2.5 text-[12px] font-semibold leading-snug ${
-              dark
-                ? 'bg-[#FFD60A]/14 text-[#FFD60A]'
-                : 'bg-[#FFD60A]/18 text-[#8A6D00]'
-            }`}
-          >
-            Private or unclassified parking area. Please check local parking
-            signs and conditions on site.
-          </div>
+          <>
+            <div
+              data-testid="unclassified-warning"
+              role="status"
+              className={`mb-2.5 rounded-xl px-3 py-2.5 text-[12px] font-semibold leading-snug ${
+                dark
+                  ? 'bg-[#9CA3AF]/20 text-[#D1D5DB]'
+                  : 'bg-[#9CA3AF]/22 text-[#4B5563]'
+              }`}
+            >
+              Hind teadmata — kontrolli silti kohapeal või aita kaardistada.
+            </div>
+            <TypeMapWidget
+              parkingId={spot.id}
+              dark={dark}
+              onVerified={onTypeVoteVerified}
+            />
+          </>
         ) : null}
 
         {spot.freeNow != null || spot.freeReason ? (

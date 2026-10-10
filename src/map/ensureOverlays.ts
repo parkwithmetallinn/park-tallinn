@@ -6,7 +6,10 @@ import {
   parnuZoneLabelsToGeoJSON,
   parnuZonesToGeoJSON,
 } from '../data/parnuZones'
-import { PARKING_COLOR_PAID } from '../lib/parkingClassification'
+import {
+  PARKING_COLOR_PAID,
+  PARKING_COLOR_UNKNOWN,
+} from '../lib/parkingClassification'
 
 const EMPTY_FC = { type: 'FeatureCollection' as const, features: [] as never[] }
 
@@ -21,6 +24,7 @@ import {
   PRECISE_LABEL_LAYER,
   PRECISE_MULTISTOREY_BADGE_LAYER,
   PRECISE_OUTLINE_LAYER,
+  PRECISE_OUTLINE_UNKNOWN_LAYER,
   PRECISE_OUTLINE_UNDERGROUND_LAYER,
   PRECISE_PARKING_SOURCE,
 } from '../lib/preciseParkingPolygons'
@@ -165,6 +169,7 @@ function syncLodZoomLimits(map: MapLibreMapType) {
 
   setMin(PRECISE_FILL_LAYER, PARKING_FADE_START_ZOOM)
   setMin(PRECISE_OUTLINE_LAYER, PARKING_FADE_START_ZOOM)
+  setMin(PRECISE_OUTLINE_UNKNOWN_LAYER, PARKING_FADE_START_ZOOM)
   setMin(PRECISE_OUTLINE_UNDERGROUND_LAYER, PARKING_FADE_START_ZOOM)
   setMin('parking-fill-underground-hatch', PARKING_FADE_START_ZOOM)
   setMin('parking-fill-outline-glow', PARKING_FADE_START_ZOOM)
@@ -233,6 +238,11 @@ function syncParkingFadePaint(map: MapLibreMapType) {
     fadeOpacityExpr(0.55, PARKING_FADE),
   )
   setOp(PRECISE_OUTLINE_LAYER, 'line-opacity', fadeOpacityKeepSelected(1, 1, PARKING_FADE))
+  setOp(
+    PRECISE_OUTLINE_UNKNOWN_LAYER,
+    'line-opacity',
+    fadeOpacityKeepSelected(1, 1, PARKING_FADE),
+  )
   setOp(
     PRECISE_OUTLINE_UNDERGROUND_LAYER,
     'line-opacity',
@@ -721,14 +731,20 @@ export function ensureParkingOverlaySources(
     })
   }
 
-  // Solid curb-to-curb outline (surface + multi_storey)
+  // Solid curb-to-curb outline (known pricing only)
   if (!map.getLayer(PRECISE_OUTLINE_LAYER)) {
     map.addLayer({
       id: PRECISE_OUTLINE_LAYER,
       type: 'line',
       source: PRECISE_PARKING_SOURCE,
       minzoom: PARKING_FADE_START_ZOOM,
-      filter: ['!=', ['get', 'type'], 'underground'],
+      filter: [
+        'all',
+        ['!=', ['get', 'type'], 'underground'],
+        ['!=', ['get', 'pricing_unknown'], true],
+        ['!=', ['get', 'color'], PARKING_COLOR_UNKNOWN],
+        ['!=', ['get', 'color'], '#A0AEC0'],
+      ],
       layout: {
         visibility: 'visible',
         'line-cap': 'round',
@@ -744,6 +760,43 @@ export function ensureParkingOverlaySources(
         ] as never,
         'line-opacity': fadeOpacityKeepSelected(1, 1, PARKING_FADE) as never,
         'line-opacity-transition': NO_OPACITY_TRANSITION,
+      },
+    })
+  }
+
+  // Dashed outline for unknown-price lots (crowdsource gray)
+  if (!map.getLayer(PRECISE_OUTLINE_UNKNOWN_LAYER)) {
+    map.addLayer({
+      id: PRECISE_OUTLINE_UNKNOWN_LAYER,
+      type: 'line',
+      source: PRECISE_PARKING_SOURCE,
+      minzoom: PARKING_FADE_START_ZOOM,
+      filter: [
+        'all',
+        ['!=', ['get', 'type'], 'underground'],
+        [
+          'any',
+          ['==', ['get', 'pricing_unknown'], true],
+          ['==', ['get', 'color'], PARKING_COLOR_UNKNOWN],
+          ['==', ['get', 'color'], '#A0AEC0'],
+        ],
+      ],
+      layout: {
+        visibility: 'visible',
+        'line-cap': 'butt',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': ['coalesce', ['get', 'color'], PARKING_COLOR_UNKNOWN],
+        'line-width': [
+          'case',
+          ['boolean', ['feature-state', 'selected'], false],
+          4.5,
+          2,
+        ] as never,
+        'line-opacity': fadeOpacityKeepSelected(1, 1, PARKING_FADE) as never,
+        'line-opacity-transition': NO_OPACITY_TRANSITION,
+        'line-dasharray': [2, 2],
       },
     })
   }
@@ -784,7 +837,16 @@ export function ensureParkingOverlaySources(
       source: PRECISE_PARKING_SOURCE,
       minzoom: DETAIL_FADE_START_ZOOM,
       layout: {
-        'text-field': ['get', 'badge'],
+        'text-field': [
+          'case',
+          [
+            'any',
+            ['==', ['get', 'pricing_unknown'], true],
+            ['==', ['get', 'badge'], '?'],
+          ],
+          '?',
+          ['coalesce', ['get', 'badge'], ''],
+        ],
         'text-font': ['Noto Sans Bold'],
         'text-size': ['interpolate', ['linear'], ['zoom'], 15, 11, 17, 13],
         'text-max-width': 8,
@@ -1565,6 +1627,7 @@ const GEOM_LAYER_IDS = [
   PRECISE_FILL_LAYER,
   'parking-fill-underground-hatch',
   PRECISE_OUTLINE_LAYER,
+  PRECISE_OUTLINE_UNKNOWN_LAYER,
   PRECISE_OUTLINE_UNDERGROUND_LAYER,
   PRECISE_LABEL_LAYER,
   PRECISE_MULTISTOREY_BADGE_LAYER,
@@ -1613,6 +1676,7 @@ export function orderParkingOverlayStack(map: MapLibreMapType) {
     PARKING_LOTS_OUTLINE_LAYER,
     'parking-fill-outline-glow',
     PRECISE_OUTLINE_LAYER,
+    PRECISE_OUTLINE_UNKNOWN_LAYER,
     PRECISE_OUTLINE_UNDERGROUND_LAYER,
     // Line overlays above polygons
     STREET_PARKING_CASING_LAYER,

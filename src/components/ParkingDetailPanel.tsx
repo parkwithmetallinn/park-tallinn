@@ -21,6 +21,10 @@ import {
 } from './ParkingBottomSheet'
 import type { AlternativeParking } from '../lib/alternatives'
 import type { ActiveParkingSession } from '../lib/parkingSession'
+import type {
+  ProposedParkingType,
+  TypeVoteVerification,
+} from '../lib/typeVotes'
 import type { ParkingSpot } from '../types'
 
 export type { PanelRouteSummary }
@@ -77,19 +81,28 @@ export function ParkingDetailPanel({
     comment: string
     message: string
   }) => void
+  /** Unknown-lot type vote (crowdsource Tasuta/Kellaga/Tasuline). */
+  onTypeVoteVerified?: (payload: {
+    verifiedType: ProposedParkingType | null
+    verified: boolean
+    message: string
+    results: TypeVoteVerification[]
+  }) => void
 }) {
   void _onReportInvalid
   const [crowdOpen, setCrowdOpen] = useState<CrowdOpen>(null)
   const { isFavorite, toggleFavorite } = useFavorites()
   const favorited = isFavorite(spot.id)
+  const { onTypeVoteVerified, ...sheetRest } = rest
 
   return (
     <div data-testid="parking-detail-panel" className="contents">
       <ParkingBottomSheet
         spot={spot}
-        {...rest}
+        {...sheetRest}
         isFavorite={favorited}
         onToggleFavorite={() => toggleFavorite(spot.id)}
+        onTypeVoteVerified={onTypeVoteVerified}
         onMarkFull={
           onMarkFull || onCrowdReportSuccess
             ? () => setCrowdOpen({ initialStatus: 'full' })

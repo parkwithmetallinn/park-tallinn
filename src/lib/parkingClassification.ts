@@ -7,7 +7,17 @@
 /** Unlimited free — Tasuta (strict green). */
 export const PARKING_COLOR_FREE = '#00FF00'
 /** Unclassified / private / unknown — not free public parking. */
-export const PARKING_COLOR_UNKNOWN = '#A0AEC0'
+export const PARKING_COLOR_UNKNOWN = '#9CA3AF'
+/** Legacy gray from older builds — still treated as unknown for paint/filters. */
+export const PARKING_COLOR_UNKNOWN_LEGACY = '#A0AEC0'
+
+export function isUnknownPaintColor(color: unknown): boolean {
+  const c = String(color || '').trim().toUpperCase()
+  return (
+    c === PARKING_COLOR_UNKNOWN.toUpperCase() ||
+    c === PARKING_COLOR_UNKNOWN_LEGACY.toUpperCase()
+  )
+}
 /** Paid parking — Tasuline (strict red). */
 export const PARKING_COLOR_PAID = '#FF0000'
 /** Clock / time-limited free — Kellaga (strict yellow). */
@@ -246,8 +256,9 @@ export function categoryBadgeLabel(
     if (zone && !/^(ZONE|UNKNOWN|PAID)$/i.test(zone)) return zone
     return 'Tasuline'
   }
+  if (isUnclassifiedParking(p)) return 'Hind teadmata'
   if (zone && !/^(ZONE|UNKNOWN)$/i.test(zone)) return zone
-  return 'ZONE'
+  return 'Hind teadmata'
 }
 
 const PAID_LAYERS = new Set([
@@ -367,7 +378,7 @@ export function isUnclassifiedParking(p: {
   }
   const zone = String(p.zone_code || '').toUpperCase()
   const op = String(p.operator || '')
-  if (p.color === PARKING_COLOR_UNKNOWN) return true
+  if (isUnknownPaintColor(p.color)) return true
   if (zone === 'ZONE' || zone === '' || zone === 'UNKNOWN') return true
   if (!op || op === 'Unknown') return true
   // Municipal with no fee / clock / price signal falls into the grey bucket

@@ -71,6 +71,8 @@ import {
 } from './lib/communityReports'
 import { loadFullSpotIds, markSpotFull } from './lib/fullSpots'
 import { useReports } from './hooks/useReports'
+import { useTypeVotes } from './hooks/useTypeVotes'
+import { applyVerifiedTypeToSpot } from './lib/typeVotes'
 import {
   canSubmitReport,
   markReportSubmitted,
@@ -136,7 +138,7 @@ const FILTERS: { id: FilterId; label: string; color?: string }[] = [
   { id: 'timed', label: 'Kellaga', color: PARKING_COLOR_TIMED },
   { id: 'paid', label: 'Tasuline', color: PARKING_COLOR_PAID },
   { id: 'ev', label: 'Elektriautolaadijad', color: EV_COLOR_CYAN },
-  { id: 'other', label: 'Muud / Era', color: PARKING_COLOR_UNKNOWN },
+  { id: 'other', label: 'Teadmata', color: PARKING_COLOR_UNKNOWN },
   { id: 'alerts', label: '⚠️ Hoiatusega', color: '#FF3B30' },
 ]
 
@@ -171,6 +173,10 @@ export default function App() {
     getReport,
     refresh: refreshReports,
   } = useReports()
+  const {
+    byId: typeVoteById,
+    applyLocalResults: applyTypeVoteResults,
+  } = useTypeVotes()
   const fullSpotIds = useMemo(() => {
     const next = new Set<string>([...localFullSpotIds, ...remoteFullIds])
     return next
@@ -429,6 +435,15 @@ export default function App() {
     suppressedIds,
   ])
 
+  /** Apply community-verified types (2 matching votes) onto spots for filters/UI. */
+  const typedSpots = useMemo(() => {
+    if (typeVoteById.size === 0) return allSpots
+    return allSpots.map((s) => {
+      const v = typeVoteById.get(s.id)
+      return v ? applyVerifiedTypeToSpot(s, v.verifiedType) : s
+    })
+  }, [allSpots, typeVoteById])
+
   const visibleSpots = useMemo(() => {
     if (filter === 'ev') {
       // Elektriautolaadijad — map uses dedicated EV GeoJSON; no parking pins
@@ -436,15 +451,15 @@ export default function App() {
     }
     if (filter === 'alerts') {
       // Hoiatusega — only spots with active community isFull reports
-      return allSpots.filter((s) => fullSpotIds.has(s.id))
+      return typedSpots.filter((s) => fullSpotIds.has(s.id))
     }
     if (filter === 'free_street') {
       // Tasuta: unlimited free only — no clock / free_minutes window
-      return allSpots.filter((s) => isUnlimitedFreeParking(s))
+      return typedSpots.filter((s) => isUnlimitedFreeParking(s))
     }
     if (filter === 'timed') {
       // Kellaga: all clock-limited free parking
-      return allSpots.filter((s) => isClockLimitedParking(s))
+      return typedSpots.filter((s) => isClockLimitedParking(s))
     }
     if (filter === 'paid') {
       // All paid operators + municipal paid zones under one "Tasuline" pill
@@ -458,7 +473,7 @@ export default function App() {
         'loading',
         'municipal',
       ])
-      return allSpots.filter((s) => {
+      return typedSpots.filter((s) => {
         if (isUnlimitedFreeParking(s) || isClockLimitedParking(s)) return false
         if (
           isUnclassifiedParking({
@@ -489,7 +504,7 @@ export default function App() {
       })
     }
     if (filter === 'other') {
-      return allSpots.filter((s) =>
+      return typedSpots.filter((s) =>
         isUnclassifiedParking({
           layer: s.layer,
           price_per_hour: s.price_per_hour,
@@ -505,8 +520,15 @@ export default function App() {
         }),
       )
     }
-    return allSpots
-  }, [allSpots, filter, fullSpotIds])
+    return typedSpots
+  }, [typedSpots, filter, fullSpotIds])
+
+  /** Detail panel / selection highlight use community-verified type when present. */
+  const selectedDisplay = useMemo(() => {
+    if (!selected) return null
+    const v = typeVoteById.get(selected.id)
+    return v ? applyVerifiedTypeToSpot(selected, v.verifiedType) : selected
+  }, [selected, typeVoteById])
 
   /** Live search suggestions: my pins + parking + geocode (only fresh results). */
   const searchSuggestions = useMemo((): SearchSuggestion[] => {
@@ -1801,6 +1823,7 @@ export default function App() {
             suppressedFeatureIds={suppressedIds}
             fullSpotIds={fullSpotIds}
             freeSpotIds={freeSpotIds}
+            typeVerifications={typeVoteById}
             infoPanelOpen={Boolean(
               selected ||
                 selectedEvCharger ||
@@ -2244,9 +2267,9 @@ export default function App() {
         />
       ) : null}
 
-      {selected ? (
+      {selectedDisplay ? (
         <ParkingDetailPanel
-          spot={selected}
+          spot={selectedDisplay}
           distanceLabel={selectedDist}
           carNumber={carNumber}
           onCarNumberChange={handleCarNumberChange}
@@ -2292,19 +2315,35 @@ export default function App() {
           onExtendMinutes={(mins) => {
             void addPrepaidMinutes(mins)
           }}
-          onReportInvalid={() => openReportInvalid(selected)}
+          onReportInvalid={() => openReportInvalid(selectedDisplay)}
           alternatives={alternatives}
           noAlternatives={noAlternatives}
-          isFull={fullSpotIds.has(selected.id)}
+          isFull={fullSpotIds.has(selectedDisplay.id)}
           communityReportLabel={formatCommunityReportLabel(
-            getReport(selected.id),
+            getReport(selectedDisplay.id),
           )}
-          reportCooldownActive={!canSubmitReport(selected.id)}
+          reportCooldownActive={!canSubmitReport(selectedDisplay.id)}
           onFindAnother={handleFindAnother}
           onMarkFull={handleMarkFull}
           onCrowdReportSuccess={handleCrowdReportSuccess}
           onWidenRadius={handleWidenRadius}
           onSelectAlternative={handleSelectAlternative}
+          onTypeVoteVerified={(payload) => {
+            if (payload.results.length > 0) {
+              applyTypeVoteResults(payload.results)
+            }
+            setToast({
+              kind: payload.verified ? 'success' : 'info',
+              title: payload.message,
+            })
+            if (payload.verified && payload.verifiedType) {
+              setSelected((prev) =>
+                prev && payload.verifiedType
+                  ? applyVerifiedTypeToSpot(prev, payload.verifiedType)
+                  : prev,
+              )
+            }
+          }}
         />
       ) : null}
 
@@ -2450,7 +2489,7 @@ export default function App() {
             <div className="rounded-2xl border border-moss/20 bg-moss/8 p-3">
               <h4 className="mb-1 text-sm font-bold text-moss">Kaart</h4>
               <p>
-                Roheline = kontrollitud tasuta · hall = määramata avalik · värvilised =
+                Roheline = kontrollitud tasuta · hall = hind teadmata · värvilised =
                 operaatorid. “+” saadab ettepaneku ülevaatusse (GeoJSON ei muutu otse).
               </p>
             </div>

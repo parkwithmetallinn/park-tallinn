@@ -147,7 +147,7 @@ export interface DistrictZone {
 
 /**
  * Top filter chips:
- * free_street | timed | paid | other | ev (Elektriautolaadijad)
+ * free_street | timed | paid | other (Teadmata) | ev (Elektriautolaadijad)
  */
 export type FilterId =
   | 'all'
