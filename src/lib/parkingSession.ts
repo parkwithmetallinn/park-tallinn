@@ -4,10 +4,11 @@
  * The browser never sees n8n credentials. The Vite / Vercel proxy reads
  * N8N_WEBHOOK_URL + N8N_API_KEY (server env) and injects X-N8N-API-KEY.
  *
- * Body:  { action: "start"|"stop"|"status"|"extend"|"notify", carNumber?, zone?, endsAt?, pushSubscription?, email? }
- * - status REQUIRES carNumber (server no longer lists sessions)
- * - extend: { action: "extend", carNumber, endsAt } — endsAt ISO, 1 min–24 h ahead
- * - notify: { action: "notify", carNumber, pushSubscription?, email? } — reminder channel
+ * Body:  { action: "start"|"stop"|"status"|"extend"|"notify", zone?, endsAt?, pushSubscription?, email? }
+ * Privacy: license plate (carNumber) is NEVER included in the outbound fetch body —
+ * it stays only in local device memory / React state.
+ * - extend: { action: "extend", endsAt } — endsAt ISO, 1 min–24 h ahead
+ * - notify: { action: "notify", pushSubscription?, email? } — reminder channel
  * - "ei leitud aktiivset" → NOT_FOUND (normal, never ERROR)
  */
 
@@ -453,29 +454,27 @@ export function toSessionOutcome(
   }
 }
 
+/**
+ * Build the outbound session webhook body.
+ * Privacy (App Store / UGC): never put the license plate on the wire —
+ * carNumber stays only in local device memory / UI state.
+ */
 function buildPayload(body: ParkingSessionRequest): Record<string, unknown> {
   const action = body.action
 
   if (action === 'status') {
-    const plate = body.carNumber?.trim() ?? ''
-    return { action: 'status', carNumber: plate.toUpperCase() }
+    return { action: 'status' }
   }
 
   if (action === 'extend') {
-    const plate = body.carNumber?.trim() ?? ''
     return {
       action: 'extend',
-      carNumber: plate.toUpperCase(),
       endsAt: body.endsAt?.trim() ?? '',
     }
   }
 
   if (action === 'notify') {
-    const plate = body.carNumber?.trim() ?? ''
-    const payload: Record<string, unknown> = {
-      action: 'notify',
-      carNumber: plate.toUpperCase(),
-    }
+    const payload: Record<string, unknown> = { action: 'notify' }
     if (body.pushSubscription && typeof body.pushSubscription === 'object') {
       payload.pushSubscription = body.pushSubscription
     }
@@ -485,8 +484,6 @@ function buildPayload(body: ParkingSessionRequest): Record<string, unknown> {
   }
 
   const payload: Record<string, unknown> = { action }
-  const plate = body.carNumber?.trim()
-  if (plate) payload.carNumber = plate.toUpperCase()
   const zone = body.zone?.trim()
   if (zone) payload.zone = zone
   return payload

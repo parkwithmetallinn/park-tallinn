@@ -7,7 +7,10 @@ import {
   isUnclassifiedParking,
   isUnlimitedFreeParking,
 } from '../lib/parkingClassification'
-import { spotDisplayName } from '../lib/parkingDisplayName'
+import {
+  spotDisplayName,
+  uniquifySpotDisplayNames,
+} from '../lib/parkingDisplayName'
 import type { NearestParkingOption } from '../lib/nearestParking'
 import {
   isPaidParkingSpot,
@@ -161,6 +164,11 @@ export function NearestParkingPanel({
     })
   }, [options, filter])
 
+  const displayNames = useMemo(
+    () => uniquifySpotDisplayNames(filtered.map((o) => o.spot)),
+    [filtered],
+  )
+
   // Keep list card in view when preview comes from a map pill tap
   useEffect(() => {
     if (!selectedPreviewId) return
@@ -293,7 +301,7 @@ export function NearestParkingPanel({
                             <span
                               className={`truncate text-[13px] font-bold ${ink}`}
                             >
-                              {spotDisplayName(spot)}
+                              {displayNames.get(spot.id) ?? spotDisplayName(spot)}
                             </span>
                             <span
                               className={`shrink-0 rounded-md px-1.5 py-0.5 text-[12px] font-bold tracking-wide ${badgeTone(spot, dark)}`}

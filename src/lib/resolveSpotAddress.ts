@@ -314,13 +314,38 @@ async function reversePhoton(
  * Resolve a display address for the bottom-sheet line.
  * Uses cache; cancels via AbortSignal when the user opens another spot.
  */
+/** True when the address came from reverse geocoding (not the spot's own data). */
+export function isApproximateAddressSource(
+  source: ResolvedSpotAddress['source'] | CachedAddressSource | null | undefined,
+): boolean {
+  return source === 'inaks' || source === 'nominatim' || source === 'photon'
+}
+
+type CachedAddressSource = 'source' | 'inaks' | 'nominatim' | 'photon' | 'missing'
+
+/**
+ * Display helper: geocoded addresses are estimates — never show as exact.
+ * Prefix is applied at display time (not stored in cache / raw data).
+ */
+export function formatSpotAddressLine(
+  address: string,
+  source: ResolvedSpotAddress['source'] | CachedAddressSource | null | undefined,
+): string {
+  const a = (address ?? '').trim()
+  if (!a || a === MISSING_ADDRESS) return a
+  if (a.startsWith('Ligikaudu:')) return a
+  if (isApproximateAddressSource(source)) return `Ligikaudu: ${a}`
+  return a
+}
+
 export async function resolveSpotAddress(
   spot: ParkingSpot,
   signal?: AbortSignal,
 ): Promise<ResolvedSpotAddress> {
   const cached = getCachedAddress(spot.id)
   if (cached && cached.source !== 'missing') {
-    return { address: cached.address, source: 'cache' }
+    // Preserve underlying source so UI can mark geocoded lines as approximate
+    return { address: cached.address, source: cached.source }
   }
 
   if (

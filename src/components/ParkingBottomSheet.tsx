@@ -23,6 +23,7 @@ import type { AlternativeParking } from '../lib/alternatives'
 import { formatDistance } from '../lib/geo'
 import { isRealAddress } from '../lib/isRealAddress'
 import {
+  formatSpotAddressLine,
   MISSING_ADDRESS,
   resolveSpotAddress,
 } from '../lib/resolveSpotAddress'
@@ -210,7 +211,9 @@ export function ParkingBottomSheet({
 
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(() => {
     const cached = getCachedAddress(spot.id)
-    if (cached?.address) return cached.address
+    if (cached?.address) {
+      return formatSpotAddressLine(cached.address, cached.source)
+    }
     if (isRealAddress(spot.address, { name: spot.name, code: spot.zone_code })) {
       return spot.address.trim()
     }
@@ -229,7 +232,7 @@ export function ParkingBottomSheet({
     const ac = new AbortController()
     const cached = getCachedAddress(spot.id)
     if (cached?.address) {
-      setResolvedAddress(cached.address)
+      setResolvedAddress(formatSpotAddressLine(cached.address, cached.source))
       setAddressLoading(false)
       return () => ac.abort()
     }
@@ -245,7 +248,7 @@ export function ParkingBottomSheet({
     void resolveSpotAddress(spot, ac.signal)
       .then((r) => {
         if (ac.signal.aborted) return
-        setResolvedAddress(r.address)
+        setResolvedAddress(formatSpotAddressLine(r.address, r.source))
         setAddressLoading(false)
       })
       .catch((err: unknown) => {
