@@ -26,7 +26,10 @@ html,
 body,
 #root {
   height: 100%;
+  height: 100dvh;
+  max-width: 100vw;
   margin: 0;
+  overflow-x: hidden;
 }
 
 body {
@@ -35,6 +38,35 @@ body {
   background: #e8eef2;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+  overflow-x: hidden;
+  /* Notch / home indicator — chrome uses env() on fixed UI */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+  padding: 0; /* layout uses per-element safe-area; keep body flush for map */
+}
+
+/* Touch targets — prefer ≥44px on primary controls */
+button.tap-scale,
+a.tap-scale {
+  min-height: 44px;
+}
+
+/* MapLibre controls — clear of bottom FABs / safe area */
+.maplibre-root .maplibregl-ctrl-bottom-right {
+  bottom: max(5.75rem, calc(env(safe-area-inset-bottom) + 4.5rem));
+  right: max(0.75rem, env(safe-area-inset-right));
+}
+.maplibre-root .maplibregl-ctrl-bottom-left {
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  left: max(0.75rem, env(safe-area-inset-left));
+}
+.maplibre-root .maplibregl-ctrl-top-right {
+  top: max(0.75rem, env(safe-area-inset-top));
+  right: max(0.75rem, env(safe-area-inset-right));
+}
+.maplibre-root .maplibregl-ctrl-top-left {
+  top: max(0.75rem, env(safe-area-inset-top));
+  left: max(0.75rem, env(safe-area-inset-left));
 }
 
 .font-display {

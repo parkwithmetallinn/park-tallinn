@@ -1,6 +1,8 @@
 import { CloudOff, RefreshCw } from 'lucide-react'
 import { drainOfflineQueue } from '../lib/offlineQueue'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
+import { loadActiveSession, loadTimerState } from '../lib/storage'
+import { formatSessionInstant } from '../lib/parkingSession'
 import { Pressable } from './ui/Pressable'
 
 /** Non-blocking offline / queued-actions banner. */
@@ -8,6 +10,16 @@ export function OfflineBanner() {
   const { online, queueLen } = useOnlineStatus()
 
   if (online && queueLen === 0) return null
+
+  const session = !online ? loadActiveSession() : null
+  const timer = !online ? loadTimerState() : null
+  const endsLabel =
+    timer?.mode === 'prepaid' && timer.endsAt
+      ? formatSessionInstant(timer.endsAt)
+      : null
+  const startedLabel = session?.startedAt
+    ? formatSessionInstant(session.startedAt)
+    : null
 
   return (
     <div
@@ -25,19 +37,26 @@ export function OfflineBanner() {
         <CloudOff className="h-4 w-4 shrink-0 opacity-90" />
         <div className="min-w-0 flex-1 leading-snug">
           {online ? (
-            <>
-              Ühendus taastatud — järjekorras {queueLen} toimingut
-            </>
+            <>Ühendus taastatud — järjekorras {queueLen} toimingut</>
           ) : (
             <>
-              Offline · toimingud salvestatakse ja saadetakse hiljem
-              {queueLen > 0 ? ` (${queueLen})` : ''}
+              <p>
+                Oled offline. Parkimise alustamiseks/peatamiseks on vaja
+                internetti.
+              </p>
+              {session ? (
+                <p className="mt-1 text-[11px] font-medium opacity-85">
+                  Sessioon: {session.carNumber} · {session.zone}
+                  {startedLabel ? ` · alates ${startedLabel}` : ''}
+                  {endsLabel ? ` · lõpp ${endsLabel}` : ''}
+                </p>
+              ) : null}
             </>
           )}
         </div>
         {online && queueLen > 0 ? (
           <Pressable
-            className="inline-flex items-center gap-1 rounded-lg bg-amber-500/20 px-2 py-1 text-[11px] font-bold text-amber-950"
+            className="inline-flex min-h-11 items-center gap-1 rounded-lg bg-amber-500/20 px-2 py-1 text-[11px] font-bold text-amber-950"
             onClick={() => void drainOfflineQueue()}
           >
             <RefreshCw className="h-3 w-3" />

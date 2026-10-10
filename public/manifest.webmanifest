@@ -3,10 +3,14 @@
   "short_name": "Parkimine",
   "description": "Tallinna tasuta ja kellaajaga parkimine — avalikud parklad, tänavaäärsed kohad, Pargi ja Reisi.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait-primary",
+  "lang": "et",
+  "dir": "ltr",
   "background_color": "#F2F4F7",
   "theme_color": "#F2F4F7",
-  "lang": "et",
+  "categories": ["navigation", "travel", "utilities"],
   "icons": [
     {
       "src": "/icon-192.png",
@@ -19,6 +23,12 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
     },
     {
       "src": "/favicon.svg",

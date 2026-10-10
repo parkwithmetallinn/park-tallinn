@@ -13,6 +13,7 @@ import {
   canStartParkingSession,
   sessionStartDisabledHint,
 } from '../data/zones'
+import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import type { ParkingSpot } from '../types'
 
 const TIME_EXTEND_OPTIONS = [
@@ -97,6 +98,9 @@ export function ParkingSessionModal({
   const [emailBusy, setEmailBusy] = useState(false)
   const [showIosHint] = useState(() => needsIosHomeScreenHint())
 
+  const { online } = useOnlineStatus()
+  const sessionNetBlocked = !online
+
   const pushOk = isPushSupported() && perm === 'granted'
   const useEmailFallback =
     !isPushSupported() || perm === 'denied' || perm === 'unsupported'
@@ -105,7 +109,8 @@ export function ParkingSessionModal({
     Boolean(selectedSpot) &&
     carNumber.trim().length >= 2 &&
     selectedSpot != null &&
-    canStartParkingSession(selectedSpot)
+    canStartParkingSession(selectedSpot) &&
+    !sessionNetBlocked
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault()
@@ -273,12 +278,17 @@ export function ParkingSessionModal({
           {activeSession ? (
             <button
               type="button"
-              disabled={sessionLoading}
+              disabled={sessionLoading || sessionNetBlocked}
+              title={
+                sessionNetBlocked
+                  ? 'Parkimise peatamiseks on vaja internetti'
+                  : undefined
+              }
               onClick={(e) => {
                 e.preventDefault()
                 onStop()
               }}
-              className="w-full rounded-2xl bg-[#FF3B30] py-3 text-[14px] font-bold text-white disabled:opacity-55"
+              className="tap-scale w-full rounded-2xl bg-[#FF3B30] py-3 text-[14px] font-bold text-white disabled:opacity-55"
             >
               {sessionAction === 'stop' ? 'Lõpetan…' : 'Lõpeta sessioon'}
             </button>
@@ -287,11 +297,16 @@ export function ParkingSessionModal({
               <button
                 type="button"
                 disabled={sessionLoading || !canStart}
+                title={
+                  sessionNetBlocked
+                    ? 'Parkimise alustamiseks on vaja internetti'
+                    : undefined
+                }
                 onClick={(e) => {
                   e.preventDefault()
                   onStart()
                 }}
-                className="w-full rounded-2xl bg-[#34C759] py-3 text-[14px] font-bold text-white disabled:opacity-55"
+                className="tap-scale w-full rounded-2xl bg-[#34C759] py-3 text-[14px] font-bold text-white disabled:opacity-55"
               >
                 {sessionAction === 'start' ? 'Alustan…' : 'Alusta sessiooni'}
               </button>

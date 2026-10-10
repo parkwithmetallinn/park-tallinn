@@ -46,6 +46,7 @@ import { spotDisplayName } from '../lib/parkingDisplayName'
 import { formatDuration } from '../lib/routing'
 import { streetLineColor } from '../map/streetLineTheme'
 import { FindParkingActions } from './FindParkingActions'
+import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { InfoSidePanelShell } from './InfoSidePanel'
 
 export type PanelRouteSummary = {
@@ -170,6 +171,8 @@ export function ParkingBottomSheet({
   isFavorite?: boolean
   onToggleFavorite?: () => void
 }) {
+  const { online } = useOnlineStatus()
+  const sessionNetBlocked = !online
   const links = navLinks(spot.lat, spot.lng)
   const color =
     spot.line || spot.featureType === 'on-street-line'
@@ -736,7 +739,12 @@ export function ParkingBottomSheet({
           {hasActive ? (
             <button
               type="button"
-              disabled={sessionLoading}
+              disabled={sessionLoading || sessionNetBlocked}
+              title={
+                sessionNetBlocked
+                  ? 'Parkimise peatamiseks on vaja internetti'
+                  : undefined
+              }
               onClick={(e) => {
                 blockNav(e)
                 onStopSession()
@@ -751,7 +759,15 @@ export function ParkingBottomSheet({
               <button
                 type="button"
                 disabled={
-                  sessionLoading || !carOk || !canStartParkingSession(spot)
+                  sessionLoading ||
+                  sessionNetBlocked ||
+                  !carOk ||
+                  !canStartParkingSession(spot)
+                }
+                title={
+                  sessionNetBlocked
+                    ? 'Parkimise alustamiseks on vaja internetti'
+                    : undefined
                 }
                 onClick={(e) => {
                   blockNav(e)

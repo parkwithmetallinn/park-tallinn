@@ -31,6 +31,7 @@ import { ParkingDetailPanel } from './components/ParkingDetailPanel'
 import type { CrowdStatusType } from './components/CrowdReportModal'
 import { ParkingSessionModal } from './components/ParkingSessionModal'
 import { OfflineBanner } from './components/OfflineBanner'
+import { PwaBanners } from './components/PwaBanners'
 import { ReportModal, type ReportModalContext } from './components/ReportModal'
 import {
   SearchDropdown,
@@ -1830,6 +1831,7 @@ export default function App() {
       </div>
 
       <OfflineBanner />
+      <PwaBanners />
 
       {/* Top search + filter chips — z-20 (below detail drawer z-30) */}
       <div
