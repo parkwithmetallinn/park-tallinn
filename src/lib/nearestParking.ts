@@ -330,13 +330,17 @@ export function collectNearestAround(
     .slice(0, Math.max(limit, 12))
 }
 
-/** Effective €/h for “odavaim” comparisons (unlimited free = 0). */
+/**
+ * Effective €/h for “Odavaim / Tasuta” ranking.
+ * Unlimited free = 0. Clock-limited free window = near-zero (ignore the
+ * post-window zone rate — short stays are free with a disc). Paid = €/h.
+ */
 export function effectiveHourlyRate(spot: ParkingSpot): number {
   if (isUnlimitedFreeParking(spot)) return 0
   if (isUnclassifiedParking(spot)) return Number.POSITIVE_INFINITY
   if (isClockLimitedParking(spot)) {
-    // Limited free window — cheaper than typical paid, not fully free
-    return spot.price_per_hour > 0 ? spot.price_per_hour : 0.01
+    // Free window beats any paid €/h for “odavaim” comparisons
+    return 0.01
   }
   if (spot.price_per_hour > 0) return spot.price_per_hour
   if (isPaidParkingSpot(spot)) return 99
@@ -352,9 +356,9 @@ export function sortByProximity(
 
 /**
  * Odavaim / Tasuta:
- * - If any fully free spots exist → only those
- * - Else → only spots at the absolute lowest effective €/h
- * Always sorted by proximity (closest first).
+ * - Completely free spots when any exist
+ * - Else spots at the absolute lowest effective rate (clock window beats paid)
+ * Always sorted by walk proximity (closest first).
  */
 export function filterOdavaimTasuta(
   options: NearestParkingOption[],
@@ -362,7 +366,11 @@ export function filterOdavaimTasuta(
   const free = options.filter((o) => isUnlimitedFreeParking(o.spot))
   if (free.length > 0) return sortByProximity(free)
 
-  const priced = options.filter((o) => !isUnclassifiedParking(o.spot))
+  const priced = options.filter(
+    (o) =>
+      !isUnclassifiedParking(o.spot) &&
+      Number.isFinite(effectiveHourlyRate(o.spot)),
+  )
   if (priced.length === 0) return []
 
   let minRate = Number.POSITIVE_INFINITY
