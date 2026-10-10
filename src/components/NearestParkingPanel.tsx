@@ -14,6 +14,7 @@ import {
 import type { NearestParkingOption } from '../lib/nearestParking'
 import {
   filterOdavaimTasuta,
+  isKellagaParkingSpot,
   isPaidParkingSpot,
   sortByProximity,
 } from '../lib/nearestParking'
@@ -118,23 +119,21 @@ function applyPanelFilter(
   filter: PanelFilter,
 ): NearestParkingOption[] {
   if (filter === 'free') {
+    // Already proximity-sorted inside filterOdavaimTasuta
     return filterOdavaimTasuta(options)
   }
   if (filter === 'clock') {
+    // Tallinn Kesklinn/Vanalinn/… (15 min free) + any other clock window
     return sortByProximity(
-      options.filter((o) => isClockLimitedParking(o.spot)),
+      options.filter((o) => isKellagaParkingSpot(o.spot)),
     )
   }
   if (filter === 'paid') {
+    // Includes Tallinn paid zones even when they also have a free clock window
     return sortByProximity(options.filter((o) => isPaidParkingSpot(o.spot)))
   }
-  // Kõik — known spots first, then by proximity
-  return [...options].sort((a, b) => {
-    const au = isUnclassifiedParking(a.spot) ? 1 : 0
-    const bu = isUnclassifiedParking(b.spot) ? 1 : 0
-    if (au !== bu) return au - bu
-    return a.distanceM - b.distanceM
-  })
+  // Kõik — strictly closest first
+  return sortByProximity(options)
 }
 
 export function NearestParkingPanel({

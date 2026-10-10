@@ -4,7 +4,9 @@
 
 import { distanceMeters } from './geo'
 import {
+  hasExplicitPaidZoneCode,
   isClockLimitedParking,
+  isTallinnClockZone,
   isUnclassifiedParking,
   isUnlimitedFreeParking,
 } from './parkingClassification'
@@ -69,9 +71,25 @@ export function parkingRulesKey(spot: ParkingSpot): string {
   return `paid:${price.toFixed(2)}:${zone}`
 }
 
+/**
+ * Tasuline — priced / municipal paid zones.
+ * Tallinn zones (Kesklinn, Vanalinn, …) stay included even when they also
+ * offer a free clock window (those also appear under Kellaga).
+ */
 export function isPaidParkingSpot(spot: ParkingSpot): boolean {
-  if (isUnlimitedFreeParking(spot) || isClockLimitedParking(spot)) return false
-  if (spot.price_per_hour > 0 || spot.badge === 'PAID') return true
+  if (isUnlimitedFreeParking(spot)) return false
+  // Pure clock-only (no price, not a Tallinn paid zone) → Kellaga only
+  const priced =
+    Number(spot.price_per_hour) > 0 ||
+    spot.badge === 'PAID' ||
+    isTallinnClockZone(spot.zone_code) ||
+    isTallinnClockZone(spot.badge) ||
+    hasExplicitPaidZoneCode(spot.zone_code)
+  if (priced) return true
+  if (isClockLimitedParking(spot) && Number(spot.price_per_hour) <= 0) {
+    // e.g. layer=timed / KELL curb with no hourly rate
+    return false
+  }
   return [
     'europark',
     'snabb',
@@ -80,7 +98,13 @@ export function isPaidParkingSpot(spot: ParkingSpot): boolean {
     'parkit',
     'municipal',
     'park_ride',
+    'loading',
   ].includes(spot.layer)
+}
+
+/** Kellaga — any free-clock window (incl. Tallinn 15 min + paid after). */
+export function isKellagaParkingSpot(spot: ParkingSpot): boolean {
+  return isClockLimitedParking(spot)
 }
 
 /** Street label for aggregated cards, e.g. "Odra tn". */
@@ -356,8 +380,8 @@ export function sortByProximity(
 
 /**
  * Odavaim / Tasuta:
- * - Completely free spots when any exist
- * - Else spots at the absolute lowest effective rate (clock window beats paid)
+ * - Completely free (unlimited) spots when any exist
+ * - Else spots at the absolute lowest effective rate
  * Always sorted by walk proximity (closest first).
  */
 export function filterOdavaimTasuta(
@@ -366,19 +390,23 @@ export function filterOdavaimTasuta(
   const free = options.filter((o) => isUnlimitedFreeParking(o.spot))
   if (free.length > 0) return sortByProximity(free)
 
-  const priced = options.filter(
-    (o) =>
-      !isUnclassifiedParking(o.spot) &&
-      Number.isFinite(effectiveHourlyRate(o.spot)),
-  )
-  if (priced.length === 0) return []
+  const priced = options.filter((o) => {
+    if (isUnclassifiedParking(o.spot)) return false
+    const r = effectiveHourlyRate(o.spot)
+    return Number.isFinite(r)
+  })
+  if (priced.length === 0) {
+    // Last resort: any clock window still beats empty list
+    const clock = options.filter((o) => isKellagaParkingSpot(o.spot))
+    return sortByProximity(clock)
+  }
 
   let minRate = Number.POSITIVE_INFINITY
   for (const o of priced) {
     const r = effectiveHourlyRate(o.spot)
     if (r < minRate) minRate = r
   }
-  if (!Number.isFinite(minRate)) return []
+  if (!Number.isFinite(minRate)) return sortByProximity(priced)
 
   return sortByProximity(
     priced.filter((o) => effectiveHourlyRate(o.spot) === minRate),

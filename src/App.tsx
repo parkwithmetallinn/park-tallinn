@@ -27,7 +27,10 @@ import {
   parkingMapPillTone,
   type NearestParkingOption,
 } from './components/NearestParkingPanel'
-import { collectNearestAround } from './lib/nearestParking'
+import {
+  collectNearestAround,
+  isPaidParkingSpot,
+} from './lib/nearestParking'
 import { FavoritesPanel } from './components/FavoritesPanel'
 import { ParkingDetailPanel } from './components/ParkingDetailPanel'
 import type { CrowdStatusType } from './components/CrowdReportModal'
@@ -457,46 +460,10 @@ export default function App() {
       return typedSpots.filter((s) => isClockLimitedParking(s))
     }
     if (filter === 'paid') {
-      // All paid operators + municipal paid zones under one "Tasuline" pill
-      const paidLayers = new Set([
-        'europark',
-        'snabb',
-        'citypark',
-        'uhisteenused',
-        'parkit',
-        'park_ride',
-        'loading',
-        'municipal',
-      ])
-      return typedSpots.filter((s) => {
-        if (isUnlimitedFreeParking(s) || isClockLimitedParking(s)) return false
-        if (
-          isUnclassifiedParking({
-            layer: s.layer,
-            price_per_hour: s.price_per_hour,
-            free_minutes: s.free_minutes,
-            zone_code: s.zone_code,
-            operator: s.operator,
-            verified_free: s.layer === 'free_street',
-            type: s.type,
-            timeLimit: s.timeLimit,
-            name: s.name,
-            desc: s.desc,
-            badge: s.badge,
-          })
-        ) {
-          return false
-        }
-        if (s.layer === 'free_street' || s.layer === 'timed' || s.layer === 'ev') {
-          return false
-        }
-        if (paidLayers.has(s.layer)) {
-          // Municipal only when priced (or has a paid zone code)
-          if (s.layer === 'municipal') return s.price_per_hour > 0
-          return true
-        }
-        return s.price_per_hour > 0
-      })
+      // Tasuline — priced lots + Tallinn paid zones (overlap with Kellaga OK)
+      return typedSpots.filter(
+        (s) => s.layer !== 'ev' && isPaidParkingSpot(s),
+      )
     }
     if (filter === 'other') {
       return typedSpots.filter((s) =>

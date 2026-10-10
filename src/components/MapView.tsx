@@ -1470,38 +1470,53 @@ export const MapView = memo(forwardRef<
                         }),
                       )
                     : layers === 'paid'
-                      ? result.spots.filter(
-                          (s) =>
-                            s.layer !== 'free_street' &&
-                            s.layer !== 'timed' &&
-                            s.layer !== 'ev' &&
-                            !isClockLimitedParking(s) &&
-                            !isUnclassifiedParking({
+                      ? result.spots.filter((s) => {
+                          if (
+                            s.layer === 'free_street' ||
+                            s.layer === 'ev' ||
+                            isUnlimitedFreeParking(s)
+                          ) {
+                            return false
+                          }
+                          if (
+                            isUnclassifiedParking({
                               layer: s.layer,
                               price_per_hour: s.price_per_hour,
                               free_minutes: s.free_minutes,
                               zone_code: s.zone_code,
                               operator: s.operator,
-                              // free_street already excluded above
                               verified_free: false,
                               type: s.type,
                               timeLimit: s.timeLimit,
                               name: s.name,
                               desc: s.desc,
                               badge: s.badge,
-                            }) &&
-                            (s.price_per_hour > 0 ||
-                              [
-                                'europark',
-                                'snabb',
-                                'citypark',
-                                'uhisteenused',
-                                'parkit',
-                                'park_ride',
-                                'loading',
-                                'municipal',
-                              ].includes(s.layer)),
-                        )
+                            })
+                          ) {
+                            return false
+                          }
+                          // Tallinn paid zones included even with 15 min clock
+                          if (s.price_per_hour > 0 || s.badge === 'PAID') {
+                            return true
+                          }
+                          if (
+                            /^(KESKLINN|VANALINN|S[UÜ]DALINN|PIRITA)$/i.test(
+                              String(s.zone_code || ''),
+                            )
+                          ) {
+                            return true
+                          }
+                          return [
+                            'europark',
+                            'snabb',
+                            'citypark',
+                            'uhisteenused',
+                            'parkit',
+                            'park_ride',
+                            'loading',
+                            'municipal',
+                          ].includes(s.layer)
+                        })
                       : Array.isArray(layers)
                         ? result.spots.filter((s) => layers.includes(s.layer))
                         : result.spots
