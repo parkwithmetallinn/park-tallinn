@@ -1,6 +1,9 @@
 /**
  * One-tap "Täis" community report helper.
  * Wraps /api/reports with a hard 10s timeout.
+ *
+ * Cooldown is applied on success OR timeout so a late server response + retry
+ * cannot count as two separate crowd votes within 5 minutes.
  */
 
 import { apiUrl } from './apiBase'
@@ -61,11 +64,18 @@ export async function submitFullReport(parkingId: string): Promise<{
   } catch (err) {
     const aborted =
       (err as Error)?.name === 'AbortError' || ac.signal.aborted
+    if (aborted) {
+      // Request may still succeed on the server — lock retries for 5 minutes.
+      markReportSubmitted(id)
+      return {
+        ok: false,
+        message: 'Aegus — sama teavitust ei saadeta uuesti 5 minutit',
+        cooldown: true,
+      }
+    }
     return {
       ok: false,
-      message: aborted
-        ? 'Aegus — proovi uuesti'
-        : 'Ühendus ebaõnnestus — proovi uuesti',
+      message: 'Ühendus ebaõnnestus — proovi uuesti',
       cooldown: false,
     }
   } finally {

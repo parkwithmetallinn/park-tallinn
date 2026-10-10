@@ -33,8 +33,6 @@ export function ParkingDetailPanel({
 }: {
   spot: ParkingSpot
   distanceLabel?: string | null
-  carNumber: string
-  onCarNumberChange: (value: string) => void
   sessionLoading?: boolean
   sessionAction?: 'start' | 'stop' | 'status' | 'extend' | null
   activeSession?: ActiveParkingSession | null

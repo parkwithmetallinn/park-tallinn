@@ -59,12 +59,7 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
  * and POST the subscription via the parking `notify` action.
  * Call only from a user gesture (e.g. "Luba teavitused").
  */
-export async function enablePush(carNumber: string): Promise<SessionOutcome> {
-  const plate = carNumber.trim()
-  if (!plate) {
-    return { kind: 'ERROR', message: 'Sisesta auto number' }
-  }
-
+export async function enablePush(_unused?: string): Promise<SessionOutcome> {
   if (!isPushSupported()) {
     return {
       kind: 'ERROR',
@@ -110,25 +105,22 @@ export async function enablePush(carNumber: string): Promise<SessionOutcome> {
 
   return sendParkingSession({
     action: 'notify',
-    carNumber: plate,
     pushSubscription,
   })
 }
 
 /** Register email fallback reminder via the `notify` action. */
 export async function enableEmailNotify(
-  carNumber: string,
-  email: string,
+  emailOrCarNumber: string,
+  emailMaybe?: string,
 ): Promise<SessionOutcome> {
-  const plate = carNumber.trim()
-  const addr = email.trim()
-  if (!plate) return { kind: 'ERROR', message: 'Sisesta auto number' }
+  // Back-compat: enableEmailNotify(email) or enableEmailNotify(_ignored, email)
+  const addr = (emailMaybe ?? emailOrCarNumber).trim()
   if (!addr || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr)) {
     return { kind: 'ERROR', message: 'Sisesta kehtiv e-posti aadress' }
   }
   return sendParkingSession({
     action: 'notify',
-    carNumber: plate,
     email: addr,
   })
 }

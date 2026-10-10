@@ -1,6 +1,7 @@
 /**
  * Human-facing parking lot titles — never show generic OSM structure words
  * like "Surface" / "Zone" as the primary name.
+ * Never expose internal spot IDs (spot-102, OSM way ids) in the UI.
  */
 
 import type { ParkingLayerKey, ParkingSpot } from '../types'
@@ -13,6 +14,8 @@ const GENERIC_PREFIX_RE =
 
 /** Names that are too generic to distinguish spots in a list. */
 const WEAK_AREA_ONLY_RE = /^parkla\s*[-–,]\s*(tallinn|pärnu|parnu|tartu|narva)$/i
+
+const CITY_ONLY_RE = /^(tallinn|pärnu|parnu|tartu|narva)$/i
 
 export function isGenericParkingName(name: string | null | undefined): boolean {
   const n = (name ?? '').trim()
@@ -30,17 +33,28 @@ function cleanZoneCode(zone: string | null | undefined): string {
   return z
 }
 
-function shortSpotId(id: string | null | undefined): string {
-  const raw = (id ?? '').trim()
-  if (!raw) return ''
-  const tail = raw.replace(/^.*[/:#_-]/, '')
-  return (tail || raw).slice(-6)
+/** "Akadeemia tee 23, Mustamäe, Tallinn" → "Mustamäe" */
+function districtFromAddress(address: string | null | undefined): string {
+  const a = (address ?? '').trim()
+  if (!a) return ''
+  const parts = a.split(',').map((p) => p.trim()).filter(Boolean)
+  for (let i = 1; i < parts.length; i++) {
+    const d = parts[i]
+      .replace(/\s*linnaosa$/i, '')
+      .replace(/^Kesklinna$/i, 'Kesklinn')
+      .trim()
+    if (d && !CITY_ONLY_RE.test(d) && d.length >= 3) return d
+  }
+  return ''
 }
 
-function withDisambiguator(base: string, zone: string, id?: string | null): string {
+function withHumanDisambiguator(
+  base: string,
+  zone: string,
+  district: string,
+): string {
   if (zone && !base.includes(zone)) return `${base} (${zone})`
-  const short = shortSpotId(id)
-  if (short && !base.includes(short)) return `${base} · ${short}`
+  if (district && !base.includes(district)) return `${base} (${district})`
   return base
 }
 
@@ -77,19 +91,19 @@ function streetFromAddress(address: string | null | undefined): string {
   if (!a) return ''
   // "Kursi 3, Tallinn" → "Kursi 3"
   const first = a.split(',')[0]?.trim() || a
-  // Reject if it's just a city name
-  if (/^(tallinn|pärnu|parnu|tartu|narva)$/i.test(first)) return ''
+  if (CITY_ONLY_RE.test(first)) return ''
   return first
 }
 
 /**
- * Title fallback chain (distinct names when data exists):
+ * Title fallback chain (human-readable only):
  * 1. Real `name`
- * 2. Street (+ house) + "parkla"  e.g. "Akadeemia tee 23 parkla"
- * 3. Street + parkla + zone/id when no house number (avoids duplicate list titles)
+ * 2. Street (+ house) + "parkla"
+ * 3. Street + parkla + zone / linnaosa
  * 4. Zone code alone (EP264)
- * 5. operator + zone
- * 6. "Parkla, <street or zone>" — never invent streets
+ * 5. District + zone  e.g. "Kesklinn (EP264)"
+ * 6. Operator + zone
+ * Never invent streets; never show internal spot IDs.
  */
 export function parkingDisplayName(input: ParkingNameInput): string {
   const rawName = (input.name ?? '').trim()
@@ -99,35 +113,32 @@ export function parkingDisplayName(input: ParkingNameInput): string {
   const street = (input['addr:street'] ?? '').trim()
   const hn = (input['addr:housenumber'] ?? '').trim()
   const fromAddr = streetFromAddress(input.address)
+  const district = districtFromAddress(input.address)
 
   if (street && hn) return `${street} ${hn} parkla`
-  if (street) return withDisambiguator(`${street} parkla`, zone, input.id)
+  if (street) return withHumanDisambiguator(`${street} parkla`, zone, district)
 
-  if (fromAddr && !/^(tallinn|pärnu|parnu)$/i.test(fromAddr)) {
-    // Prefer "Akadeemia tee parkla" over bare address when no house number
+  if (fromAddr && !CITY_ONLY_RE.test(fromAddr)) {
     const streetOnly = fromAddr.replace(/\s+\d+[A-Za-z]?$/, '').trim()
     const hasHouse = streetOnly.length >= 3 && streetOnly !== fromAddr
-    if (hasHouse) {
-      // fromAddr already includes house number
-      return `${fromAddr} parkla`
-    }
+    if (hasHouse) return `${fromAddr} parkla`
     if (streetOnly && streetOnly.length >= 3) {
-      return withDisambiguator(`${streetOnly} parkla`, zone, input.id)
+      return withHumanDisambiguator(`${streetOnly} parkla`, zone, district)
     }
-    return withDisambiguator(`${fromAddr} parkla`, zone, input.id)
+    return withHumanDisambiguator(`${fromAddr} parkla`, zone, district)
   }
 
+  if (zone && district) return `${district} (${zone})`
   if (zone) return zone
+  if (district) return `${district} parkla`
 
   const op = operatorLabel(input.operator, input.layer)
   if (op && op !== 'Tallinna Linn') {
-    return withDisambiguator(`${op} parkla`, zone, input.id)
+    return withHumanDisambiguator(`${op} parkla`, zone, district)
   }
 
-  // Last resort — do not invent a street
-  if (fromAddr) return withDisambiguator(`Parkla, ${fromAddr}`, zone, input.id)
-  const short = shortSpotId(input.id)
-  return short ? `Parkla · ${short}` : 'Parkla'
+  if (fromAddr) return withHumanDisambiguator(`Parkla, ${fromAddr}`, zone, district)
+  return 'Parkla'
 }
 
 export type ParkingNameInput = {
@@ -137,9 +148,7 @@ export type ParkingNameInput = {
   zone?: string | null
   address?: string | null
   layer?: ParkingLayerKey | string | null
-  /** Spot id — used to uniquify street-only names */
   id?: string | null
-  /** Raw OSM-style fields when building from GeoJSON props */
   'addr:street'?: string | null
   'addr:housenumber'?: string | null
 }
@@ -157,8 +166,8 @@ export function spotDisplayName(spot: ParkingSpot): string {
 }
 
 /**
- * Ensure every spot in a list gets a unique display name.
- * Appends zone code or a short id when collisions remain.
+ * Ensure every spot in a list gets a unique human-readable display name.
+ * Prefer zone code / linnaosa — never append internal spot IDs.
  */
 export function uniquifySpotDisplayNames(
   spots: readonly ParkingSpot[],
@@ -167,7 +176,8 @@ export function uniquifySpotDisplayNames(
     id: s.id,
     name: spotDisplayName(s),
     zone: cleanZoneCode(s.zone_code),
-    short: shortSpotId(s.id),
+    district: districtFromAddress(s.address),
+    street: streetFromAddress(s.address),
   }))
 
   const counts = new Map<string, number>()
@@ -183,14 +193,20 @@ export function uniquifySpotDisplayNames(
     if ((counts.get(row.name) ?? 0) > 1) {
       if (row.zone && !name.includes(row.zone)) {
         name = `${row.name} (${row.zone})`
-      } else if (row.short) {
-        name = `${row.name} · ${row.short}`
+      } else if (row.district && !name.includes(row.district)) {
+        name = `${row.name} (${row.district})`
+      } else if (row.street && !name.includes(row.street)) {
+        name = `${row.street} parkla${row.zone ? ` (${row.zone})` : ''}`
       }
     }
     let final = name
     let n = 2
     while (used.has(final)) {
-      final = `${name} · ${n++}`
+      // Human ordinal only — never OSM / spot ids
+      final = row.zone
+        ? `${name.replace(/\s*\([^)]*\)\s*$/, '')} (${row.zone} · ${n})`
+        : `${name} · ${n}`
+      n += 1
     }
     used.add(final)
     out.set(row.id, final)

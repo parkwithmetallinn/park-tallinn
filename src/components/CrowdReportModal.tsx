@@ -113,9 +113,13 @@ export function CrowdReportModal({
     } catch (err) {
       const aborted =
         (err as Error)?.name === 'AbortError' || ac.signal.aborted
+      if (aborted) {
+        // Request may still land on the server — block retries for 5 minutes.
+        markReportSubmitted(spot.id)
+      }
       setError(
         aborted
-          ? 'Aegus — proovi uuesti'
+          ? 'Aegus — sama teavitust ei saadeta uuesti 5 minutit'
           : 'Ühendus ebaõnnestus — proovi uuesti',
       )
     } finally {

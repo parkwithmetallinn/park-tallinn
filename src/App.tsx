@@ -266,8 +266,6 @@ export default function App() {
   })
 
   const {
-    carNumber,
-    handleCarNumberChange,
     timerSeconds,
     timerMode,
     timerLabel,
@@ -2227,8 +2225,6 @@ export default function App() {
       {timerOpen && !selected && !selectedEvCharger ? (
         <ParkingSessionModal
           dark={dark}
-          carNumber={carNumber}
-          onCarNumberChange={handleCarNumberChange}
           timerSeconds={timerSeconds}
           timerMode={timerMode}
           timerLabel={timerLabel}
@@ -2295,8 +2291,6 @@ export default function App() {
         <ParkingDetailPanel
           spot={selectedDisplay}
           distanceLabel={selectedDist}
-          carNumber={carNumber}
-          onCarNumberChange={handleCarNumberChange}
           sessionLoading={sessionLoading}
           sessionAction={sessionAction}
           activeSession={activeSession}

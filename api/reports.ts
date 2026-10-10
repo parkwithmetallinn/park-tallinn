@@ -16,7 +16,8 @@ const MIN_FULL_VOTES = 2
 const WINDOW_MS = 45 * 60 * 1000
 const RATE_WINDOW_MS = 2 * 60 * 1000
 const RATE_MAX = 3
-const DUP_WINDOW_MS = 10 * 60 * 1000
+/** Same user + same lot + same status — reject for 5 min (matches client cooldown). */
+const DUP_WINDOW_MS = 5 * 60 * 1000
 const COMMENT_MAX = 200
 const GET_LIMIT = 2000
 const TABLE = 'parking_reports'

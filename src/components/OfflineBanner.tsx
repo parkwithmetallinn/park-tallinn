@@ -46,7 +46,7 @@ export function OfflineBanner() {
               </p>
               {session ? (
                 <p className="mt-1 text-[12px] font-medium opacity-85">
-                  Sessioon: {session.carNumber} · {session.zone}
+                  Sessioon: {session.spotName || 'Parkla'} · {session.zone}
                   {startedLabel ? ` · alates ${startedLabel}` : ''}
                   {endsLabel ? ` · lõpp ${endsLabel}` : ''}
                 </p>

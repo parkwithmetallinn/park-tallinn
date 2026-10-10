@@ -845,11 +845,16 @@ export function activeSessionFromDetails(
   details: ParkingSessionDetails,
   fallback?: Partial<ActiveParkingSession>,
 ): ActiveParkingSession | null {
-  const carNumber = String(details.carNumber ?? fallback?.carNumber ?? '').trim()
+  // Plate is never collected from the user — keep a local marker only.
+  const carNumber = String(
+    fallback?.carNumber || details.carNumber || 'KOHALIK',
+  )
+    .trim()
+    .toUpperCase()
   const zone = String(details.zone ?? fallback?.zone ?? '').trim()
-  if (!carNumber || !zone) return null
+  if (!zone) return null
   return {
-    carNumber: carNumber.toUpperCase(),
+    carNumber,
     zone,
     spotName: fallback?.spotName,
     startedAt: sessionStartIso(details) ?? fallback?.startedAt,

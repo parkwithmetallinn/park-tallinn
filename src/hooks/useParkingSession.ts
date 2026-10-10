@@ -24,14 +24,15 @@ import {
 import { parkingQueryKeys, queryClient } from '../lib/queryClient'
 import {
   loadActiveSession,
-  loadCarNumber,
   loadTimerState,
   prepaidSecondsRemaining,
   saveActiveSession,
-  saveCarNumber,
   saveTimerState,
   type TimerMode,
 } from '../lib/storage'
+
+/** Internal marker stored on ActiveParkingSession — never a user license plate. */
+const LOCAL_SESSION_ID = 'KOHALIK'
 import { canStartParkingSession } from '../data/zones'
 import { fetchPriceQuote } from '../lib/priceQuoteApi'
 import type { ParkingSpot } from '../types'
@@ -65,7 +66,6 @@ export function useParkingSession(selected: ParkingSpot | null) {
   const [timerLabel, setTimerLabel] = useState(DEFAULT_TIMER_LABEL)
   const [timerOpen, setTimerOpen] = useState(false)
   const [endsAt, setEndsAt] = useState<string | null>(null)
-  const [carNumber, setCarNumber] = useState('')
   const [sessionLoading, setSessionLoading] = useState(false)
   const [sessionAction, setSessionAction] = useState<SessionAction>(null)
   const [activeSession, setActiveSession] = useState<ActiveParkingSession | null>(
@@ -253,19 +253,15 @@ export function useParkingSession(selected: ParkingSpot | null) {
       persistActive(synced)
       const rateLabel = formatHourlyRate(synced.hourlyRate)
       setTimerLabel(
-        `Sessioon: ${synced.spotName ?? synced.zone} · ${synced.carNumber}${
+        `Sessioon: ${synced.spotName ?? synced.zone}${
           rateLabel ? ` · ${rateLabel}` : ''
         }`,
       )
       setTimerOpen(true)
-      if (synced.carNumber !== carNumber.trim().toUpperCase()) {
-        setCarNumber(synced.carNumber)
-        saveCarNumber(synced.carNumber)
-      }
       setConnectionNotice(null)
       return synced
     },
-    [carNumber, persistActive],
+    [persistActive],
   )
 
   /**
@@ -275,7 +271,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
   const syncLocalSessionFromServer = useCallback(
     async (opts?: { force?: boolean }) => {
       const local = loadActiveSession()
-      if (!local?.carNumber) return
+      if (!local?.zone) return
 
       const now = Date.now()
       if (
@@ -288,14 +284,16 @@ export function useParkingSession(selected: ParkingSpot | null) {
       lastSyncAtRef.current = now
 
       try {
-        const outcome = await checkParkingStatus({ carNumber: local.carNumber })
+        const outcome = await checkParkingStatus({
+          carNumber: LOCAL_SESSION_ID,
+        })
 
         if (outcome.kind === 'ACTIVE') {
           const synced = applyActiveDetails(outcome.details, local)
           if (synced && timerMode === 'elapsed') {
             startElapsedTimer(
               synced.startedAt || local.startedAt,
-              `Sessioon: ${synced.spotName ?? synced.zone} · ${synced.carNumber}${
+              `Sessioon: ${synced.spotName ?? synced.zone}${
                 formatHourlyRate(synced.hourlyRate)
                   ? ` · ${formatHourlyRate(synced.hourlyRate)}`
                   : ''
@@ -340,7 +338,6 @@ export function useParkingSession(selected: ParkingSpot | null) {
 
   // Boot: restore local session + timer; then sync with server
   useEffect(() => {
-    setCarNumber(loadCarNumber())
     const saved = loadActiveSession()
     const timer = loadTimerState()
 
@@ -354,14 +351,14 @@ export function useParkingSession(selected: ParkingSpot | null) {
         setTimerRunning(remaining > 0)
         setTimerLabel(
           remaining > 0
-            ? `Ettemaks · ${saved.carNumber}`
+            ? `Ettemaks · ${saved.spotName ?? saved.zone}`
             : 'Aeg läbi! Liiguta autot või pikenda',
         )
       } else {
         persistTimer('elapsed', null)
         setTimerRunning(true)
         setTimerLabel(
-          `Sessioon: ${saved.spotName ?? saved.zone} · ${saved.carNumber}`,
+          `Sessioon: ${saved.spotName ?? saved.zone}`,
         )
         if (saved.startedAt) {
           const startMs = Date.parse(saved.startedAt)
@@ -464,19 +461,9 @@ export function useParkingSession(selected: ParkingSpot | null) {
     }
   }, [activeSession, refreshPriceEstimate])
 
-  const handleCarNumberChange = useCallback((value: string) => {
-    setCarNumber(value)
-    saveCarNumber(value)
-  }, [])
-
   const beginParkingSession = useCallback(async () => {
     if (!selected) return
     const zone = selected.zone_code
-    const plate = carNumber.trim()
-    if (!plate) {
-      showSessionFeedback('error', 'Sisesta auto number')
-      return
-    }
     if (!canStartParkingSession(selected)) {
       showSessionFeedback(
         'info',
@@ -493,7 +480,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
       showSessionFeedback(
         'error',
         'Sessioon juba käib',
-        `Lõpeta enne ${activeSession.carNumber} · ${activeSession.zone}`,
+        `Lõpeta enne · ${activeSession.zone}`,
       )
       return
     }
@@ -503,8 +490,9 @@ export function useParkingSession(selected: ParkingSpot | null) {
     const hourlyRate =
       selected.price_per_hour > 0 ? selected.price_per_hour : undefined
     const rateLabel = formatHourlyRate(hourlyRate)
+    const spotLabel = selected.name || zone
     persistActive({
-      carNumber: plate.toUpperCase(),
+      carNumber: LOCAL_SESSION_ID,
       zone,
       spotName: selected.name,
       startedAt: optimisticStartedAt,
@@ -513,17 +501,17 @@ export function useParkingSession(selected: ParkingSpot | null) {
     })
     startElapsedTimer(
       optimisticStartedAt,
-      `Sessioon: ${selected.name} · ${plate.toUpperCase()}${
-        rateLabel ? ` · ${rateLabel}` : ''
-      }`,
+      `Sessioon: ${spotLabel}${rateLabel ? ` · ${rateLabel}` : ''}`,
     )
     setSessionAction('start')
     setSessionLoading(true)
-    // Loading only — success toast after server ACTIVE
-    showSessionFeedback('loading', 'Alustan parkimist…', `${plate} · ${zone}`)
+    showSessionFeedback('loading', 'Alustan parkimist…', zone)
 
     if (!isBrowserOnline()) {
-      enqueueOfflineAction('session_start', { carNumber: plate, zone })
+      enqueueOfflineAction('session_start', {
+        carNumber: LOCAL_SESSION_ID,
+        zone,
+      })
       setSessionLoading(false)
       setSessionAction(null)
       showSessionFeedback(
@@ -534,7 +522,10 @@ export function useParkingSession(selected: ParkingSpot | null) {
       return
     }
 
-    const outcome = await startParkingSession({ carNumber: plate, zone })
+    const outcome = await startParkingSession({
+      carNumber: LOCAL_SESSION_ID,
+      zone,
+    })
 
     setSessionLoading(false)
     setSessionAction(null)
@@ -545,31 +536,20 @@ export function useParkingSession(selected: ParkingSpot | null) {
       const status = String(details.status ?? 'ACTIVE')
       const serverRate = sessionHourlyRate(details) ?? hourlyRate
       const resolvedZone = String(details.zone ?? zone)
-      const resolvedPlate = String(details.carNumber ?? plate).toUpperCase()
       persistActive({
-        carNumber: resolvedPlate,
+        carNumber: LOCAL_SESSION_ID,
         zone: resolvedZone,
         spotName: selected.name,
         startedAt,
         status,
         hourlyRate: serverRate,
       })
-      if (resolvedPlate !== carNumber.trim().toUpperCase()) {
-        setCarNumber(resolvedPlate)
-        saveCarNumber(resolvedPlate)
-      }
       const serverRateLabel = formatHourlyRate(serverRate)
-      setTimerLabel(
-        `Sessioon: ${selected.name} · ${resolvedPlate}${
-          serverRateLabel ? ` · ${serverRateLabel}` : ''
-        }`,
-      )
-      startElapsedTimer(
-        startedAt,
-        `Sessioon: ${selected.name} · ${resolvedPlate}${
-          serverRateLabel ? ` · ${serverRateLabel}` : ''
-        }`,
-      )
+      const label = `Sessioon: ${spotLabel}${
+        serverRateLabel ? ` · ${serverRateLabel}` : ''
+      }`
+      setTimerLabel(label)
+      startElapsedTimer(startedAt, label)
       sessionSnapshotRef.current = null
       setConnectionNotice(null)
       showSessionFeedback(
@@ -591,7 +571,6 @@ export function useParkingSession(selected: ParkingSpot | null) {
     )
   }, [
     selected,
-    carNumber,
     activeSession,
     captureSessionSnapshot,
     persistActive,
@@ -620,7 +599,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
 
     if (!isBrowserOnline()) {
       enqueueOfflineAction('session_stop', {
-        carNumber: session.carNumber,
+        carNumber: LOCAL_SESSION_ID,
         zone: session.zone,
       })
       setSessionLoading(false)
@@ -635,7 +614,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
     }
 
     const outcome = await stopParkingSession({
-      carNumber: session.carNumber,
+      carNumber: LOCAL_SESSION_ID,
       zone: session.zone,
     })
 
@@ -685,13 +664,11 @@ export function useParkingSession(selected: ParkingSpot | null) {
   /**
    * Status ONLY — show exactly what the server said.
    * No local "taimer jätkub" fallback when server did not confirm ACTIVE.
-   * Server requires carNumber (no session list).
+   * License plate is never collected or sent.
    */
   const refreshParkingStatus = useCallback(async () => {
-    const plate = (carNumber.trim() || activeSession?.carNumber || '').trim()
-
-    if (!plate) {
-      showSessionFeedback('error', 'Sisesta auto number')
+    if (!activeSession && !selectedRef.current) {
+      showSessionFeedback('info', 'Vali parkla või alusta sessiooni')
       return
     }
 
@@ -700,14 +677,16 @@ export function useParkingSession(selected: ParkingSpot | null) {
 
     setSessionLoading(true)
     setSessionAction('status')
-    showSessionFeedback('loading', 'Kontrollin parkimise staatust…', plate)
+    showSessionFeedback('loading', 'Kontrollin parkimise staatust…')
 
     try {
-      const outcome = await checkParkingStatus({ carNumber: plate })
+      const outcome = await checkParkingStatus({
+        carNumber: LOCAL_SESSION_ID,
+      })
 
       if (outcome.kind === 'ACTIVE') {
         const synced = applyActiveDetails(outcome.details, {
-          carNumber: plate,
+          carNumber: LOCAL_SESSION_ID,
           zone: activeSession?.zone || selectedRef.current?.zone_code,
           spotName: activeSession?.spotName ?? selectedRef.current?.name,
           hourlyRate: activeSession?.hourlyRate,
@@ -735,7 +714,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
         showSessionFeedback(
           'info',
           'Aktiivset parkimist pole',
-          outcome.message || 'Sellel autol pole aktiivset parkimist',
+          outcome.message || 'Aktiivset parkimist ei leitud',
         )
         return
       }
@@ -759,7 +738,6 @@ export function useParkingSession(selected: ParkingSpot | null) {
       }
     }
   }, [
-    carNumber,
     activeSession,
     timerRunning,
     timerMode,
@@ -788,7 +766,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
       setTimerOpen(true)
       setTimerLabel(
         activeSession
-          ? `Ettemaks +${minutes} min · ${activeSession.carNumber}`
+          ? `Ettemaks +${minutes} min · ${activeSession.spotName ?? activeSession.zone}`
           : `Ettemaks +${minutes} min`,
       )
 
@@ -801,11 +779,9 @@ export function useParkingSession(selected: ParkingSpot | null) {
         return
       }
 
-      const plate = activeSession.carNumber
-
       if (!isBrowserOnline()) {
         enqueueOfflineAction('session_extend', {
-          carNumber: plate,
+          carNumber: LOCAL_SESSION_ID,
           endsAt: nextEndsAt,
         })
         showSessionFeedback(
@@ -819,7 +795,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
       setSessionAction('extend')
       setSessionLoading(true)
       const outcome = await extendParkingSession({
-        carNumber: plate,
+        carNumber: LOCAL_SESSION_ID,
         endsAt: nextEndsAt,
       })
       setSessionLoading(false)
@@ -863,23 +839,26 @@ export function useParkingSession(selected: ParkingSpot | null) {
   useEffect(() => {
     registerOfflineProcessor(async (action: QueuedAction) => {
       if (action.type === 'session_start') {
-        const plate = String(action.payload.carNumber ?? '')
         const zone = String(action.payload.zone ?? '')
-        if (!plate || !zone) return true
-        const outcome = await startParkingSession({ carNumber: plate, zone })
+        if (!zone) return true
+        const outcome = await startParkingSession({
+          carNumber: LOCAL_SESSION_ID,
+          zone,
+        })
         return outcome.kind === 'ACTIVE'
       }
       if (action.type === 'session_stop') {
-        const plate = String(action.payload.carNumber ?? '')
         const zone = String(action.payload.zone ?? '')
-        if (!plate || !zone) return true
-        const outcome = await stopParkingSession({ carNumber: plate, zone })
+        if (!zone) return true
+        const outcome = await stopParkingSession({
+          carNumber: LOCAL_SESSION_ID,
+          zone,
+        })
         return outcome.kind === 'NOT_FOUND' || outcome.kind === 'ACTIVE'
       }
       if (action.type === 'session_extend') {
-        const plate = String(action.payload.carNumber ?? '')
         const queuedEndsAt = String(action.payload.endsAt ?? '')
-        if (!plate || !queuedEndsAt) return true
+        if (!queuedEndsAt) return true
         const ms = Date.parse(queuedEndsAt)
         const now = Date.now()
         // Drop stale / out-of-range queued extends (server requires 1 min–24 h)
@@ -891,7 +870,7 @@ export function useParkingSession(selected: ParkingSpot | null) {
           return true
         }
         const outcome = await extendParkingSession({
-          carNumber: plate,
+          carNumber: LOCAL_SESSION_ID,
           endsAt: queuedEndsAt,
         })
         return outcome.kind === 'ACTIVE' || outcome.kind === 'NOT_FOUND'
@@ -901,8 +880,6 @@ export function useParkingSession(selected: ParkingSpot | null) {
   }, [])
 
   return {
-    carNumber,
-    handleCarNumberChange,
     timerSeconds,
     timerRunning,
     timerMode,

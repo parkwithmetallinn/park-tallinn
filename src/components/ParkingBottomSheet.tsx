@@ -106,8 +106,6 @@ function priceSummary(spot: ParkingSpot): { headline: string; detail: string } {
 export function ParkingBottomSheet({
   spot,
   distanceLabel,
-  carNumber,
-  onCarNumberChange,
   sessionLoading,
   sessionAction,
   activeSession,
@@ -138,8 +136,6 @@ export function ParkingBottomSheet({
 }: {
   spot: ParkingSpot
   distanceLabel?: string | null
-  carNumber: string
-  onCarNumberChange: (value: string) => void
   sessionLoading?: boolean
   sessionAction?: 'start' | 'stop' | 'status' | 'extend' | null
   activeSession?: ActiveParkingSession | null
@@ -198,16 +194,9 @@ export function ParkingBottomSheet({
     badge: spot.badge,
   })
   const categoryBadge = categoryBadgeLabel(spot)
-  const [touched, setTouched] = useState(false)
-  const carOk = carNumber.trim().length >= 2
-  const hasActive = Boolean(activeSession?.carNumber && activeSession?.zone)
+  const hasActive = Boolean(activeSession?.zone)
   const startedLabel = formatSessionInstant(activeSession?.startedAt)
   const title = `${spot.zone_code} — ${spotDisplayName(spot)}`
-
-  // Reset plate validation when switching lots — no error on first open
-  useEffect(() => {
-    setTouched(false)
-  }, [spot.id])
 
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(() => {
     const cached = getCachedAddress(spot.id)
@@ -666,17 +655,10 @@ export function ParkingBottomSheet({
           />
         ) : null}
 
-        {/* Session controls — free lots: no plate / start */}
-        <form
+        {/* Session controls — one-tap start (no license plate) */}
+        <div
           id="parking-session-section"
           className={`space-y-3 border-t pt-3 ${dark ? 'border-white/10' : 'border-black/5'}`}
-          onSubmit={(e) => {
-            blockNav(e)
-            // Enter in plate field → status check only (never navigate)
-            setTouched(true)
-            if (!carOk || sessionLoading) return
-            onCheckStatus()
-          }}
         >
           <div className="flex items-center justify-between gap-2">
             <p className={`text-[12px] font-semibold tracking-wide uppercase ${muted}`}>
@@ -699,38 +681,19 @@ export function ParkingBottomSheet({
             </p>
           ) : (
             <>
-          <input
-            value={carNumber}
-            onChange={(e) => {
-              setTouched(true)
-              onCarNumberChange(e.target.value.toUpperCase())
-            }}
-            onBlur={() => setTouched(true)}
-            placeholder="Auto number (nt 123ABC)"
-            autoCapitalize="characters"
-            autoCorrect="off"
-            spellCheck={false}
-            disabled={sessionLoading}
-            enterKeyHint="done"
-            className={`w-full rounded-xl border-0 px-3 py-2.5 font-mono text-[13px] font-semibold tracking-wider outline-none ring-[#007AFF]/30 focus:ring-2 disabled:opacity-60 ${blockBg} ${ink}`}
-          />
-          {touched && !carOk ? (
-            <p className="text-[12px] font-medium text-[#FF3B30]">Sisesta kehtiv auto number</p>
-          ) : (
-            <p className={`text-[12px] leading-snug ${muted}`}>
-              Tsoon{' '}
-              <span className={`font-semibold ${ink}`}>
-                {activeSession?.zone ?? spot.zone_code}
-              </span>
-              {hasActive && activeSession?.status
-                ? ` · ${activeSession.status}`
-                : ''}
-              {hasActive && formatHourlyRate(activeSession?.hourlyRate)
-                ? ` · ${formatHourlyRate(activeSession?.hourlyRate)}`
-                : ''}
-              {hasActive && startedLabel ? ` · alates ${startedLabel}` : ''}
-            </p>
-          )}
+          <p className={`text-[12px] leading-snug ${muted}`}>
+            Tsoon{' '}
+            <span className={`font-semibold ${ink}`}>
+              {activeSession?.zone ?? spot.zone_code}
+            </span>
+            {hasActive && activeSession?.status
+              ? ` · ${activeSession.status}`
+              : ''}
+            {hasActive && formatHourlyRate(activeSession?.hourlyRate)
+              ? ` · ${formatHourlyRate(activeSession?.hourlyRate)}`
+              : ''}
+            {hasActive && startedLabel ? ` · alates ${startedLabel}` : ''}
+          </p>
 
           {hasActive && priceEstimate ? (
             <p
@@ -794,7 +757,6 @@ export function ParkingBottomSheet({
                 disabled={
                   sessionLoading ||
                   sessionNetBlocked ||
-                  !carOk ||
                   !canStartParkingSession(spot)
                 }
                 title={
@@ -804,8 +766,7 @@ export function ParkingBottomSheet({
                 }
                 onClick={(e) => {
                   blockNav(e)
-                  setTouched(true)
-                  if (!carOk || !canStartParkingSession(spot)) return
+                  if (!canStartParkingSession(spot)) return
                   onStartSession()
                 }}
                 className="tap-scale flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl bg-[#34C759] px-4 py-3.5 text-[15px] font-semibold text-white disabled:opacity-55"
@@ -822,11 +783,9 @@ export function ParkingBottomSheet({
 
           <button
             type="button"
-            disabled={sessionLoading || !carOk}
+            disabled={sessionLoading}
             onClick={(e) => {
               blockNav(e)
-              setTouched(true)
-              if (!carOk) return
               onCheckStatus()
             }}
             className="tap-scale flex w-full items-center justify-center gap-2 rounded-2xl bg-[#007AFF]/10 px-4 py-3 text-[14px] font-semibold text-[#007AFF] disabled:opacity-55"
@@ -885,7 +844,7 @@ export function ParkingBottomSheet({
               ) : null}
             </div>
           ) : null}
-        </form>
+        </div>
         </>
       )}
     </InfoSidePanelShell>

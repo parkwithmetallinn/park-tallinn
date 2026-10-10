@@ -32,8 +32,6 @@ const EMAIL_CONSENT_LABEL =
  */
 export function ParkingSessionModal({
   dark,
-  carNumber,
-  onCarNumberChange,
   timerSeconds,
   timerMode,
   timerLabel,
@@ -52,8 +50,6 @@ export function ParkingSessionModal({
   formatSessionInstant,
 }: {
   dark?: boolean
-  carNumber: string
-  onCarNumberChange: (v: string) => void
   timerSeconds: number
   timerMode: 'elapsed' | 'remaining' | string
   timerLabel: string
@@ -107,7 +103,6 @@ export function ParkingSessionModal({
 
   const canStart =
     Boolean(selectedSpot) &&
-    carNumber.trim().length >= 2 &&
     selectedSpot != null &&
     canStartParkingSession(selectedSpot) &&
     !sessionNetBlocked
@@ -122,7 +117,7 @@ export function ParkingSessionModal({
     setNotifyMsg(null)
     setPushBusy(true)
     try {
-      const outcome = await enablePush(carNumber || activeSession?.carNumber || '')
+      const outcome = await enablePush()
       setPerm(notificationPermissionState())
       if (outcome.kind === 'ERROR') {
         setNotifyMsg({ kind: 'error', text: outcome.message })
@@ -147,10 +142,7 @@ export function ParkingSessionModal({
     }
     setEmailBusy(true)
     try {
-      const outcome = await enableEmailNotify(
-        carNumber || activeSession?.carNumber || '',
-        email,
-      )
+      const outcome = await enableEmailNotify(email)
       if (outcome.kind === 'ERROR') {
         setNotifyMsg({ kind: 'error', text: outcome.message })
       } else {
@@ -208,7 +200,7 @@ export function ParkingSessionModal({
         {activeSession ? (
           <div className="mb-3 rounded-2xl bg-[#34C759]/12 p-3.5 text-[12px] font-semibold leading-snug text-[#248A3D]">
             <p>
-              {activeSession.carNumber} · {activeSession.zone}
+              {activeSession.spotName || 'Parkla'} · {activeSession.zone}
               {activeSession.status ? ` · ${activeSession.status}` : ''}
             </p>
             {(formatHourlyRate(activeSession.hourlyRate) ||
@@ -239,23 +231,6 @@ export function ParkingSessionModal({
         ) : null}
 
         <form className="flex flex-col gap-2.5" onSubmit={onSubmit}>
-          <div>
-            <label className={`mb-1 block text-[12px] font-semibold ${muted}`}>
-              Auto number
-            </label>
-            <input
-              value={carNumber}
-              onChange={(e) => onCarNumberChange(e.target.value.toUpperCase())}
-              placeholder="nt 123ABC"
-              autoCapitalize="characters"
-              autoCorrect="off"
-              spellCheck={false}
-              disabled={sessionLoading}
-              enterKeyHint="done"
-              className={`w-full rounded-xl border px-3 py-2.5 font-mono text-[13px] font-semibold tracking-wider outline-none focus:ring-2 focus:ring-[#34C759]/30 ${field}`}
-            />
-          </div>
-
           {activeSession ? (
             <div className="grid grid-cols-4 gap-1.5">
               {TIME_EXTEND_OPTIONS.map((opt) => (
