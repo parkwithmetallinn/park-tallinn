@@ -110,7 +110,7 @@ export const PAID_ZONES: PaidZone[] = [
       [59.45163, 24.76574],
       [59.44804, 24.76355],
     ],
-    note: 'Tavaline tariif · 15 min tasuta kellaga · öösel & pühapäeval tasuta',
+    note: 'Tavaline tariif · 15 min tasuta kellaga · öösel & pühapäeval tasuta; riigipühal sama nädalapäeva tasu',
     zone_code: 'KESKLINN',
     free_minutes: ZONE_RATES.KESKLINN.freeMinutes,
     price_per_hour: ZONE_RATES.KESKLINN.pricePerHour,
@@ -602,7 +602,7 @@ export const PARKING_SPOTS: ParkingSpotSeed[] = [
     lat: 59.433,
     lng: 24.752,
     address: 'Kesklinna tasuline tsoon',
-    desc: 'Väljaspool tasulisi tunde on tänavaparkimine tasuta. Riigipühadel 24/7 tasuta.',
+    desc: 'Väljaspool tasulisi tunde on tänavaparkimine tasuta. Pühapäeval tasuta; riigipühal kehtib sama nädalapäeva tasu.',
     hours: 'E–R 07–19 ja L 08–15 tasuline',
   },
 

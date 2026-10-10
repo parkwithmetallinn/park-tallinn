@@ -187,4 +187,7 @@ export type ParkingSpotSeed = Omit<
       | 'structureType'
       | 'floors'
     >
-  >
+  > & {
+    /** ISO date when free / clock / P&R rules were last verified on-site. Omit = unchecked. */
+    verifiedAt?: string
+  }

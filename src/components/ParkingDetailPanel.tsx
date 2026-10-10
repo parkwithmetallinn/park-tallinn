@@ -96,7 +96,7 @@ export function ParkingDetailPanel({
             : undefined
         }
         onReportInvalid={() =>
-          setCrowdOpen({ initialStatus: 'prices' })
+          setCrowdOpen({ initialStatus: 'free' })
         }
       />
 

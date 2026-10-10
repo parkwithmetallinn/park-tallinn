@@ -1679,7 +1679,7 @@ export default function App() {
       }
       if (
         selected &&
-        (payload.statusType === 'full' || payload.statusType === 'closed')
+        payload.statusType === 'full'
       ) {
         // API already stored the report — only sync local TTL + suggest alternatives
         setLocalFullSpotIds(markSpotFull(selected.id))

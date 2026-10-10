@@ -1,4 +1,4 @@
-import { AlertTriangle, Ban, Clock, Loader2, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Loader2, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { apiUrl } from '../lib/apiBase'
 import {
@@ -7,16 +7,17 @@ import {
 } from '../lib/reportCooldown'
 import type { ParkingSpot } from '../types'
 
-export type CrowdStatusType = 'full' | 'prices' | 'closed'
+/** Only FULL / FREE — API rejects PRICES / CLOSED. */
+export type CrowdStatusType = 'full' | 'free'
 
 const STATUS_OPTIONS: {
   id: CrowdStatusType
   label: string
   Icon: typeof AlertTriangle
+  apiStatus: 'FULL' | 'FREE'
 }[] = [
-  { id: 'full', label: 'Parkla on täis', Icon: AlertTriangle },
-  { id: 'prices', label: 'Hinnad/reeglid muutusid', Icon: Clock },
-  { id: 'closed', label: 'Parkla suletud', Icon: Ban },
+  { id: 'full', label: 'Parkla on täis', Icon: AlertTriangle, apiStatus: 'FULL' },
+  { id: 'free', label: 'Vabu kohti', Icon: CheckCircle2, apiStatus: 'FREE' },
 ]
 
 const COMMENT_MAX = 200
@@ -27,6 +28,7 @@ const SUCCESS_TOAST =
 /**
  * Glassmorphic slide-up crowd-report modal (mobile-first).
  * POSTs { parkingId, statusType, comment } to /api/reports.
+ * statusType is only FULL or FREE.
  */
 export function CrowdReportModal({
   spot,
@@ -47,7 +49,9 @@ export function CrowdReportModal({
     message: string
   }) => void
 }) {
-  const [statusType, setStatusType] = useState<CrowdStatusType>(initialStatus)
+  const safeInitial =
+    initialStatus === 'free' || initialStatus === 'full' ? initialStatus : 'full'
+  const [statusType, setStatusType] = useState<CrowdStatusType>(safeInitial)
   const [comment, setComment] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -79,6 +83,7 @@ export function CrowdReportModal({
     setError(null)
     setSubmitting(true)
     try {
+      const opt = STATUS_OPTIONS.find((o) => o.id === statusType)
       const res = await fetch(apiUrl('/api/reports'), {
         method: 'POST',
         headers: {
@@ -87,8 +92,8 @@ export function CrowdReportModal({
         },
         body: JSON.stringify({
           parkingId: spot.id,
-          // FULL = täis; prices/closed map to FREE vote for tally
-          statusType: statusType === 'full' ? 'FULL' : 'FREE',
+          statusType: opt?.apiStatus ?? 'FULL',
+          // Comment accepted for length validation; server stores null
           comment: comment.trim().slice(0, COMMENT_MAX),
         }),
       })
@@ -131,9 +136,11 @@ export function CrowdReportModal({
       >
         <div className="mb-3 flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className={`text-[16px] font-bold ${ink}`}>Saada teavitus</p>
+            <h2 className={`text-[17px] font-bold tracking-tight ${ink}`}>
+              Saada teavitus
+            </h2>
             <p className={`mt-0.5 truncate text-[12px] font-medium ${muted}`}>
-              {spot.name || spot.zone_code || 'Parkla'}
+              {spot.name}
             </p>
           </div>
           <button
@@ -148,55 +155,54 @@ export function CrowdReportModal({
           </button>
         </div>
 
-        <form className="flex flex-col gap-3" onSubmit={(e) => void submit(e)}>
-          <fieldset className="space-y-2">
-            <legend className={`text-[10px] font-semibold uppercase tracking-wide ${muted}`}>
-              Põhjus
-            </legend>
-            <div className="grid gap-2">
-              {STATUS_OPTIONS.map(({ id, label, Icon }) => {
-                const active = statusType === id
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => setStatusType(id)}
-                    aria-pressed={active}
-                    className={`tap-scale flex w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left text-[14px] font-semibold transition ${
-                      active ? optionActive : optionIdle
-                    } ${ink}`}
+        <form className="flex flex-col gap-3" onSubmit={submit}>
+          <div className="grid grid-cols-2 gap-2">
+            {STATUS_OPTIONS.map(({ id, label, Icon }) => {
+              const active = statusType === id
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setStatusType(id)}
+                  className={`tap-scale flex flex-col items-center gap-1.5 rounded-2xl border px-2 py-3 text-center transition ${
+                    active ? optionActive : optionIdle
+                  }`}
+                  aria-pressed={active}
+                >
+                  <Icon
+                    className={`h-5 w-5 ${
+                      active
+                        ? id === 'full'
+                          ? 'text-[#FF3B30]'
+                          : 'text-[#34C759]'
+                        : muted
+                    }`}
+                  />
+                  <span
+                    className={`text-[12px] font-bold leading-tight ${
+                      active ? ink : muted
+                    }`}
                   >
-                    <span
-                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
-                        active
-                          ? 'bg-[#FF3B30]/20 text-[#FF3B30]'
-                          : dark
-                            ? 'bg-white/10 text-[#EBEBF5]'
-                            : 'bg-white text-[#636366]'
-                      }`}
-                    >
-                      <Icon className="h-4 w-4" strokeWidth={2.4} />
-                    </span>
-                    <span>{label}</span>
-                  </button>
-                )
-              })}
-            </div>
-          </fieldset>
+                    {label}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
 
           <div>
             <label
               htmlFor="crowd-report-comment"
-              className={`mb-1 block text-[10px] font-semibold uppercase tracking-wide ${muted}`}
+              className={`mb-1 block text-[10px] font-semibold ${muted}`}
             >
-              Märkused (nt tõkkepuu rikkis)
+              Kommentaar (valikuline)
             </label>
             <textarea
               id="crowd-report-comment"
               value={comment}
               onChange={(e) => setComment(e.target.value.slice(0, COMMENT_MAX))}
-              maxLength={COMMENT_MAX}
               rows={3}
+              maxLength={COMMENT_MAX}
               placeholder="Valikuline…"
               disabled={submitting}
               className={`w-full resize-none rounded-2xl border px-3.5 py-2.5 text-[14px] font-medium outline-none focus:ring-2 focus:ring-[#FF3B30]/25 ${field}`}

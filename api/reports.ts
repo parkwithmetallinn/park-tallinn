@@ -2,10 +2,11 @@
  * Hardened community parking reports (spot is full / free).
  *
  * POST { parkingId, statusType, comment? }
- * GET  → [{ parkingId, isFull, lastReportedMinutesAgo }]
+ * GET  → [{ parkingId, isFull, status, lastReportedMinutesAgo }]
  *
  * Server-only: SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (+ REPORT_SALT).
  * Browser talks only to /api/reports — never the anon key.
+ * Mem fallback is DEV ONLY — production returns 503 when DB is unavailable.
  */
 
 import { createHash } from 'node:crypto'
@@ -22,7 +23,7 @@ const TABLE = 'parking_reports'
 // Slash allowed so OSM-style ids (w/123, way/…) match map spot.id without map changes.
 const PARKING_ID_RE = /^[A-Za-z0-9_/-]{1,64}$/
 
-/** Statuses the app uses for full/free voting. */
+/** Statuses the app accepts — PRICES/CLOSED are rejected (400). */
 const ALLOWED_STATUS = new Set(['FULL', 'FREE'])
 
 type ReportRow = {
@@ -35,14 +36,16 @@ type ReportRow = {
 type MemRow = {
   parkingId: string
   statusType: string
-  comment: string
   clientHash: string
   createdAt: number
 }
 
-type GroupedReport = {
+export type ReportLotStatus = 'FULL' | 'FREE' | 'UNKNOWN'
+
+export type GroupedReport = {
   parkingId: string
   isFull: boolean
+  status: ReportLotStatus
   lastReportedMinutesAgo: number
 }
 
@@ -61,9 +64,23 @@ type ApiRes = {
   setHeader: (name: string, value: string) => void
 }
 
+class DbUnavailableError extends Error {
+  constructor() {
+    super('DB_UNAVAILABLE')
+    this.name = 'DbUnavailableError'
+  }
+}
+
 const memStore: Map<string, MemRow> =
   ((globalThis as { __parkReportsMemV2?: Map<string, MemRow> }).__parkReportsMemV2 ??=
     new Map())
+
+function isProduction(): boolean {
+  return (
+    process.env.VERCEL_ENV === 'production' ||
+    process.env.NODE_ENV === 'production'
+  )
+}
 
 function getServiceClient(): SupabaseClient | null {
   const url = String(process.env.SUPABASE_URL ?? '').trim()
@@ -126,17 +143,44 @@ function sanitizeComment(raw: unknown): string | null {
   return cleaned
 }
 
-function normalizeStatus(raw: unknown): string | null {
+export function normalizeStatus(raw: unknown): string | null {
   if (typeof raw !== 'string') return null
   const t = raw.trim().toUpperCase()
   if (ALLOWED_STATUS.has(t)) return t
-  // Legacy UI aliases → FREE vote (CrowdReportModal maps these client-side too)
-  if (t === 'PRICES' || t === 'CLOSED') return 'FREE'
+  // PRICES / CLOSED intentionally rejected — do not map to FREE
   return null
 }
 
+/** Insert payload never includes user comment text (privacy). */
+export function reportInsertRow(input: {
+  parkingId: string
+  statusType: string
+  clientHash: string
+}): {
+  parking_id: string
+  status_type: string
+  comment: null
+  client_hash: string
+} {
+  return {
+    parking_id: input.parkingId,
+    status_type: input.statusType,
+    comment: null,
+    client_hash: input.clientHash,
+  }
+}
+
 function badRequest(res: ApiRes, message: string) {
+  res.setHeader('Cache-Control', 'no-store')
   res.status(400).json({ success: false, message })
+}
+
+function serviceUnavailable(res: ApiRes) {
+  res.setHeader('Cache-Control', 'no-store')
+  res.status(503).json({
+    success: false,
+    message: 'Teenus pole hetkel saadaval',
+  })
 }
 
 function pruneMem(now = Date.now()) {
@@ -154,6 +198,7 @@ async function countRecentByHash(
 ): Promise<number> {
   const since = new Date(now - windowMs).toISOString()
   if (!sb) {
+    if (isProduction()) throw new DbUnavailableError()
     pruneMem(now)
     let n = 0
     for (const row of memStore.values()) {
@@ -166,7 +211,10 @@ async function countRecentByHash(
     .select('id', { count: 'exact', head: true })
     .eq('client_hash', hash)
     .gt('created_at', since)
-  if (error) return countRecentByHash(null, hash, windowMs, now)
+  if (error) {
+    if (isProduction()) throw new DbUnavailableError()
+    return countRecentByHash(null, hash, windowMs, now)
+  }
   return count ?? 0
 }
 
@@ -179,6 +227,7 @@ async function hasDuplicateReport(
 ): Promise<boolean> {
   const since = new Date(now - DUP_WINDOW_MS).toISOString()
   if (!sb) {
+    if (isProduction()) throw new DbUnavailableError()
     for (const row of memStore.values()) {
       if (
         row.clientHash === hash &&
@@ -198,7 +247,10 @@ async function hasDuplicateReport(
     .eq('parking_id', parkingId)
     .eq('status_type', statusType)
     .gt('created_at', since)
-  if (error) return hasDuplicateReport(null, hash, parkingId, statusType, now)
+  if (error) {
+    if (isProduction()) throw new DbUnavailableError()
+    return hasDuplicateReport(null, hash, parkingId, statusType, now)
+  }
   return (count ?? 0) > 0
 }
 
@@ -207,17 +259,16 @@ async function insertReport(
   row: {
     parkingId: string
     statusType: string
-    comment: string
     clientHash: string
     createdAt: number
   },
 ): Promise<{ ok: true } | { ok: false; message: string }> {
   if (!sb) {
+    if (isProduction()) throw new DbUnavailableError()
     const id = `${row.clientHash}:${row.parkingId}:${row.createdAt}`
     memStore.set(id, {
       parkingId: row.parkingId,
       statusType: row.statusType,
-      comment: row.comment,
       clientHash: row.clientHash,
       createdAt: row.createdAt,
     })
@@ -225,14 +276,15 @@ async function insertReport(
     return { ok: true }
   }
 
-  const { error } = await sb.from(TABLE).insert({
-    parking_id: row.parkingId,
-    status_type: row.statusType,
-    comment: row.comment || null,
-    client_hash: row.clientHash,
+  const payload = reportInsertRow({
+    parkingId: row.parkingId,
+    statusType: row.statusType,
+    clientHash: row.clientHash,
   })
+  const { error } = await sb.from(TABLE).insert(payload)
   if (error) {
-    // Unreachable / misconfigured project → mem fallback (local/dev)
+    if (isProduction()) throw new DbUnavailableError()
+    // Dev only — mem fallback
     return insertReport(null, row)
   }
   return { ok: true }
@@ -244,6 +296,7 @@ async function fetchRecentRows(
 ): Promise<ReportRow[]> {
   const sinceIso = new Date(now - WINDOW_MS).toISOString()
   if (!sb) {
+    if (isProduction()) throw new DbUnavailableError()
     pruneMem(now)
     const out: ReportRow[] = []
     for (const v of memStore.values()) {
@@ -270,7 +323,7 @@ async function fetchRecentRows(
     .limit(GET_LIMIT)
 
   if (error || !Array.isArray(data)) {
-    // Network / RLS / missing table → mem fallback
+    if (isProduction()) throw new DbUnavailableError()
     return fetchRecentRows(null, now)
   }
   return data as ReportRow[]
@@ -280,7 +333,7 @@ async function fetchRecentRows(
  * Per parking_id keep only the LATEST report of each voter (client_hash),
  * then tally FULL vs FREE votes.
  */
-function groupReports(rows: ReportRow[], now: number): GroupedReport[] {
+export function groupReports(rows: ReportRow[], now: number): GroupedReport[] {
   /** parkingId → (clientHash → latest row) */
   const perLot = new Map<string, Map<string, ReportRow>>()
 
@@ -316,9 +369,13 @@ function groupReports(rows: ReportRow[], now: number): GroupedReport[] {
     }
     const isFull =
       fullVotes >= MIN_FULL_VOTES && fullVotes > freeVotes
+    let lotStatus: ReportLotStatus = 'UNKNOWN'
+    if (isFull) lotStatus = 'FULL'
+    else if (freeVotes >= 1 && freeVotes >= fullVotes) lotStatus = 'FREE'
     out.push({
       parkingId,
       isFull,
+      status: lotStatus,
       lastReportedMinutesAgo: Math.max(
         0,
         Math.round((now - latestMs) / 60_000),
@@ -330,11 +387,23 @@ function groupReports(rows: ReportRow[], now: number): GroupedReport[] {
   return out
 }
 
+function reportSaltOk(): boolean {
+  const salt = String(process.env.REPORT_SALT ?? '').trim()
+  return salt.length >= 16
+}
+
 export default async function handler(req: ApiReq, res: ApiRes): Promise<void> {
   const method = String(req.method || 'GET').toUpperCase()
 
   if (method !== 'GET' && method !== 'POST') {
+    res.setHeader('Allow', 'GET, POST')
+    res.setHeader('Cache-Control', 'no-store')
     res.status(405).json({ success: false, message: 'Method not allowed' })
+    return
+  }
+
+  if (isProduction() && !reportSaltOk()) {
+    serviceUnavailable(res)
     return
   }
 
@@ -343,80 +412,110 @@ export default async function handler(req: ApiReq, res: ApiRes): Promise<void> {
 
   if (method === 'GET') {
     try {
+      if (isProduction() && !sb) {
+        serviceUnavailable(res)
+        return
+      }
       const rows = await fetchRecentRows(sb, now)
       const reports = groupReports(rows, now)
+      res.setHeader(
+        'Cache-Control',
+        'public, s-maxage=10, stale-while-revalidate=20',
+      )
       // Existing contract: bare JSON array — never include client_hash
       res.status(200).json(reports)
-    } catch {
+    } catch (err) {
+      if (err instanceof DbUnavailableError || isProduction()) {
+        serviceUnavailable(res)
+        return
+      }
+      res.setHeader('Cache-Control', 'no-store')
       res.status(500).json([])
     }
     return
   }
 
   // ——— POST ———
-  const body = parseBody(req)
-  if (!body) {
-    badRequest(res, 'Vigane päring')
-    return
-  }
+  res.setHeader('Cache-Control', 'no-store')
 
-  const parkingId = String(body.parkingId ?? '').trim()
-  if (!PARKING_ID_RE.test(parkingId)) {
-    badRequest(res, 'Vigane parkla tunnus')
-    return
-  }
+  try {
+    if (isProduction() && !sb) {
+      serviceUnavailable(res)
+      return
+    }
 
-  const statusType = normalizeStatus(body.statusType)
-  if (!statusType) {
-    badRequest(res, 'Vigane staatus')
-    return
-  }
+    const body = parseBody(req)
+    if (!body) {
+      badRequest(res, 'Vigane päring')
+      return
+    }
 
-  const comment = sanitizeComment(body.comment)
-  if (comment == null) {
-    badRequest(res, 'Kommentaar on liiga pikk või vigane')
-    return
-  }
+    const parkingId = String(body.parkingId ?? '').trim()
+    if (!PARKING_ID_RE.test(parkingId)) {
+      badRequest(res, 'Vigane parkla tunnus')
+      return
+    }
 
-  const hash = clientHash(req)
+    const statusType = normalizeStatus(body.statusType)
+    if (!statusType) {
+      badRequest(res, 'Vigane staatus')
+      return
+    }
 
-  const recentCount = await countRecentByHash(sb, hash, RATE_WINDOW_MS, now)
-  if (recentCount >= RATE_MAX) {
-    res.status(429).json({
-      success: false,
-      message: 'Liiga palju teavitusi — proovi 2 minuti pärast uuesti',
+    const comment = sanitizeComment(body.comment)
+    if (comment == null) {
+      badRequest(res, 'Kommentaar on liiga pikk või vigane')
+      return
+    }
+
+    const hash = clientHash(req)
+
+    const recentCount = await countRecentByHash(sb, hash, RATE_WINDOW_MS, now)
+    if (recentCount >= RATE_MAX) {
+      res.status(429).json({
+        success: false,
+        message: 'Liiga palju teavitusi — proovi 2 minuti pärast uuesti',
+      })
+      return
+    }
+
+    if (await hasDuplicateReport(sb, hash, parkingId, statusType, now)) {
+      res.status(429).json({
+        success: false,
+        message: 'Sama teavitus on juba saadetud — proovi hiljem uuesti',
+      })
+      return
+    }
+
+    const inserted = await insertReport(sb, {
+      parkingId,
+      statusType,
+      clientHash: hash,
+      createdAt: now,
     })
-    return
-  }
+    if (!inserted.ok) {
+      res.status(502).json({
+        success: false,
+        message: inserted.message,
+      })
+      return
+    }
 
-  if (await hasDuplicateReport(sb, hash, parkingId, statusType, now)) {
-    res.status(429).json({
-      success: false,
-      message: 'Sama teavitus on juba saadetud — proovi hiljem uuesti',
+    const rows = await fetchRecentRows(sb, now)
+    const reports = groupReports(rows, now)
+    res.status(200).json({
+      success: true,
+      message: 'Aitäh! Sinu teavitus aitab teisi autojuhte.',
+      reports,
     })
-    return
-  }
-
-  const inserted = await insertReport(sb, {
-    parkingId,
-    statusType,
-    comment,
-    clientHash: hash,
-    createdAt: now,
-  })
-  if (!inserted.ok) {
-    res.status(502).json({
+  } catch (err) {
+    if (err instanceof DbUnavailableError) {
+      serviceUnavailable(res)
+      return
+    }
+    res.status(500).json({
       success: false,
-      message: inserted.message,
+      message: 'Teenus pole hetkel saadaval',
     })
-    return
   }
-
-  const rows = await fetchRecentRows(sb, now)
-  const reports = groupReports(rows, now)
-  res.status(200).json({
-    success: true,
-    message: 'Aitäh! Sinu teavitus aitab teisi autojuhte.',
-    reports,
-  })
 }
