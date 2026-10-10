@@ -56,8 +56,21 @@ export function TeavePanel({ onClose }: { onClose: () => void }) {
               <ExternalLink className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
             </a>
           ) : (
-            <p className="font-medium text-ink">Privaatsuspoliitika</p>
+            <p className="font-medium text-ink">
+              Privaatsuspoliitika{' '}
+              <span className="font-normal opacity-70">(tuleb varsti)</span>
+            </p>
           )}
+        </section>
+
+        <section className="rounded-2xl bg-paper-2 p-3">
+          <h4 className="mb-2 text-sm font-bold text-ink">Kontakt</h4>
+          <a
+            href="mailto:parkwithme.tallinn@gmail.com"
+            className="font-semibold text-[#007AFF] underline-offset-2 hover:underline break-all"
+          >
+            parkwithme.tallinn@gmail.com
+          </a>
         </section>
       </div>
     </ModalShell>
