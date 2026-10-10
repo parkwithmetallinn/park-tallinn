@@ -34,8 +34,8 @@ export type FreeEval = {
   freeUntil: string | null
   /** Short Estonian reason */
   reason: string
-  /** Map badge: FREE while free, KELL while paid-with-disc */
-  label: 'FREE' | 'KELL'
+  /** Map badge: TASUTA while free, KELL while paid-with-disc */
+  label: 'TASUTA' | 'KELL'
   inPaidWindow: boolean
   inSeason: boolean
 }
@@ -189,7 +189,7 @@ export function evaluateFreeRules(rules: FreeRuleSet, at: Date = new Date()): Fr
       freeNow: true,
       freeUntil: until.toISOString(),
       reason: 'Hooajaväliselt tasuta',
-      label: 'FREE',
+      label: 'TASUTA',
       inPaidWindow: false,
       inSeason: false,
     }
@@ -200,7 +200,7 @@ export function evaluateFreeRules(rules: FreeRuleSet, at: Date = new Date()): Fr
       freeNow: true,
       freeUntil: null,
       reason: 'Riigipüha — tasuta',
-      label: 'FREE',
+      label: 'TASUTA',
       inPaidWindow: false,
       inSeason: seasonOk,
     }
@@ -233,7 +233,7 @@ export function evaluateFreeRules(rules: FreeRuleSet, at: Date = new Date()): Fr
       freeNow: true,
       freeUntil,
       reason: p.weekday === 0 ? 'Pühapäev — tasuta' : 'Tasuta väljaspool tasulist aega',
-      label: 'FREE',
+      label: 'TASUTA',
       inPaidWindow: false,
       inSeason: seasonOk,
     }

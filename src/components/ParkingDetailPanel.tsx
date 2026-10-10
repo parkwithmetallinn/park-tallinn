@@ -1,12 +1,7 @@
 /**
  * Left parking-lot detail panel (desktop rail / mobile sheet).
- * Owns the crowd-report modal opened from "Parkla on täis" / "Teavita veast".
- * Session form lives inside this panel when a lot is selected —
- * exclusive of the floating clock FAB modal (`ParkingSessionModal`).
- * Star toggle saves the lot to localStorage favorites (`parkvibe_favorites`).
- *
- * Mobile: swipeable bottom sheet (max-h-[45dvh], z-30) with solid /95 panel
- * via InfoSidePanelShell — FABs / filter chips are faded by App when open.
+ * Owns the crowd-report modal opened from "Teata muust".
+ * One-tap "Täis" is handled by the parent via onMarkFull (no modal).
  */
 
 import { useState } from 'react'
@@ -21,10 +16,6 @@ import {
 } from './ParkingBottomSheet'
 import type { AlternativeParking } from '../lib/alternatives'
 import type { ActiveParkingSession } from '../lib/parkingSession'
-import type {
-  ProposedParkingType,
-  TypeVoteVerification,
-} from '../lib/typeVotes'
 import type { ParkingSpot } from '../types'
 
 export type { PanelRouteSummary }
@@ -51,7 +42,6 @@ export function ParkingDetailPanel({
     kind: 'success' | 'error' | 'info' | 'loading'
     text: string
   } | null
-  /** Live price estimate while session is active (hinnang, mitte arve). */
   priceEstimate?: string | null
   routeSummary?: PanelRouteSummary | null
   onClearRoute?: () => void
@@ -62,55 +52,37 @@ export function ParkingDetailPanel({
   onStopSession: () => void
   onCheckStatus: () => void
   onExtendMinutes?: (minutes: number) => void
-  /** Legacy ReportModal path — crowd modal replaces this entry point. */
   onReportInvalid?: () => void
   alternatives?: AlternativeParking[]
   noAlternatives?: boolean
   isFull?: boolean
-  /** e.g. "Kogukonna raport: Täis (5 min tagasi)" */
   communityReportLabel?: string | null
-  /** Local 5-min cooldown after submitting a report for this lot. */
   reportCooldownActive?: boolean
   onFindAnother?: () => void
   onMarkFull?: () => void
   onWidenRadius?: () => void
   onSelectAlternative?: (spot: ParkingSpot) => void
-  /** Toast + local full-mark after successful crowd submit. */
   onCrowdReportSuccess?: (payload: {
     statusType: CrowdStatusType
     comment: string
     message: string
-  }) => void
-  /** Unknown-lot type vote (crowdsource Tasuta/Kellaga/Tasuline). */
-  onTypeVoteVerified?: (payload: {
-    verifiedType: ProposedParkingType | null
-    verified: boolean
-    message: string
-    results: TypeVoteVerification[]
   }) => void
 }) {
   void _onReportInvalid
   const [crowdOpen, setCrowdOpen] = useState<CrowdOpen>(null)
   const { isFavorite, toggleFavorite } = useFavorites()
   const favorited = isFavorite(spot.id)
-  const { onTypeVoteVerified, ...sheetRest } = rest
 
   return (
     <div data-testid="parking-detail-panel" className="contents">
       <ParkingBottomSheet
         spot={spot}
-        {...sheetRest}
+        {...rest}
         isFavorite={favorited}
         onToggleFavorite={() => toggleFavorite(spot.id)}
-        onTypeVoteVerified={onTypeVoteVerified}
-        onMarkFull={
-          onMarkFull || onCrowdReportSuccess
-            ? () => setCrowdOpen({ initialStatus: 'full' })
-            : undefined
-        }
-        onReportInvalid={() =>
-          setCrowdOpen({ initialStatus: 'free' })
-        }
+        onMarkFull={onMarkFull}
+        onReportOther={() => setCrowdOpen({ initialStatus: 'free' })}
+        onReportInvalid={() => setCrowdOpen({ initialStatus: 'free' })}
       />
 
       {crowdOpen ? (

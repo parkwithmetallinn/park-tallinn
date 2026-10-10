@@ -1,18 +1,19 @@
 /**
  * Crowdsource widget for unknown-price lots:
  * "Aita kaardistada: mis parkla see on?"
+ * Uses local submitTypeVote (in-memory / localStorage) — swap for Supabase later.
  */
 
-import { HelpCircle, Loader2 } from 'lucide-react'
+import { HelpCircle } from 'lucide-react'
 import { useState } from 'react'
 import {
-  postTypeVote,
-  type ProposedParkingType,
-  type TypeVoteVerification,
-} from '../lib/typeVotes'
+  hasLocalTypeVote,
+  submitTypeVote,
+  type TypeVoteKind,
+} from '../lib/submitTypeVote'
 
 const OPTIONS: {
-  id: ProposedParkingType
+  id: TypeVoteKind
   label: string
   className: string
 }[] = [
@@ -36,19 +37,12 @@ const OPTIONS: {
 export function TypeMapWidget({
   parkingId,
   dark,
-  onVerified,
 }: {
   parkingId: string
   dark?: boolean
-  onVerified?: (payload: {
-    verifiedType: ProposedParkingType | null
-    verified: boolean
-    message: string
-    results: TypeVoteVerification[]
-  }) => void
 }) {
-  const [busy, setBusy] = useState<ProposedParkingType | null>(null)
-  const [msg, setMsg] = useState<string | null>(null)
+  const [hidden, setHidden] = useState(() => hasLocalTypeVote(parkingId))
+  const [thanks, setThanks] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
   const ink = dark ? 'text-[#F5F5F7]' : 'text-[#1C1C1E]'
@@ -57,24 +51,29 @@ export function TypeMapWidget({
     ? 'border-white/12 bg-white/6'
     : 'border-black/8 bg-[#F2F4F7]'
 
-  const onVote = async (proposedType: ProposedParkingType) => {
-    if (busy) return
-    setBusy(proposedType)
-    setErr(null)
-    setMsg(null)
-    const res = await postTypeVote({ parkingId, proposedType })
-    setBusy(null)
+  if (hidden && !thanks) return null
+
+  const onVote = (type: TypeVoteKind) => {
+    const res = submitTypeVote(parkingId, type)
     if (!res.ok) {
       setErr(res.message)
+      if (res.duplicate) setHidden(true)
       return
     }
-    setMsg(res.message)
-    onVerified?.({
-      verifiedType: res.verifiedType,
-      verified: res.verified,
-      message: res.message,
-      results: res.results,
-    })
+    setThanks(true)
+    setErr(null)
+    window.setTimeout(() => setHidden(true), 1200)
+  }
+
+  if (thanks) {
+    return (
+      <div
+        data-testid="type-map-widget"
+        className={`mb-2.5 rounded-xl border px-3 py-2.5 text-[13px] font-bold text-[#248A3D] ${box}`}
+      >
+        Aitäh!
+      </div>
+    )
   }
 
   return (
@@ -91,7 +90,7 @@ export function TypeMapWidget({
             Aita kaardistada: mis parkla see on?
           </p>
           <p className={`mt-0.5 text-[12px] font-medium ${muted}`}>
-            Kaks sama tüüpi häält kinnitivad parkla automaatselt.
+            Vali sobiv tüüp — üks hääl sellelt seadmelt.
           </p>
         </div>
       </div>
@@ -101,20 +100,13 @@ export function TypeMapWidget({
             key={opt.id}
             type="button"
             data-testid={`type-vote-${opt.id.toLowerCase()}`}
-            disabled={busy != null}
-            onClick={() => void onVote(opt.id)}
-            className={`tap-scale inline-flex min-h-11 items-center justify-center gap-1 rounded-xl border px-2 text-[13px] font-bold transition active:scale-[0.98] disabled:opacity-55 ${opt.className}`}
+            onClick={() => onVote(opt.id)}
+            className={`tap-scale inline-flex min-h-11 items-center justify-center rounded-xl border px-2 text-[13px] font-bold transition active:scale-[0.98] ${opt.className}`}
           >
-            {busy === opt.id ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : null}
             {opt.label}
           </button>
         ))}
       </div>
-      {msg ? (
-        <p className="mt-2 text-[12px] font-semibold text-[#248A3D]">{msg}</p>
-      ) : null}
       {err ? (
         <p className="mt-2 text-[12px] font-semibold text-[#D70015]">{err}</p>
       ) : null}

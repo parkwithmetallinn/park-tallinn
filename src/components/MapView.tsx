@@ -1213,7 +1213,7 @@ export const MapView = memo(forwardRef<
       if (!t) return
       if (
         t.closest(
-          '.my-pin-marker, .search-pin, .user-location-wrap, .maplibregl-ctrl, .district-qa-btn, button, a, input, textarea',
+          '.my-pin-marker, .search-pin, .user-location-wrap, .maplibregl-ctrl, button, a, input, textarea',
         )
       ) {
         return
@@ -2992,28 +2992,10 @@ export const MapView = memo(forwardRef<
     [],
   )
 
-  const [districtDebug, setDistrictDebug] = useState(false)
-
-  useEffect(() => {
-    districtDebugRef.current = districtDebug
-    const map = mapRef.current
-    if (!ready || !map) return
-    setDistrictDebugVisible(map, districtDebug)
-  }, [districtDebug, ready])
-
   return (
     <div className="relative z-0 h-full w-full" data-testid="map-view-root">
       {/* Map canvas — z-0; marker/data updates go through refs, not React re-renders of this wrapper */}
       <div ref={containerRef} className="h-full w-full maplibre-root" />
-      {/* Temporary QA toggle for district reference markers */}
-      <button
-        type="button"
-        onClick={() => setDistrictDebug((v) => !v)}
-        className="district-qa-btn absolute bottom-28 left-3 z-[1] rounded-md border border-slate-300 bg-white/95 px-2.5 py-1.5 text-[12px] font-medium text-slate-700 shadow-sm hover:bg-white"
-        title="Toggle district QA reference points"
-      >
-        {districtDebug ? 'District QA: ON' : 'District QA'}
-      </button>
     </div>
   )
 }))

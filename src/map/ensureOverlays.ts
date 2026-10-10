@@ -165,7 +165,7 @@ function syncLodZoomLimits(map: MapLibreMapType) {
   // Mount at fade START (opacity 0) so geometry is ready before visible
   setMin(PARKING_LOTS_FILL_LAYER, PARKING_FADE_START_ZOOM)
   setMin(PARKING_LOTS_OUTLINE_LAYER, PARKING_FADE_START_ZOOM)
-  setMin(PARKING_LOTS_LABEL_LAYER, PARKING_FADE_START_ZOOM)
+  setMin(PARKING_LOTS_LABEL_LAYER, 16)
 
   setMin(PRECISE_FILL_LAYER, PARKING_FADE_START_ZOOM)
   setMin(PRECISE_OUTLINE_LAYER, PARKING_FADE_START_ZOOM)
@@ -174,7 +174,8 @@ function syncLodZoomLimits(map: MapLibreMapType) {
   setMin('parking-fill-underground-hatch', PARKING_FADE_START_ZOOM)
   setMin('parking-fill-outline-glow', PARKING_FADE_START_ZOOM)
   // Lot name badges fade with detail LOD
-  setMin(PRECISE_LABEL_LAYER, DETAIL_FADE_START_ZOOM)
+  // Text labels (zone codes / TASUTA…) only from zoom 16+
+  setMin(PRECISE_LABEL_LAYER, 16)
   setMin(PRECISE_MULTISTOREY_BADGE_LAYER, PARKING_FADE_START_ZOOM)
 
   setMin(STREET_PARKING_CASING_LAYER, STREET_FADE_START_ZOOM)
@@ -193,7 +194,8 @@ function syncLodZoomLimits(map: MapLibreMapType) {
   for (const layerKey of PARKING_PROVIDERS) {
     const meta = PARKING_LAYER_META[layerKey]
     setMin(meta.id, DETAIL_FADE_START_ZOOM)
-    setMin(`${meta.id}-label`, DETAIL_FADE_START_ZOOM)
+    // Pin text labels only at zoom 16+
+    setMin(`${meta.id}-label`, 16)
   }
 
   syncParkingFadePaint(map)
@@ -835,7 +837,7 @@ export function ensureParkingOverlaySources(
       id: PRECISE_LABEL_LAYER,
       type: 'symbol',
       source: PRECISE_PARKING_SOURCE,
-      minzoom: DETAIL_FADE_START_ZOOM,
+      minzoom: 16,
       layout: {
         'text-field': [
           'case',
@@ -949,7 +951,7 @@ export function ensureParkingOverlaySources(
       id: PARKING_LOTS_LABEL_LAYER,
       type: 'symbol',
       source: PARKING_LOTS_SOURCE,
-      minzoom: PARKING_FADE_START_ZOOM,
+      minzoom: 16,
       layout: {
         'text-field': ['get', 'badge'],
         'text-font': ['Noto Sans Bold'],
@@ -1222,7 +1224,7 @@ export function ensureParkingOverlaySources(
           ['==', ['get', 'layer'], layerKey],
           ['==', ['get', 'provider'], layerKey],
         ],
-        minzoom: DETAIL_FADE_START_ZOOM,
+        minzoom: 16,
         layout: {
           'text-field': ['get', 'badge'],
           'text-font': ['Noto Sans Bold'],

@@ -387,12 +387,12 @@ export function prepareStreetParking(raw: RawCollection): StreetParkingCollectio
     const zone_code =
       zone ||
       (rules === 'free'
-        ? 'FREE'
+        ? 'TASUTA'
         : rules === 'clock'
           ? 'KELL'
           : rules === 'paid'
-            ? 'PAID'
-            : 'ZONE')
+            ? 'TASULINE'
+            : '')
     const operator = str(p.operator) || 'Tallinna Linn'
     const address = [streetAddr, houseNo, str(p['addr:city'])]
       .filter(Boolean)
@@ -497,9 +497,15 @@ export function streetFeatureToSpot(f: StreetParkingFeature): ParkingSpot {
     verifyOnSite: p.verifyOnSite,
     parnuZone: p.parnuZone,
   })
-  if (p.badge === 'FREE' || p.badge === 'KELL' || p.badge === 'EV') {
-    spot.badge = p.badge
-    spot.zone_code = p.badge
+  if (
+    p.badge === 'TASUTA' ||
+    p.badge === 'FREE' ||
+    p.badge === 'KELL' ||
+    p.badge === 'EV'
+  ) {
+    const normalized = p.badge === 'FREE' ? 'TASUTA' : p.badge
+    spot.badge = normalized
+    spot.zone_code = normalized
   }
   return spot
 }

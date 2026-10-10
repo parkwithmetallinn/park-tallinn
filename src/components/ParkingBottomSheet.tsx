@@ -49,10 +49,6 @@ import { FindParkingActions } from './FindParkingActions'
 import { useOnlineStatus } from '../hooks/useOnlineStatus'
 import { InfoSidePanelShell } from './InfoSidePanel'
 import { TypeMapWidget } from './TypeMapWidget'
-import type {
-  ProposedParkingType,
-  TypeVoteVerification,
-} from '../lib/typeVotes'
 
 export type PanelRouteSummary = {
   label: string
@@ -133,11 +129,11 @@ export function ParkingBottomSheet({
   reportCooldownActive = false,
   onFindAnother,
   onMarkFull,
+  onReportOther,
   onWidenRadius,
   onSelectAlternative,
   isFavorite = false,
   onToggleFavorite,
-  onTypeVoteVerified,
 }: {
   spot: ParkingSpot
   distanceLabel?: string | null
@@ -171,18 +167,13 @@ export function ParkingBottomSheet({
   reportCooldownActive?: boolean
   onFindAnother?: () => void
   onMarkFull?: () => void
+  /** Detailed report modal (not one-tap full). */
+  onReportOther?: () => void
   onWidenRadius?: () => void
   onSelectAlternative?: (spot: ParkingSpot) => void
   /** Lemmikparkla — filled yellow star when saved. */
   isFavorite?: boolean
   onToggleFavorite?: () => void
-  /** Unknown-lot type vote succeeded (maybe verified). */
-  onTypeVoteVerified?: (payload: {
-    verifiedType: ProposedParkingType | null
-    verified: boolean
-    message: string
-    results: TypeVoteVerification[]
-  }) => void
 }) {
   const { online } = useOnlineStatus()
   const sessionNetBlocked = !online
@@ -211,6 +202,12 @@ export function ParkingBottomSheet({
   const hasActive = Boolean(activeSession?.carNumber && activeSession?.zone)
   const startedLabel = formatSessionInstant(activeSession?.startedAt)
   const title = `${spot.zone_code} — ${spotDisplayName(spot)}`
+
+  // Reset plate validation when switching lots — no error on first open
+  useEffect(() => {
+    setTouched(false)
+  }, [spot.id])
+
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(() => {
     const cached = getCachedAddress(spot.id)
     if (cached?.address) return cached.address
@@ -520,11 +517,7 @@ export function ParkingBottomSheet({
             >
               Hind teadmata — kontrolli silti kohapeal või aita kaardistada.
             </div>
-            <TypeMapWidget
-              parkingId={spot.id}
-              dark={dark}
-              onVerified={onTypeVoteVerified}
-            />
+            <TypeMapWidget parkingId={spot.id} dark={dark} />
           </>
         ) : null}
 
@@ -584,16 +577,19 @@ export function ParkingBottomSheet({
                 </p>
                 <p className={`mt-0.5 text-[12px] font-semibold ${ink}`}>
                   {spot.structureType === 'underground'
-                    ? 'Underground'
+                    ? 'Maa-alune'
                     : spot.structureType === 'multi_storey'
-                      ? 'Multi-storey'
-                      : 'Surface'}
+                      ? 'Mitmekorruseline'
+                      : 'Maapealne'}
                   {spot.structureType === 'multi_storey' && spot.floors
                     ? ` · P+${spot.floors}`
                     : null}
                 </p>
               </div>
-              {spot.zone_code ? (
+              {spot.zone_code &&
+              !/^(ZONE|FREE|PAID|TASUTA|TASULINE|UNKNOWN|P)$/i.test(
+                spot.zone_code,
+              ) ? (
                 <span
                   className="rounded-full px-2.5 py-1 text-[12px] font-bold text-white"
                   style={{ backgroundColor: color }}
@@ -650,6 +646,7 @@ export function ParkingBottomSheet({
             primaryLabel="Leia teine parkla läheduses"
             onFindAnother={onFindAnother}
             onMarkFull={onMarkFull}
+            onReportOther={onReportOther}
             showMarkFull
             alternatives={alternatives}
             noResults={noAlternatives}
@@ -666,7 +663,7 @@ export function ParkingBottomSheet({
           />
         ) : null}
 
-        {/* Session controls — single primary CTA inside the detail card */}
+        {/* Session controls — free lots: no plate / start */}
         <form
           id="parking-session-section"
           className={`space-y-3 border-t pt-3 ${dark ? 'border-white/10' : 'border-black/5'}`}
@@ -688,9 +685,23 @@ export function ParkingBottomSheet({
               </span>
             ) : null}
           </div>
+          {!hasActive && isUnlimitedFreeParking(spot) ? (
+            <p
+              data-testid="free-no-session"
+              className={`rounded-xl px-3 py-2.5 text-[13px] font-semibold leading-snug ${
+                dark ? 'bg-white/8 text-[#EBEBF5]' : 'bg-[#34C759]/10 text-[#248A3D]'
+              }`}
+            >
+              Tasuta koht, sessiooni ei alustata
+            </p>
+          ) : (
+            <>
           <input
             value={carNumber}
-            onChange={(e) => onCarNumberChange(e.target.value.toUpperCase())}
+            onChange={(e) => {
+              setTouched(true)
+              onCarNumberChange(e.target.value.toUpperCase())
+            }}
             onBlur={() => setTouched(true)}
             placeholder="Auto number (nt 123ABC)"
             autoCapitalize="characters"
@@ -820,6 +831,8 @@ export function ParkingBottomSheet({
             <RefreshCw className={`h-4 w-4 ${sessionAction === 'status' ? 'animate-spin' : ''}`} />
             {sessionAction === 'status' ? 'Kontrollin…' : 'Kontrolli staatust'}
           </button>
+            </>
+          )}
 
           {sessionNotice ? (
             <p

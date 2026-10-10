@@ -69,7 +69,8 @@ import {
   formatCommunityReportLabel,
   postCommunityFullReport,
 } from './lib/communityReports'
-import { loadFullSpotIds, markSpotFull } from './lib/fullSpots'
+import { clearSpotFull, loadFullSpotIds, markSpotFull } from './lib/fullSpots'
+import { submitFullReport } from './lib/submitFullReport'
 import { useReports } from './hooks/useReports'
 import { useTypeVotes } from './hooks/useTypeVotes'
 import { applyVerifiedTypeToSpot } from './lib/typeVotes'
@@ -173,10 +174,7 @@ export default function App() {
     getReport,
     refresh: refreshReports,
   } = useReports()
-  const {
-    byId: typeVoteById,
-    applyLocalResults: applyTypeVoteResults,
-  } = useTypeVotes()
+  const { byId: typeVoteById } = useTypeVotes()
   const fullSpotIds = useMemo(() => {
     const next = new Set<string>([...localFullSpotIds, ...remoteFullIds])
     return next
@@ -1675,16 +1673,37 @@ export default function App() {
 
   const handleMarkFull = useCallback(() => {
     if (!selected) return
-    if (!canSubmitReport(selected.id)) {
+    const parkingId = selected.id
+    if (!canSubmitReport(parkingId)) {
       setToast({
         kind: 'info',
-        title: 'Teavitus juba saadetud',
-        detail: 'Sama parkla jaoks oota 5 minutit',
+        title: 'Sama parkla jaoks oota 5 minutit',
       })
       return
     }
-    runFindAlternatives({ markFullId: selected.id, autoGo: true })
-  }, [selected, runFindAlternatives, setToast])
+    setToast({ kind: 'loading', title: 'Saadan…' })
+    void (async () => {
+      const result = await submitFullReport(parkingId)
+      if (!result.ok) {
+        setToast({
+          kind: result.cooldown ? 'info' : 'error',
+          title: result.message,
+        })
+        return
+      }
+      setLocalFullSpotIds(markSpotFull(parkingId))
+      void refreshReports()
+      setToast({
+        kind: 'success',
+        title: 'Raport saadetud',
+        actionLabel: 'Võta tagasi',
+        onAction: () => {
+          setLocalFullSpotIds(clearSpotFull(parkingId))
+        },
+      })
+      runFindAlternatives({ autoGo: true })
+    })()
+  }, [selected, runFindAlternatives, setToast, refreshReports])
 
   const handleCrowdReportSuccess = useCallback(
     (payload: {
@@ -2004,41 +2023,46 @@ export default function App() {
 
           {!isDropdownOpen ? (
             <div
-              data-testid="filter-chips"
-              className={`no-scrollbar flex gap-2 overflow-x-auto px-0.5 py-0.5 transition-opacity duration-200 ${
+              data-testid="filter-chips-wrap"
+              className={`filter-chips-fade relative transition-opacity duration-200 ${
                 detailChromeOpen
-                  ? 'max-sm:pointer-events-none max-sm:h-0 max-sm:overflow-hidden max-sm:opacity-0 max-sm:py-0'
+                  ? 'max-sm:pointer-events-none max-sm:h-0 max-sm:overflow-hidden max-sm:opacity-0'
                   : ''
               }`}
             >
-              {FILTERS.map((f) => {
-                const active = filter === f.id
-                return (
-                  <button
-                    key={f.id}
-                    type="button"
-                    data-filter={f.id}
-                    onClick={() => {
-                      setFilter(f.id)
-                      track('filter_used', { filter: f.id })
-                      if (f.id === 'free_street') {
-                        track('free_now_toggled', { filter: f.id })
-                      }
-                    }}
-                    className={`tap-scale shrink-0 cursor-pointer rounded-full px-3.5 py-2 text-[13px] font-semibold shadow-sm sm:px-4 ${
-                      active ? chipActive : `${panel} ${chip}`
-                    }`}
-                  >
-                    {f.color && !active ? (
-                      <span
-                        className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle"
-                        style={{ backgroundColor: f.color }}
-                      />
-                    ) : null}
-                    {f.label}
-                  </button>
-                )
-              })}
+              <div
+                data-testid="filter-chips"
+                className="no-scrollbar flex gap-2 overflow-x-auto px-0.5 py-0.5"
+              >
+                {FILTERS.map((f) => {
+                  const active = filter === f.id
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      data-filter={f.id}
+                      onClick={() => {
+                        setFilter(f.id)
+                        track('filter_used', { filter: f.id })
+                        if (f.id === 'free_street') {
+                          track('free_now_toggled', { filter: f.id })
+                        }
+                      }}
+                      className={`tap-scale shrink-0 cursor-pointer rounded-full px-3.5 py-2 text-[13px] font-semibold shadow-sm sm:px-4 ${
+                        active ? chipActive : `${panel} ${chip}`
+                      }`}
+                    >
+                      {f.color && !active ? (
+                        <span
+                          className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle"
+                          style={{ backgroundColor: f.color }}
+                        />
+                      ) : null}
+                      {f.label}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           ) : null}
 
@@ -2328,22 +2352,6 @@ export default function App() {
           onCrowdReportSuccess={handleCrowdReportSuccess}
           onWidenRadius={handleWidenRadius}
           onSelectAlternative={handleSelectAlternative}
-          onTypeVoteVerified={(payload) => {
-            if (payload.results.length > 0) {
-              applyTypeVoteResults(payload.results)
-            }
-            setToast({
-              kind: payload.verified ? 'success' : 'info',
-              title: payload.message,
-            })
-            if (payload.verified && payload.verifiedType) {
-              setSelected((prev) =>
-                prev && payload.verifiedType
-                  ? applyVerifiedTypeToSpot(prev, payload.verifiedType)
-                  : prev,
-              )
-            }
-          }}
         />
       ) : null}
 

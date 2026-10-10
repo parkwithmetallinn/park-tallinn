@@ -22,8 +22,8 @@ export const ZOOM = {
    */
   streetMin: 12,
   /**
-   * EV / timed pin detail (fully visible from 15).
+   * Lot text labels / pin detail (fully visible from 16+).
    */
-  detailMin: 15,
+  detailMin: 16,
   landmarkMin: 13,
 } as const

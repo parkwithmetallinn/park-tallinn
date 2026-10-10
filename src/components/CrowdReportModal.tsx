@@ -20,15 +20,15 @@ const STATUS_OPTIONS: {
   { id: 'free', label: 'Vabu kohti', Icon: CheckCircle2, apiStatus: 'FREE' },
 ]
 
-const COMMENT_MAX = 200
+const FETCH_TIMEOUT_MS = 10_000
 
 const SUCCESS_TOAST =
   'Aitäh! Sinu teavitus aitab teisi autojuhte.'
 
 /**
  * Glassmorphic slide-up crowd-report modal (mobile-first).
- * POSTs { parkingId, statusType, comment } to /api/reports.
- * statusType is only FULL or FREE.
+ * Preset buttons only — no free-form notes (App Store UGC Rule 1.2).
+ * POSTs { parkingId, statusType } to /api/reports.
  */
 export function CrowdReportModal({
   spot,
@@ -52,7 +52,6 @@ export function CrowdReportModal({
   const safeInitial =
     initialStatus === 'free' || initialStatus === 'full' ? initialStatus : 'full'
   const [statusType, setStatusType] = useState<CrowdStatusType>(safeInitial)
-  const [comment, setComment] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -67,9 +66,6 @@ export function CrowdReportModal({
   const optionActive = dark
     ? 'border-[#FF3B30]/55 bg-[#FF3B30]/18'
     : 'border-[#FF3B30]/45 bg-[#FF3B30]/10'
-  const field = dark
-    ? 'border-white/10 bg-white/5 text-white placeholder:text-[#636366]'
-    : 'border-ink/10 bg-white/95 text-ink placeholder:text-[#8E8E93]'
 
   const cooldownActive = !canSubmitReport(spot.id)
 
@@ -82,6 +78,8 @@ export function CrowdReportModal({
     }
     setError(null)
     setSubmitting(true)
+    const ac = new AbortController()
+    const timer = window.setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS)
     try {
       const opt = STATUS_OPTIONS.find((o) => o.id === statusType)
       const res = await fetch(apiUrl('/api/reports'), {
@@ -93,9 +91,9 @@ export function CrowdReportModal({
         body: JSON.stringify({
           parkingId: spot.id,
           statusType: opt?.apiStatus ?? 'FULL',
-          // Comment accepted for length validation; server stores null
-          comment: comment.trim().slice(0, COMMENT_MAX),
+          comment: '',
         }),
+        signal: ac.signal,
       })
       const data = (await res.json().catch(() => null)) as {
         success?: boolean
@@ -108,13 +106,20 @@ export function CrowdReportModal({
       markReportSubmitted(spot.id)
       onSuccess?.({
         statusType,
-        comment: comment.trim(),
+        comment: '',
         message: SUCCESS_TOAST,
       })
       onClose()
-    } catch {
-      setError('Ühendus ebaõnnestus — proovi uuesti')
+    } catch (err) {
+      const aborted =
+        (err as Error)?.name === 'AbortError' || ac.signal.aborted
+      setError(
+        aborted
+          ? 'Aegus — proovi uuesti'
+          : 'Ühendus ebaõnnestus — proovi uuesti',
+      )
     } finally {
+      window.clearTimeout(timer)
       setSubmitting(false)
     }
   }
@@ -190,28 +195,6 @@ export function CrowdReportModal({
             })}
           </div>
 
-          <div>
-            <label
-              htmlFor="crowd-report-comment"
-              className={`mb-1 block text-[12px] font-semibold ${muted}`}
-            >
-              Kommentaar (valikuline)
-            </label>
-            <textarea
-              id="crowd-report-comment"
-              value={comment}
-              onChange={(e) => setComment(e.target.value.slice(0, COMMENT_MAX))}
-              rows={3}
-              maxLength={COMMENT_MAX}
-              placeholder="Valikuline…"
-              disabled={submitting}
-              className={`w-full resize-none rounded-2xl border px-3.5 py-2.5 text-[14px] font-medium outline-none focus:ring-2 focus:ring-[#FF3B30]/25 ${field}`}
-            />
-            <p className={`mt-1 text-right text-[12px] font-medium ${muted}`}>
-              {comment.length}/{COMMENT_MAX}
-            </p>
-          </div>
-
           {error ? (
             <p className="rounded-2xl bg-[#FF3B30]/10 px-3 py-2.5 text-[12px] font-semibold text-[#D70015]">
               {error}
@@ -234,7 +217,7 @@ export function CrowdReportModal({
             <button
               type="submit"
               disabled={submitting || cooldownActive}
-              className="tap-scale flex flex-[1.35] items-center justify-center gap-2 rounded-2xl bg-[#FF3B30] px-3 py-3 text-[14px] font-bold text-white disabled:opacity-55"
+              className="tap-scale flex-[1.35] items-center justify-center gap-2 rounded-2xl bg-[#FF3B30] px-3 py-3 text-[14px] font-bold text-white disabled:opacity-55 inline-flex"
               title={
                 cooldownActive
                   ? 'Sama parkla jaoks oota 5 minutit'

@@ -7,6 +7,9 @@ export type ToastState = {
   kind: ToastKind
   title: string
   detail?: string
+  /** Optional action (e.g. Undo) — shown as a text button. */
+  actionLabel?: string
+  onAction?: () => void
 } | null
 
 const DISMISS_MS: Record<Exclude<ToastKind, 'loading'>, number> = {
@@ -27,13 +30,14 @@ export function Toast({
 
   // Dismiss based on toast identity (kind+title+detail), not onClose identity —
   // parent re-renders (GPS / timer) must not reset or clear the toast early.
+  // Undo toasts stay ~5s.
   const toastKey = toast
-    ? `${toast.kind}|${toast.title}|${toast.detail ?? ''}`
+    ? `${toast.kind}|${toast.title}|${toast.detail ?? ''}|${toast.actionLabel ?? ''}`
     : null
 
   useEffect(() => {
     if (!toast || toast.kind === 'loading') return
-    const ms = DISMISS_MS[toast.kind]
+    const ms = toast.actionLabel ? 5000 : DISMISS_MS[toast.kind]
     const t = window.setTimeout(() => onCloseRef.current(), ms)
     return () => window.clearTimeout(t)
   }, [toastKey, toast])
@@ -60,7 +64,7 @@ export function Toast({
 
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 top-[max(5.25rem,env(safe-area-inset-top))] z-[200] flex justify-center px-3 sm:px-4"
+      className="pointer-events-none fixed inset-x-0 bottom-[max(5.5rem,env(safe-area-inset-bottom))] z-[200] flex justify-center px-3 sm:px-4"
       role="status"
       aria-live="polite"
       data-testid="parking-toast"
@@ -78,6 +82,19 @@ export function Toast({
             <p className="mt-0.5 text-xs leading-snug opacity-90">{toast.detail}</p>
           ) : null}
         </div>
+        {toast.actionLabel && toast.onAction ? (
+          <button
+            type="button"
+            data-testid="toast-undo"
+            onClick={() => {
+              toast.onAction?.()
+              onClose()
+            }}
+            className="shrink-0 rounded-lg bg-white/20 px-2.5 py-1.5 text-[12px] font-bold"
+          >
+            {toast.actionLabel}
+          </button>
+        ) : null}
         {toast.kind !== 'loading' ? (
           <button
             type="button"

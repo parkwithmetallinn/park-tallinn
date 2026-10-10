@@ -199,7 +199,7 @@ function parnuZoneLotFeatures(): PreciseParkingFeature[] {
         area_m2: 0,
         labelRank: 0,
         floors_label: '',
-        structure_label: 'Surface',
+        structure_label: 'Maapealne',
         source: z.source,
         lastVerified: z.lastVerified,
         cityId: 'parnu' as const,

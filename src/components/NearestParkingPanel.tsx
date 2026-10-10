@@ -4,6 +4,7 @@ import { formatDistance } from '../lib/geo'
 import {
   categoryPaintColor,
   isClockLimitedParking,
+  isUnclassifiedParking,
   isUnlimitedFreeParking,
 } from '../lib/parkingClassification'
 import { spotDisplayName } from '../lib/parkingDisplayName'
@@ -37,6 +38,7 @@ export function parkingPriceBadge(spot: ParkingSpot): string {
     const mins = Math.max(1, Math.round(spot.free_minutes || 15))
     return `${mins} MIN`
   }
+  if (isUnclassifiedParking(spot)) return 'Hind teadmata'
   if (spot.price_per_hour > 0) {
     return `${spot.price_per_hour.toFixed(2)} €/h`
   }
@@ -50,15 +52,32 @@ export function parkingPriceBadge(spot: ParkingSpot): string {
 
 /** Compact map pill label (no numbers 1/2/3 — price/type only). */
 export function parkingMapPillLabel(spot: ParkingSpot): string {
-  if (isUnlimitedFreeParking(spot)) return 'FREE'
+  if (isUnlimitedFreeParking(spot)) return 'TASUTA'
   if (isClockLimitedParking(spot)) {
     const mins = Math.max(1, Math.round(spot.free_minutes || 15))
     return `${mins} MIN`
   }
+  if (
+    isUnclassifiedParking({
+      layer: spot.layer,
+      price_per_hour: spot.price_per_hour,
+      free_minutes: spot.free_minutes,
+      zone_code: spot.zone_code,
+      operator: spot.operator,
+      verified_free: spot.layer === 'free_street',
+      type: spot.type,
+      timeLimit: spot.timeLimit,
+      name: spot.name,
+      desc: spot.desc,
+      badge: spot.badge,
+    })
+  ) {
+    return 'Hind teadmata'
+  }
   if (spot.price_per_hour > 0) {
     return `${spot.price_per_hour.toFixed(2)} €/h`
   }
-  return 'PAID'
+  return 'TASULINE'
 }
 
 export function parkingMapPillTone(
@@ -133,7 +152,13 @@ export function NearestParkingPanel({
       // FREE always above KELLAGA — even when a clock spot is closer
       return sortOdavaimTasuta(list)
     }
-    return list
+    // Known spots first; unknown (teadmata) at the bottom
+    return [...list].sort((a, b) => {
+      const au = isUnclassifiedParking(a.spot) ? 1 : 0
+      const bu = isUnclassifiedParking(b.spot) ? 1 : 0
+      if (au !== bu) return au - bu
+      return a.distanceM - b.distanceM
+    })
   }, [options, filter])
 
   // Keep list card in view when preview comes from a map pill tap
@@ -284,6 +309,9 @@ export function NearestParkingPanel({
                             {walk} min kõndi
                             {spot.zone_code && spot.zone_code !== 'ZONE'
                               ? ` · ${spot.zone_code}`
+                              : ''}
+                            {isUnclassifiedParking(spot)
+                              ? ' · Kontrolli kohapeal sildilt'
                               : ''}
                           </span>
                         </span>

@@ -129,18 +129,28 @@ a.tap-scale {
   color: #9db0c6 !important;
 }
 
-.map-dark .district-qa-btn {
-  border-color: rgb(255 255 255 / 0.15);
-  background: rgb(28 28 30 / 0.92);
-  color: #e5e7eb;
-}
-
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Right-edge fade: hint that filter chips scroll horizontally */
+.filter-chips-fade {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    #000 0%,
+    #000 calc(100% - 2rem),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    #000 0%,
+    #000 calc(100% - 2rem),
+    transparent 100%
+  );
 }
 
 @keyframes pulse-ring {

@@ -93,15 +93,15 @@ function inferZoneCode(spot: ParkingSpotSeed, layer: ParkingLayerKey): string {
     case 'inva':
       return 'INVA'
     case 'loading':
-      return 'LOAD'
+      return 'LAAD'
     case 'timed':
       return 'KELL'
     case 'free_street':
-      return 'FREE'
+      return 'TASUTA'
     case 'municipal':
       return 'AVALIK'
     default:
-      return 'UNK'
+      return ''
   }
 }
 
@@ -194,10 +194,12 @@ export function normalizeSpot(spot: ParkingSpotSeed): ParkingSpot {
   const kind = inferKind(spot, featureType)
   const badgeRaw = spot.badge?.trim().toUpperCase()
   const badge =
-    badgeRaw === 'FREE' || badgeRaw === 'KELL' || badgeRaw === 'EV'
-      ? layer === 'timed' && badgeRaw === 'FREE'
+    badgeRaw === 'FREE' || badgeRaw === 'TASUTA' || badgeRaw === 'KELL' || badgeRaw === 'EV'
+      ? layer === 'timed' && (badgeRaw === 'FREE' || badgeRaw === 'TASUTA')
         ? 'KELL'
-        : badgeRaw
+        : badgeRaw === 'FREE'
+          ? 'TASUTA'
+          : badgeRaw
       : mapLabelForLayer(layer, zone_code)
 
   return {
@@ -206,7 +208,7 @@ export function normalizeSpot(spot: ParkingSpotSeed): ParkingSpot {
     operator,
     layer,
     zone_code:
-      badge === 'FREE' || badge === 'KELL' || badge === 'EV' ? badge : zone_code,
+      badge === 'TASUTA' || badge === 'KELL' || badge === 'EV' ? badge : zone_code,
     free_minutes,
     price_per_hour,
     type,

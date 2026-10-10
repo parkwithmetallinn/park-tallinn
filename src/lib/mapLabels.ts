@@ -5,6 +5,7 @@ import type { ParkingLayerKey } from '../types'
  * Uses the classified layer (operator), never parses prior label strings.
  *
  * Snabb is always "SB" — zone codes like X12 / SB7 stay in `zone_code` for sheets.
+ * Estonian product labels: TASUTA / KELL / TASULINE. Never show bare "ZONE".
  */
 export function mapLabelForLayer(
   layer: ParkingLayerKey,
@@ -13,7 +14,10 @@ export function mapLabelForLayer(
   if (layer === 'snabb') return 'SB'
 
   const z = (zoneCode ?? '').trim()
-  if (z) return z.length <= 8 ? z : z.slice(0, 8)
+  // Skip placeholder / English category codes — show real codes only (e.g. EP264)
+  if (z && !/^(ZONE|FREE|PAID|P|UNKNOWN|TASUTA|TASULINE)$/i.test(z)) {
+    return z.length <= 8 ? z : z.slice(0, 8)
+  }
 
   switch (layer) {
     case 'europark':
@@ -31,14 +35,14 @@ export function mapLabelForLayer(
     case 'inva':
       return 'INVA'
     case 'loading':
-      return 'LOAD'
+      return 'LAAD'
     case 'timed':
       return 'KELL'
     case 'free_street':
-      return 'FREE'
+      return 'TASUTA'
     case 'municipal':
-      return 'ZONE'
+      return ''
     default:
-      return 'P'
+      return ''
   }
 }

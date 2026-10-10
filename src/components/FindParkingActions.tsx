@@ -14,6 +14,7 @@ export function FindParkingActions({
   primaryLabel,
   onFindAnother,
   onMarkFull,
+  onReportOther,
   showMarkFull,
   alternatives,
   noResults,
@@ -27,6 +28,8 @@ export function FindParkingActions({
   primaryLabel: string
   onFindAnother: () => void
   onMarkFull?: () => void
+  /** Opens detailed crowd modal (free / other) — not one-tap full. */
+  onReportOther?: () => void
   showMarkFull?: boolean
   alternatives: AlternativeParking[]
   noResults?: boolean
@@ -70,8 +73,7 @@ export function FindParkingActions({
             type="button"
             data-testid="mark-lot-full"
             onClick={onMarkFull}
-            disabled={isCurrentFull}
-            className={`tap-scale flex min-h-11 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-[12px] font-bold transition active:scale-[0.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FF3B30] disabled:cursor-not-allowed disabled:opacity-45 ${
+            className={`tap-scale flex min-h-11 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-[12px] font-bold transition active:scale-[0.99] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FF3B30] ${
               dark
                 ? 'bg-[#FF3B30]/20 text-[#FF6961]'
                 : 'bg-[#FF3B30]/10 text-[#FF3B30]'
@@ -85,6 +87,22 @@ export function FindParkingActions({
           >
             <Ban className="h-4 w-4 shrink-0" strokeWidth={2.4} />
             <span className="hidden min-[360px]:inline">Täis</span>
+          </button>
+        ) : null}
+        {onReportOther ? (
+          <button
+            type="button"
+            data-testid="report-other"
+            onClick={onReportOther}
+            className={`tap-scale flex min-h-11 shrink-0 cursor-pointer items-center justify-center rounded-xl px-2.5 py-2.5 text-[11px] font-bold transition active:scale-[0.99] ${
+              dark
+                ? 'bg-white/10 text-[#EBEBF5]'
+                : 'bg-[#F2F2F7] text-[#3A3A3C]'
+            }`}
+            aria-label="Teata muust"
+            title="Teata muust"
+          >
+            Teata muust
           </button>
         ) : null}
       </div>

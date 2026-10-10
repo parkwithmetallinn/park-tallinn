@@ -130,9 +130,9 @@ function asStructureType(parking: string, building?: string): ParkingStructureTy
 }
 
 function structureLabel(t: ParkingStructureType): string {
-  if (t === 'underground') return 'Underground'
-  if (t === 'multi_storey') return 'Multi-storey'
-  return 'Surface'
+  if (t === 'underground') return 'Maa-alune'
+  if (t === 'multi_storey') return 'Mitmekorruseline'
+  return 'Maapealne'
 }
 
 /** Map OSM operator / zone / free tags → app layer key. */
@@ -477,10 +477,10 @@ export function prepareParkingPolygons(raw: RawCollection): PreciseParkingCollec
             : layer === 'uhisteenused'
               ? 'UT'
               : layer === 'free_street'
-                ? 'FREE'
+                ? 'TASUTA'
                 : layer === 'timed'
                   ? 'KELL'
-                  : 'ZONE')
+                  : '')
 
     const operator = operatorDisplay(operatorRaw, layer)
     const address = buildAddress(p) || str(p.address)
@@ -620,10 +620,16 @@ export function preciseFeatureToSpot(f: PreciseParkingFeature): ParkingSpot {
     verifyOnSite: p.verifyOnSite,
     parnuZone: p.parnuZone,
   })
-  // Preserve FREE / KELL / EV badges exactly (no capacity / OSM id labels)
-  if (p.badge === 'FREE' || p.badge === 'KELL' || p.badge === 'EV') {
-    spot.badge = p.badge
-    spot.zone_code = p.badge
+  // Preserve TASUTA / KELL / EV badges (normalize legacy FREE → TASUTA)
+  if (
+    p.badge === 'TASUTA' ||
+    p.badge === 'FREE' ||
+    p.badge === 'KELL' ||
+    p.badge === 'EV'
+  ) {
+    const normalized = p.badge === 'FREE' ? 'TASUTA' : p.badge
+    spot.badge = normalized
+    spot.zone_code = normalized
   }
   return spot
 }
