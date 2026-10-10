@@ -4,6 +4,7 @@ import {
   CircleHelp,
   Clock3,
   Footprints,
+  Info,
   Loader2,
   LocateFixed,
   Map as MapIcon,
@@ -18,6 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import { MapErrorBoundary } from './components/MapErrorBoundary'
 import { MapView, type MapViewHandle } from './components/MapView'
 import { ModalShell } from './components/ModalShell'
+import { TeavePanel } from './components/TeavePanel'
 import { LocationInfoSheet } from './components/LocationInfoSheet'
 import {
   NearestParkingPanel,
@@ -221,6 +223,7 @@ export default function App() {
   /** Detail was opened from nearest picker — show "Tagasi nimekirja". */
   const [fromNearestPicker, setFromNearestPicker] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
+  const [teaveOpen, setTeaveOpen] = useState(false)
   const [favoritesOpen, setFavoritesOpen] = useState(false)
   const [reportContext, setReportContext] = useState<ReportModalContext | null>(null)
   const [approvedOverlays, setApprovedOverlays] = useState<ParkingSpot[]>([])
@@ -1984,6 +1987,17 @@ export default function App() {
                 </button>
                 <button
                   type="button"
+                  data-testid="open-teave"
+                  onClick={() => setTeaveOpen(true)}
+                  className={`cursor-pointer rounded-full p-2.5 ${chip}`}
+                  title="Teave"
+                  aria-label="Teave"
+                  aria-pressed={teaveOpen}
+                >
+                  <Info className="h-5 w-5" />
+                </button>
+                <button
+                  type="button"
                   onClick={() => {
                     setTheme((t) => {
                       const next = toggleTheme(t)
@@ -2434,6 +2448,8 @@ export default function App() {
       ) : null}
 
       <Toast toast={toast} onClose={dismissToast} />
+
+      {teaveOpen ? <TeavePanel onClose={() => setTeaveOpen(false)} /> : null}
 
       {infoOpen ? (
         <ModalShell
