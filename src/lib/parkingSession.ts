@@ -876,9 +876,7 @@ export function formatSessionFeedbackDetail(
     listCount != null && outcome.activeSessions
       ? `${listCount} aktiivset sessiooni`
       : null,
-    details?.carNumber && details?.zone
-      ? `${details.carNumber} · ${details.zone}`
-      : null,
+    details?.zone ? String(details.zone) : null,
     formatHourlyRate(sessionHourlyRate(details)),
     details?.status ? String(details.status) : null,
     formatSessionInstant(sessionStartIso(details))
