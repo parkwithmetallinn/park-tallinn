@@ -706,6 +706,59 @@ body {
   color: #ff8a80;
 }
 
+/* Community free (green) */
+.parking-status-indicator--free .parking-full-indicator__core {
+  background: #34c759;
+  box-shadow: 0 2px 8px rgb(52 199 89 / 0.45);
+}
+.parking-status-indicator--free .parking-full-indicator__ring {
+  border-color: #34c759;
+}
+.map-dark .parking-status-indicator--free .parking-full-indicator__core {
+  background: #30d158;
+  box-shadow: 0 2px 8px rgb(48 209 88 / 0.5);
+}
+.map-dark .parking-status-indicator--free .parking-full-indicator__ring {
+  border-color: #30d158;
+}
+
+/* Community unknown (gray) */
+.parking-status-indicator--unknown .parking-full-indicator__core {
+  background: #8e8e93;
+  box-shadow: 0 2px 8px rgb(142 142 147 / 0.4);
+  animation: none;
+}
+.parking-status-indicator--unknown .parking-full-indicator__ring {
+  border-color: #8e8e93;
+  animation: none;
+  opacity: 0.45;
+  transform: scale(1.25);
+}
+.map-dark .parking-status-indicator--unknown .parking-full-indicator__core {
+  background: #636366;
+  border-color: #1c1c1e;
+}
+.map-dark .parking-status-indicator--unknown .parking-full-indicator__ring {
+  border-color: #636366;
+}
+
+.parking-status-chip--free {
+  background: rgb(52 199 89 / 0.14);
+  color: #1b7a36;
+}
+.parking-status-chip--unknown {
+  background: rgb(142 142 147 / 0.16);
+  color: #636366;
+}
+.map-dark .parking-status-chip--free {
+  background: rgb(48 209 88 / 0.18);
+  color: #86efac;
+}
+.map-dark .parking-status-chip--unknown {
+  background: rgb(99 99 102 / 0.22);
+  color: #aeaeb2;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .parking-full-indicator__ring,
   .parking-full-indicator__core {

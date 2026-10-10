@@ -124,7 +124,11 @@ import {
   type EvChargerFeature,
 } from '../lib/evChargers'
 import type { FilterId, ParkingLayerKey, ParkingSpot } from '../types'
-import { createFullIndicatorElement } from '../lib/fullIndicatorDom'
+import {
+  applyCommunityStatusToElement,
+  createCommunityStatusElement,
+  type CommunityMarkerStatus,
+} from '../lib/fullIndicatorDom'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
 setWorkerUrl(maplibreWorker)
@@ -504,10 +508,11 @@ function updateMyPinEl(
 
 
 /** Stable marker payloads — memoized so pan/zoom does not rebuild HTML markers. */
-type FullAlertMarker = {
+type CommunityStatusMarker = {
   id: string
   lat: number
   lng: number
+  status: CommunityMarkerStatus
 }
 
 function prefersReducedMotion() {
@@ -874,6 +879,8 @@ export const MapView = memo(forwardRef<
     suppressedFeatureIds?: Set<string> | string[]
     /** Crowdsourced "lot is full" marks (60 min TTL) — compact pulse indicators. */
     fullSpotIds?: Set<string> | string[]
+    /** Community "vabu kohti" report ids (green markers). */
+    freeSpotIds?: Set<string> | string[]
     /** Left/bottom info panel open — shift camera so pin stays visible. */
     infoPanelOpen?: boolean
     /** Active city layer (Tallinn default — keeps existing data path). */
@@ -922,6 +929,7 @@ export const MapView = memo(forwardRef<
     onMapReady,
     suppressedFeatureIds,
     fullSpotIds,
+    freeSpotIds,
     infoPanelOpen = false,
     cityId = 'tallinn',
     myPins = [],
@@ -990,25 +998,40 @@ export const MapView = memo(forwardRef<
   const loadGenRef = useRef(0)
   const [ready, setReady] = useState(false)
 
-  const alertMarkerSpecs = useMemo((): FullAlertMarker[] => {
-    const ids = new Set(
+  const alertMarkerSpecs = useMemo((): CommunityStatusMarker[] => {
+    const fullIds = new Set(
       fullSpotIds instanceof Set
         ? fullSpotIds
         : Array.isArray(fullSpotIds)
           ? fullSpotIds
           : [],
     )
-    alertIdsRef.current = ids
-    if (ids.size === 0) return []
+    const freeIds = new Set(
+      freeSpotIds instanceof Set
+        ? freeSpotIds
+        : Array.isArray(freeSpotIds)
+          ? freeSpotIds
+          : [],
+    )
+    alertIdsRef.current = fullIds
+    if (fullIds.size === 0 && freeIds.size === 0) return []
     const byId = new Map(spots.map((s) => [s.id, s]))
-    const out: FullAlertMarker[] = []
-    for (const id of ids) {
+    const out: CommunityStatusMarker[] = []
+    const seen = new Set<string>()
+    for (const id of fullIds) {
       const spot = byId.get(id) ?? parkingIndex.getById(id)
       if (!spot) continue
-      out.push({ id, lat: spot.lat, lng: spot.lng })
+      seen.add(id)
+      out.push({ id, lat: spot.lat, lng: spot.lng, status: 'full' })
+    }
+    for (const id of freeIds) {
+      if (seen.has(id)) continue
+      const spot = byId.get(id) ?? parkingIndex.getById(id)
+      if (!spot) continue
+      out.push({ id, lat: spot.lat, lng: spot.lng, status: 'free' })
     }
     return out
-  }, [fullSpotIds, spots])
+  }, [fullSpotIds, freeSpotIds, spots])
 
   onNavigateRef.current = onNavigate
   onEvChargerSelectRef.current = onEvChargerSelect
@@ -2270,9 +2293,10 @@ export const MapView = memo(forwardRef<
       const existing = markers.get(spec.id)
       if (existing) {
         existing.setLngLat([spec.lng, spec.lat])
+        applyCommunityStatusToElement(existing.getElement(), spec.status)
       } else {
         const m = new Marker({
-          element: createFullIndicatorElement(),
+          element: createCommunityStatusElement(spec.status),
           anchor: 'center',
         })
           .setLngLat([spec.lng, spec.lat])

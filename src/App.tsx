@@ -64,12 +64,16 @@ import {
 } from './lib/alternatives'
 import { distanceMeters, formatDistance } from './lib/geo'
 import {
-  COMMUNITY_REPORTS_POLL_MS,
   communityReportIds,
-  fetchCommunityReports,
+  formatCommunityReportLabel,
   postCommunityFullReport,
 } from './lib/communityReports'
 import { loadFullSpotIds, markSpotFull } from './lib/fullSpots'
+import { useReports } from './hooks/useReports'
+import {
+  canSubmitReport,
+  markReportSubmitted,
+} from './lib/reportCooldown'
 import {
   isClockLimitedParking,
   isUnclassifiedParking,
@@ -157,7 +161,26 @@ export default function App() {
   const selectSearchSuggestionRef = useRef<(item: SearchSuggestion) => void>(
     () => {},
   )
-  const [fullSpotIds, setFullSpotIds] = useState<Set<string>>(() => loadFullSpotIds())
+  const [localFullSpotIds, setLocalFullSpotIds] = useState<Set<string>>(
+    () => loadFullSpotIds(),
+  )
+  const {
+    fullSpotIds: remoteFullIds,
+    freeSpotIds: remoteFreeIds,
+    getReport,
+    refresh: refreshReports,
+  } = useReports()
+  const fullSpotIds = useMemo(() => {
+    const next = new Set<string>([...localFullSpotIds, ...remoteFullIds])
+    return next
+  }, [localFullSpotIds, remoteFullIds])
+  const freeSpotIds = useMemo(() => {
+    const next = new Set<string>()
+    for (const id of remoteFreeIds) {
+      if (!fullSpotIds.has(id)) next.add(id)
+    }
+    return next
+  }, [remoteFreeIds, fullSpotIds])
   const [alternatives, setAlternatives] = useState<AlternativeParking[]>([])
   const [noAlternatives, setNoAlternatives] = useState(false)
   const [userLocation, setUserLocation] = useState<[number, number]>(() => {
@@ -287,38 +310,12 @@ export default function App() {
 
   // Nominatim geocoding owned by useSearchGeocode (debounce + pending Enter)
 
-  // Local TTL prune + live community reports (GET /api/reports every 30s)
+  // Prune expired local full-marks (remote polling owned by useReports)
   useEffect(() => {
-    let cancelled = false
-    const mergeFullIds = (remoteIds: Set<string>) => {
-      const local = loadFullSpotIds()
-      const next = new Set<string>([...local, ...remoteIds])
-      setFullSpotIds(next)
-    }
-
-    const refresh = async (signal?: AbortSignal) => {
-      const reports = await fetchCommunityReports(signal)
-      if (cancelled) return
-      mergeFullIds(communityReportIds(reports))
-    }
-
-    setFullSpotIds(loadFullSpotIds())
-    const ac = new AbortController()
-    void refresh(ac.signal)
-
-    const pollId = window.setInterval(() => {
-      void refresh()
-    }, COMMUNITY_REPORTS_POLL_MS)
-    const pruneId = window.setInterval(() => {
-      void refresh()
-    }, 60_000)
-
-    return () => {
-      cancelled = true
-      ac.abort()
-      window.clearInterval(pollId)
-      window.clearInterval(pruneId)
-    }
+    const prune = () => setLocalFullSpotIds(loadFullSpotIds())
+    prune()
+    const id = window.setInterval(prune, 60_000)
+    return () => window.clearInterval(id)
   }, [])
 
   const clearRoute = useCallback(() => {
@@ -1593,8 +1590,10 @@ export default function App() {
 
       let nextFull = fullSpotIds
       if (opts?.markFullId) {
+        if (!canSubmitReport(opts.markFullId)) return
         nextFull = markSpotFull(opts.markFullId)
-        setFullSpotIds(nextFull)
+        setLocalFullSpotIds(nextFull)
+        markReportSubmitted(opts.markFullId)
         const marked =
           allSpots.find((s) => s.id === opts.markFullId) ?? selected
         void postCommunityFullReport({
@@ -1603,10 +1602,13 @@ export default function App() {
           lng: marked?.lng,
           isFull: true,
         }).then((reports) => {
-          const remote = communityReportIds(reports)
-          setFullSpotIds(
-            new Set([...loadFullSpotIds(), ...remote]),
-          )
+          if (reports.length > 0) void refreshReports()
+          else {
+            const remote = communityReportIds(reports)
+            setLocalFullSpotIds(
+              new Set([...loadFullSpotIds(), ...remote]),
+            )
+          }
         })
       }
 
@@ -1640,6 +1642,7 @@ export default function App() {
       allSpots,
       visibleIdSet,
       routeToSpot,
+      refreshReports,
     ],
   )
 
@@ -1649,8 +1652,16 @@ export default function App() {
 
   const handleMarkFull = useCallback(() => {
     if (!selected) return
+    if (!canSubmitReport(selected.id)) {
+      setToast({
+        kind: 'info',
+        title: 'Teavitus juba saadetud',
+        detail: 'Sama parkla jaoks oota 5 minutit',
+      })
+      return
+    }
     runFindAlternatives({ markFullId: selected.id, autoGo: true })
-  }, [selected, runFindAlternatives])
+  }, [selected, runFindAlternatives, setToast])
 
   const handleCrowdReportSuccess = useCallback(
     (payload: {
@@ -1662,16 +1673,20 @@ export default function App() {
         kind: 'success',
         title: payload.message,
       })
+      if (selected) {
+        markReportSubmitted(selected.id)
+        void refreshReports()
+      }
       if (
         selected &&
         (payload.statusType === 'full' || payload.statusType === 'closed')
       ) {
         // API already stored the report — only sync local TTL + suggest alternatives
-        setFullSpotIds(markSpotFull(selected.id))
+        setLocalFullSpotIds(markSpotFull(selected.id))
         runFindAlternatives({ autoGo: true })
       }
     },
-    [selected, runFindAlternatives, setToast],
+    [selected, runFindAlternatives, setToast, refreshReports],
   )
 
   const handleWidenRadius = useCallback(() => {
@@ -1784,6 +1799,7 @@ export default function App() {
             onMapReady={() => setMapReady(true)}
             suppressedFeatureIds={suppressedIds}
             fullSpotIds={fullSpotIds}
+            freeSpotIds={freeSpotIds}
             infoPanelOpen={Boolean(
               selected ||
                 selectedEvCharger ||
@@ -2278,6 +2294,10 @@ export default function App() {
           alternatives={alternatives}
           noAlternatives={noAlternatives}
           isFull={fullSpotIds.has(selected.id)}
+          communityReportLabel={formatCommunityReportLabel(
+            getReport(selected.id),
+          )}
+          reportCooldownActive={!canSubmitReport(selected.id)}
           onFindAnother={handleFindAnother}
           onMarkFull={handleMarkFull}
           onCrowdReportSuccess={handleCrowdReportSuccess}

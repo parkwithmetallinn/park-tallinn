@@ -1,6 +1,10 @@
 import { AlertTriangle, Ban, Clock, Loader2, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { apiUrl } from '../lib/apiBase'
+import {
+  canSubmitReport,
+  markReportSubmitted,
+} from '../lib/reportCooldown'
 import type { ParkingSpot } from '../types'
 
 export type CrowdStatusType = 'full' | 'prices' | 'closed'
@@ -63,9 +67,15 @@ export function CrowdReportModal({
     ? 'border-white/10 bg-white/5 text-white placeholder:text-[#636366]'
     : 'border-ink/10 bg-white/95 text-ink placeholder:text-[#8E8E93]'
 
+  const cooldownActive = !canSubmitReport(spot.id)
+
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     if (submitting) return
+    if (!canSubmitReport(spot.id)) {
+      setError('Sama parkla jaoks oota 5 minutit enne uut teavitust')
+      return
+    }
     setError(null)
     setSubmitting(true)
     try {
@@ -90,6 +100,7 @@ export function CrowdReportModal({
         setError(data?.message || 'Teavituse saatmine ebaõnnestus')
         return
       }
+      markReportSubmitted(spot.id)
       onSuccess?.({
         statusType,
         comment: comment.trim(),
@@ -216,14 +227,21 @@ export function CrowdReportModal({
             </button>
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || cooldownActive}
               className="tap-scale flex flex-[1.35] items-center justify-center gap-2 rounded-2xl bg-[#FF3B30] px-3 py-3 text-[14px] font-bold text-white disabled:opacity-55"
+              title={
+                cooldownActive
+                  ? 'Sama parkla jaoks oota 5 minutit'
+                  : undefined
+              }
             >
               {submitting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Saadan…
                 </>
+              ) : cooldownActive ? (
+                'Oota 5 min'
               ) : (
                 'Saada teavitus'
               )}

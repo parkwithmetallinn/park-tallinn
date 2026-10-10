@@ -63,6 +63,10 @@ export function ParkingDetailPanel({
   alternatives?: AlternativeParking[]
   noAlternatives?: boolean
   isFull?: boolean
+  /** e.g. "Kogukonna raport: Täis (5 min tagasi)" */
+  communityReportLabel?: string | null
+  /** Local 5-min cooldown after submitting a report for this lot. */
+  reportCooldownActive?: boolean
   onFindAnother?: () => void
   onMarkFull?: () => void
   onWidenRadius?: () => void

@@ -1,27 +1,26 @@
 /**
- * Live community reports — poll GET /api/reports every 30s.
- * GET returns a bare array:
- *   [{ parkingId, isFull, lastReportedMinutesAgo }]
+ * Live community reports — GET /api/reports.
+ * Response: [{ parkingId, isFull, lastReportedMinutesAgo }]
  */
 
 import { apiUrl } from './apiBase'
 
 export type CommunityReport = {
+  parkingId: string
+  /** Alias for parkingId (legacy callers). */
   spotId: string
-  parkingId?: string
   isFull: boolean
-  lastReportedMinutesAgo?: number
-  lat?: number
-  lng?: number
-  until?: number
+  lastReportedMinutesAgo: number
 }
 
-const POLL_MS = 30_000
+export const COMMUNITY_REPORTS_POLL_MS = 25_000
 
-function parseReports(data: unknown): CommunityReport[] {
+export function parseCommunityReports(data: unknown): CommunityReport[] {
   const raw = Array.isArray(data)
     ? data
-    : data && typeof data === 'object' && Array.isArray((data as { reports?: unknown }).reports)
+    : data &&
+        typeof data === 'object' &&
+        Array.isArray((data as { reports?: unknown }).reports)
       ? ((data as { reports: unknown[] }).reports)
       : null
   if (!raw) return []
@@ -36,40 +35,41 @@ function parseReports(data: unknown): CommunityReport[] {
     if (!parkingId) continue
     const isFull =
       row.isFull === true || row.isFull === 'true' || row.isFull === 1
-    if (!isFull) continue
+    const minsRaw = row.lastReportedMinutesAgo
     const lastReportedMinutesAgo =
-      typeof row.lastReportedMinutesAgo === 'number' &&
-      Number.isFinite(row.lastReportedMinutesAgo)
-        ? Math.max(0, Math.round(row.lastReportedMinutesAgo))
-        : undefined
+      typeof minsRaw === 'number' && Number.isFinite(minsRaw)
+        ? Math.max(0, Math.round(minsRaw))
+        : 0
     out.push({
-      spotId: parkingId,
       parkingId,
-      isFull: true,
+      spotId: parkingId,
+      isFull: Boolean(isFull),
       lastReportedMinutesAgo,
     })
   }
   return out
 }
 
+/**
+ * Fetch community reports.
+ * Throws on network/HTTP failure so callers can keep the previous snapshot.
+ */
 export async function fetchCommunityReports(
   signal?: AbortSignal,
 ): Promise<CommunityReport[]> {
-  try {
-    const res = await fetch(apiUrl('/api/reports'), {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      signal,
-    })
-    if (!res.ok) return []
-    const data: unknown = await res.json()
-    return parseReports(data)
-  } catch {
-    return []
+  const res = await fetch(apiUrl('/api/reports'), {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    signal,
+  })
+  if (!res.ok) {
+    throw new Error(`reports HTTP ${res.status}`)
   }
+  const data: unknown = await res.json()
+  return parseCommunityReports(data)
 }
 
-/** Publish a community isFull mark (best-effort — local TTL still applies). */
+/** Publish a community full/free mark (best-effort). */
 export async function postCommunityFullReport(input: {
   spotId: string
   lat?: number
@@ -91,14 +91,27 @@ export async function postCommunityFullReport(input: {
     })
     if (!res.ok) return []
     const data: unknown = await res.json()
-    return parseReports(data)
+    return parseCommunityReports(data)
   } catch {
     return []
   }
 }
 
 export function communityReportIds(reports: CommunityReport[]): Set<string> {
-  return new Set(reports.filter((r) => r.isFull).map((r) => r.spotId))
+  return new Set(reports.filter((r) => r.isFull).map((r) => r.parkingId))
 }
 
-export const COMMUNITY_REPORTS_POLL_MS = POLL_MS
+export function communityFreeIds(reports: CommunityReport[]): Set<string> {
+  return new Set(reports.filter((r) => !r.isFull).map((r) => r.parkingId))
+}
+
+export function formatCommunityReportLabel(
+  report: CommunityReport | null | undefined,
+): string {
+  if (!report) return 'Kogukonna raport: Teadmata'
+  const status = report.isFull ? 'Täis' : 'Vabu kohti'
+  const mins = report.lastReportedMinutesAgo
+  const when =
+    mins <= 0 ? 'just nüüd' : `${mins} min tagasi`
+  return `Kogukonna raport: ${status} (${when})`
+}

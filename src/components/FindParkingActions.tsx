@@ -20,6 +20,7 @@ export function FindParkingActions({
   onWidenRadius,
   onSelectAlternative,
   isCurrentFull,
+  markFullDisabledReason,
 }: {
   dark?: boolean
   /** e.g. "Leia teine parkla läheduses" or "Leia lähim parkla" */
@@ -32,6 +33,8 @@ export function FindParkingActions({
   onWidenRadius?: () => void
   onSelectAlternative: (spot: ParkingSpot) => void
   isCurrentFull?: boolean
+  /** Tooltip when the Täis button is disabled (cooldown / already full). */
+  markFullDisabledReason?: string
 }) {
   const [expanded, setExpanded] = useState(false)
   const muted = dark ? 'text-[#98989D]' : 'text-[#8E8E93]'
@@ -74,7 +77,11 @@ export function FindParkingActions({
                 : 'bg-[#FF3B30]/10 text-[#FF3B30]'
             }`}
             aria-label="Parkla on täis"
-            title={isCurrentFull ? 'Juba märgitud täis' : 'Parkla on täis'}
+            title={
+              isCurrentFull
+                ? markFullDisabledReason || 'Juba märgitud täis'
+                : 'Parkla on täis'
+            }
           >
             <Ban className="h-4 w-4 shrink-0" strokeWidth={2.4} />
             <span className="hidden min-[360px]:inline">Täis</span>

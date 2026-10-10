@@ -123,6 +123,8 @@ export function ParkingBottomSheet({
   alternatives = [],
   noAlternatives = false,
   isFull = false,
+  communityReportLabel = null,
+  reportCooldownActive = false,
   onFindAnother,
   onMarkFull,
   onWidenRadius,
@@ -156,6 +158,10 @@ export function ParkingBottomSheet({
   alternatives?: AlternativeParking[]
   noAlternatives?: boolean
   isFull?: boolean
+  /** e.g. "Kogukonna raport: Täis (5 min tagasi)" */
+  communityReportLabel?: string | null
+  /** Local 5-min cooldown after submitting a report for this lot. */
+  reportCooldownActive?: boolean
   onFindAnother?: () => void
   onMarkFull?: () => void
   onWidenRadius?: () => void
@@ -369,6 +375,20 @@ export function ParkingBottomSheet({
               ) : null}
               {isFull ? <FullIndicator variant="chip" /> : null}
             </div>
+            {communityReportLabel ? (
+              <p
+                data-testid="community-report-status"
+                className={`mb-2 text-[12px] font-semibold leading-snug ${
+                  isFull
+                    ? 'text-[#C62828]'
+                    : communityReportLabel.includes('Vabu')
+                      ? 'text-[#1B7A36]'
+                      : muted
+                }`}
+              >
+                {communityReportLabel}
+              </p>
+            ) : null}
             <div className="flex min-w-0 items-start gap-1.5">
               <h3
                 className={`min-w-0 flex-1 truncate text-base leading-snug font-bold tracking-tight sm:text-lg ${ink}`}
@@ -613,7 +633,14 @@ export function ParkingBottomSheet({
             noResults={noAlternatives}
             onWidenRadius={onWidenRadius}
             onSelectAlternative={onSelectAlternative}
-            isCurrentFull={isFull}
+            isCurrentFull={isFull || reportCooldownActive}
+            markFullDisabledReason={
+              reportCooldownActive
+                ? 'Sama parkla jaoks oota 5 minutit'
+                : isFull
+                  ? 'Juba märgitud täis'
+                  : undefined
+            }
           />
         ) : null}
 
