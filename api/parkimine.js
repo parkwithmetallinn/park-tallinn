@@ -5,6 +5,8 @@
  * Env (server only — never VITE_*):
  *   N8N_WEBHOOK_URL
  *   N8N_API_KEY
+ *
+ * Session body (start/stop): { action, zone } only — never carNumber.
  */
 
 const UPSTREAM = process.env.N8N_WEBHOOK_URL || ''
@@ -33,13 +35,6 @@ function rateLimit(ip) {
   }
   bucket.count += 1
   return bucket.count <= RATE_MAX
-}
-
-function isValidCarNumber(v) {
-  if (v == null || v === '') return true
-  if (typeof v !== 'string') return false
-  const s = v.trim().toUpperCase()
-  return s.length >= 2 && s.length <= 12 && /^[A-Z0-9ÄÖÜÕ\- ]+$/i.test(s)
 }
 
 function isValidZone(v) {
@@ -87,9 +82,7 @@ function validateBody(body) {
   if (!ALLOWED_ACTIONS.has(action)) {
     return { ok: false, message: 'Vigane päring' }
   }
-  if (!isValidCarNumber(body.carNumber)) {
-    return { ok: false, message: 'Sisesta auto number' }
-  }
+  // carNumber is ignored if present (old clients) — never validated or forwarded
   if (!isValidZone(body.zone)) {
     return { ok: false, message: 'Tsoon puudub' }
   }
@@ -100,16 +93,9 @@ function validateBody(body) {
     return { ok: false, message: 'Vigane päring' }
   }
   if (
-    (action === 'start' ||
-      action === 'stop' ||
-      action === 'status' ||
-      action === 'extend' ||
-      action === 'notify') &&
-    !String(body.carNumber || '').trim()
+    (action === 'start' || action === 'stop') &&
+    !String(body.zone || '').trim()
   ) {
-    return { ok: false, message: 'Sisesta auto number' }
-  }
-  if (action === 'start' && !String(body.zone || '').trim()) {
     return { ok: false, message: 'Tsoon puudub' }
   }
   if (action === 'extend' && !isValidEndsAt(body.endsAt)) {
@@ -122,9 +108,8 @@ function validateBody(body) {
       return { ok: false, message: 'Vigane päring' }
     }
   }
-  // Strip unknown keys — same shape upstream expects
+  // Forward only allowed fields — never carNumber / plate
   const clean = { action }
-  if (body.carNumber) clean.carNumber = String(body.carNumber).trim().toUpperCase()
   if (body.zone) clean.zone = String(body.zone).trim()
   if (body.endsAt) clean.endsAt = String(body.endsAt).trim()
   if (action === 'notify' && body.pushSubscription) {
