@@ -189,7 +189,9 @@ export function isTallinnClockZone(zoneRaw?: string | null): boolean {
     .replace(/Ö/g, 'O')
     .replace(/Õ/g, 'O')
   if (TALLINN_CLOCK_ZONES.has(ascii)) return true
-  return /^(KESKLINN|VANALINN|S[UÜ]DALINN|PIRITA)(\s|$)/i.test(z)
+  // Zone titles only: "Kesklinn", "Südalinn (AS Ühisteenused)".
+  // Do NOT match place names like "Pirita Pargi & Reisi" (free P&R).
+  return /^(KESKLINN|VANALINN|S[UÜ]DALINN|PIRITA)(\s*\(.*\))?$/i.test(z)
 }
 
 /**

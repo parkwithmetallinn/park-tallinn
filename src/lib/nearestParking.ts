@@ -72,31 +72,41 @@ export function parkingRulesKey(spot: ParkingSpot): string {
 }
 
 /**
- * Tasuline — priced / municipal paid zones.
- * Tallinn zones (Kesklinn, Vanalinn, …) stay included even when they also
- * offer a free clock window (those also appear under Kellaga).
+ * Tasuline — spots with a real paid signal.
+ * Tallinn zones (Kesklinn, Vanalinn, Südalinn, Pirita) stay included even
+ * when they also offer a free clock window (those also appear under Kellaga).
+ *
+ * Bare `municipal` / AVALIK lots with no €/h and no paid zone code are NOT
+ * paid — they are unclassified and must not crowd out Kellaga / Odavaim.
  */
 export function isPaidParkingSpot(spot: ParkingSpot): boolean {
   if (isUnlimitedFreeParking(spot)) return false
-  // Pure clock-only (no price, not a Tallinn paid zone) → Kellaga only
-  const priced =
+  if (isUnclassifiedParking(spot)) return false
+
+  // Explicit payment / Tallinn municipal paid+clock zones
+  if (
     Number(spot.price_per_hour) > 0 ||
     spot.badge === 'PAID' ||
     isTallinnClockZone(spot.zone_code) ||
     isTallinnClockZone(spot.badge) ||
+    isTallinnClockZone(spot.name) ||
     hasExplicitPaidZoneCode(spot.zone_code)
-  if (priced) return true
+  ) {
+    return true
+  }
+
+  // Pure clock-only (no price, not a Tallinn paid zone) → Kellaga only
   if (isClockLimitedParking(spot) && Number(spot.price_per_hour) <= 0) {
-    // e.g. layer=timed / KELL curb with no hourly rate
     return false
   }
+
+  // Commercial / brand operators are paid even when OSM omits charge
   return [
     'europark',
     'snabb',
     'citypark',
     'uhisteenused',
     'parkit',
-    'municipal',
     'park_ride',
     'loading',
   ].includes(spot.layer)
@@ -308,6 +318,41 @@ export function diversifyNearestParking(
   return picked.slice(0, limit)
 }
 
+/**
+ * Build a proximity-sorted pool that still keeps category diversity so
+ * Odavaim / Kellaga / Tasuline tabs are not starved by one dense cluster
+ * (e.g. unlabeled municipal lots crowding out clock zones).
+ */
+function diversifyNearestPool(
+  clustered: NearestParkingOption[],
+  limit: number,
+): NearestParkingOption[] {
+  const byDist = sortByProximity(clustered)
+  const out: NearestParkingOption[] = []
+  const used = new Set<string>()
+
+  const take = (pred: (o: NearestParkingOption) => boolean, n: number) => {
+    let got = 0
+    for (const o of byDist) {
+      if (got >= n) break
+      if (used.has(o.optionKey)) continue
+      if (!pred(o)) continue
+      used.add(o.optionKey)
+      out.push(o)
+      got++
+    }
+  }
+
+  // Reserve slots for each filter category (closest first within category)
+  take((o) => isUnlimitedFreeParking(o.spot), 3)
+  take((o) => isKellagaParkingSpot(o.spot), 4)
+  take((o) => isPaidParkingSpot(o.spot), 4)
+  // Fill remaining with closest overall (any category)
+  take(() => true, Math.max(limit, 12) - out.length)
+
+  return sortByProximity(out).slice(0, Math.max(limit, 12))
+}
+
 /** Collect nearest roadside/lot options around a search destination. */
 export function collectNearestAround(
   spots: ParkingSpot[],
@@ -317,41 +362,45 @@ export function collectNearestAround(
 ): NearestParkingOption[] {
   const exclude = new Set(opts?.excludeIds ?? [])
   const limit = opts?.limit ?? 5
-  const radii = [400, 700, 1100, 1800, 2500, 4000]
+  const maxRadius = 4000
 
-  let bestPool: NearestParkingOption[] = []
+  const scored: Array<{ spot: ParkingSpot; distanceM: number }> = []
+  for (const s of spots) {
+    if (exclude.has(s.id)) continue
+    if (!isStreetParkingSpot(s) && !isLotParkingSpot(s)) continue
+    const d = distanceMeters(lat, lng, s.lat, s.lng)
+    if (d <= maxRadius) scored.push({ spot: s, distanceM: d })
+  }
+  scored.sort((a, b) => a.distanceM - b.distanceM)
 
-  for (const r of radii) {
-    const raw: Array<{ spot: ParkingSpot; distanceM: number }> = []
-    for (const s of spots) {
-      if (exclude.has(s.id)) continue
-      if (!isStreetParkingSpot(s) && !isLotParkingSpot(s)) continue
-      const d = distanceMeters(lat, lng, s.lat, s.lng)
-      if (d <= r) raw.push({ spot: s, distanceM: d })
-    }
-    const deduped = dedupeNearestParking(raw, lat, lng, 20)
-    const clustered = clusterAdjacentStreetParking(deduped, 100)
-    bestPool = clustered
-
-    const hasFree = clustered.some((o) => isUnlimitedFreeParking(o.spot))
-    const hasClock = clustered.some((o) => isClockLimitedParking(o.spot))
-    const hasPaid = clustered.some((o) => isPaidParkingSpot(o.spot))
-    const diverseEnough =
-      clustered.length >= limit && (hasFree || hasClock) && (hasPaid || hasClock)
-    if (
-      (hasFree && hasClock && hasPaid) ||
-      diverseEnough ||
-      r === radii[radii.length - 1]
-    ) {
-      // Distance-sorted pool (larger than 5) so list filters have enough rows
-      return [...clustered]
-        .sort((a, b) => a.distanceM - b.distanceM)
-        .slice(0, Math.max(limit, 12))
+  // Closest cluster candidates + category seeds so filters are never starved
+  // by a dense pack of unlabeled lots. Cap size for cluster performance.
+  const byId = new Map<string, { spot: ParkingSpot; distanceM: number }>()
+  const seed = (
+    pred: (s: ParkingSpot) => boolean,
+    n: number,
+  ) => {
+    let got = 0
+    for (const row of scored) {
+      if (got >= n) break
+      if (!pred(row.spot)) continue
+      if (byId.has(row.spot.id)) continue
+      byId.set(row.spot.id, row)
+      got++
     }
   }
-  return [...bestPool]
-    .sort((a, b) => a.distanceM - b.distanceM)
-    .slice(0, Math.max(limit, 12))
+  // Spatial neighborhood first
+  for (const row of scored.slice(0, 60)) {
+    byId.set(row.spot.id, row)
+  }
+  seed((s) => isUnlimitedFreeParking(s), 6)
+  seed((s) => isKellagaParkingSpot(s), 8)
+  seed((s) => isPaidParkingSpot(s), 8)
+
+  const raw = [...byId.values()]
+  const deduped = dedupeNearestParking(raw, lat, lng, 20)
+  const clustered = clusterAdjacentStreetParking(deduped, 100)
+  return diversifyNearestPool(clustered, limit)
 }
 
 /**

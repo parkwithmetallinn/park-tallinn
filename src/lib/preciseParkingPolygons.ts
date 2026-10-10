@@ -19,6 +19,7 @@ import {
   hasExplicitPaidZoneCode,
   isClockLimitedParking,
   isPaidFeeTag,
+  isTallinnClockZone,
   isUnclassifiedParking,
   isUnlimitedFreeParking,
   isVerifiedFreeParking,
@@ -669,18 +670,23 @@ function isPaidParkingFeature(p: {
   if (isUnclassifiedParking(p)) return false
   // Tallinn paid zones stay under Tasuline even with a free clock window
   if ((p.price_per_hour ?? 0) > 0) return true
+  if (p.badge === 'PAID') return true
   if (hasExplicitPaidZoneCode(p.zone_code)) return true
-  if (
-    /^(KESKLINN|VANALINN|S[UÜ]DALINN|PIRITA)$/i.test(
-      String(p.zone_code || ''),
-    )
-  ) {
+  if (isTallinnClockZone(p.zone_code) || isTallinnClockZone(p.badge)) {
     return true
   }
+  if (isTallinnClockZone(p.name)) return true
   // Pure clock-only (no rate) → Kellaga only
+  if (
+    isClockLimitedParking(p) &&
+    (p.price_per_hour ?? 0) <= 0 &&
+    !isTallinnClockZone(p.zone_code)
+  ) {
+    return false
+  }
   if (p.layer === 'timed' && (p.price_per_hour ?? 0) <= 0) return false
+  // Brand operators — not bare municipal without a paid signal
   if (PAID_LAYERS.has(p.layer)) return true
-  if (p.layer === 'municipal' && (p.price_per_hour ?? 0) > 0) return true
   return false
 }
 

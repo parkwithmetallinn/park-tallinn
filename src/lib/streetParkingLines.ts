@@ -7,8 +7,10 @@ import {
   extractClockMinutes,
   getParkingExclusionReason,
   hasClockKeyword,
+  hasExplicitPaidZoneCode,
   isClockLimitedParking,
   isPaidFeeTag,
+  isTallinnClockZone,
   isUnclassifiedParking,
   isUnlimitedFreeParking,
   isVerifiedFreeParking,
@@ -561,7 +563,8 @@ const PAID_STREET_LAYERS = new Set<ParkingLayerKey>([
 ])
 
 function isPaidStreetFeature(p: StreetParkingProps): boolean {
-  if (p.verified_free || p.layer === 'free_street' || p.layer === 'timed') return false
+  if (p.verified_free || p.layer === 'free_street') return false
+  if (isUnlimitedFreeParking(p)) return false
   if (
     isUnclassifiedParking({
       layer: p.layer,
@@ -578,6 +581,19 @@ function isPaidStreetFeature(p: StreetParkingProps): boolean {
   ) {
     return false
   }
+  // Tallinn paid+clock zones appear under both Tasuline and Kellaga
+  if (p.price_per_hour > 0 || p.badge === 'PAID') return true
+  if (hasExplicitPaidZoneCode(p.zone_code)) return true
+  if (
+    isTallinnClockZone(p.zone_code) ||
+    isTallinnClockZone(p.badge) ||
+    isTallinnClockZone(p.name)
+  ) {
+    return true
+  }
+  // Pure clock curb without rate → Kellaga only
+  if (p.layer === 'timed' && p.price_per_hour <= 0) return false
+  if (isClockLimitedParking(p) && p.price_per_hour <= 0) return false
   if (PAID_STREET_LAYERS.has(p.layer)) return true
   if (p.layer === 'municipal' && p.price_per_hour > 0) return true
   if (p.rules === 'paid') return true
