@@ -2554,14 +2554,6 @@ export default function App() {
                 {t('rules.myPinsBody')}
               </p>
             </div>
-            <a
-              href="/admin"
-              onMouseEnter={() => prefetchParkingLayers()}
-              onTouchStart={() => prefetchParkingLayers()}
-              className="tap-scale block rounded-2xl border border-ink/10 bg-paper-2 px-3 py-2.5 text-center text-xs font-bold text-ink-soft hover:bg-ink/5"
-            >
-              {t('rules.adminLink')}
-            </a>
           </div>
         </ModalShell>
       ) : null}

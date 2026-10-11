@@ -1202,8 +1202,10 @@ export const MapView = memo(forwardRef<
     })
 
     mapRef.current = map
-    // Dev/test hook for LOD screenshots & debugging (non-reactive).
-    ;(window as unknown as { __parkMap?: typeof map }).__parkMap = map
+    // Dev/test hook for LOD screenshots — never expose on production builds.
+    if (import.meta.env.DEV) {
+      ;(window as unknown as { __parkMap?: typeof map }).__parkMap = map
+    }
 
     // ——— Long-press → personal pin (550 ms, ≤8 px move) ———
     const HOLD_MS = 550

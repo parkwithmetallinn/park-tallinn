@@ -19,10 +19,11 @@ const AdminReviewView = lazy(() =>
 )
 
 const path = window.location.pathname.replace(/\/+$/, '') || '/'
-const isAdmin =
-  path === '/admin' ||
-  path.endsWith('/admin') ||
-  new URLSearchParams(window.location.search).has('admin')
+/** Admin UI is never linked from the app; only DEV or explicit env opt-in. */
+const adminEnabled =
+  import.meta.env.DEV || import.meta.env.VITE_ENABLE_ADMIN === 'true'
+const isAdminRoute =
+  adminEnabled && (path === '/admin' || path.endsWith('/admin'))
 
 // Warm parking layer cache as soon as the shell boots
 prefetchParkingLayers()
@@ -32,7 +33,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
-        {isAdmin ? (
+        {isAdminRoute ? (
           <Suspense fallback={null}>
             <AdminReviewView />
           </Suspense>

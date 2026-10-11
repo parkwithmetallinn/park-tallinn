@@ -216,7 +216,6 @@ export type MessageTree = {
     myPinsBody: string
     discFree: string
     minFree: string
-    adminLink: string
   }
   offline: {
     banner: string

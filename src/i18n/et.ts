@@ -216,7 +216,6 @@ export const et: MessageTree = {
       'Vajuta kaardil pikalt, et lisada isiklik pin. Pinnid salvestatakse ainult sellesse seadmesse — teised kasutajad neid ei näe.',
     discFree: 'Ketas {n} min tasuta',
     minFree: '{n} min tasuta',
-    adminLink: 'Admin / Review (peidetud)',
   },
   offline: {
     banner: 'Oled offline — mõned toimingud salvestatakse järjekorda',

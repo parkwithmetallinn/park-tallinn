@@ -214,7 +214,6 @@ export const en: MessageTree = {
       'Long-press the map to add a personal pin. Pins stay on this device only — others cannot see them.',
     discFree: 'Disc {n} min free',
     minFree: '{n} min free',
-    adminLink: 'Admin / Review (hidden)',
   },
   offline: {
     banner: 'You are offline — some actions will queue',
