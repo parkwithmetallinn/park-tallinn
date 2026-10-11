@@ -75,6 +75,7 @@ export type MessageTree = {
     filterAria: string
     listAria: string
     emptyFilter: string
+    widenRadius: string
     choose: string
     walkMin: string
     odavaim: string

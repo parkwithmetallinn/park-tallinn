@@ -18,6 +18,9 @@ import {
   isPaidParkingSpot,
   sortByProximity,
 } from '../lib/nearestParking'
+
+/** Rows shown after filter + sort (pool itself is the full radius set). */
+const NEAREST_DISPLAY_LIMIT = 15
 import type { ParkingSpot } from '../types'
 import { InfoSidePanelShell } from './InfoSidePanel'
 import { formatHourlyRate, getLocale, tKey, useI18n } from '../i18n'
@@ -120,21 +123,18 @@ function applyPanelFilter(
   options: NearestParkingOption[],
   filter: PanelFilter,
 ): NearestParkingOption[] {
+  // Filter the full radius pool first, then sort — display cap is applied later.
   if (filter === 'free') {
-    // Already proximity-sorted inside filterOdavaimTasuta
     return filterOdavaimTasuta(options)
   }
   if (filter === 'clock') {
-    // Tallinn Kesklinn/Vanalinn/… (15 min free) + any other clock window
     return sortByProximity(
       options.filter((o) => isKellagaParkingSpot(o.spot)),
     )
   }
   if (filter === 'paid') {
-    // Includes Tallinn paid zones even when they also have a free clock window
     return sortByProximity(options.filter((o) => isPaidParkingSpot(o.spot)))
   }
-  // Kõik — strictly closest first
   return sortByProximity(options)
 }
 
@@ -147,6 +147,8 @@ export function NearestParkingPanel({
   onConfirm,
   onClose,
   onVisibleOptionsChange,
+  onWidenRadius,
+  canWidenRadius,
 }: {
   targetName: string
   options: NearestParkingOption[]
@@ -160,6 +162,9 @@ export function NearestParkingPanel({
   onClose: () => void
   /** Filtered option keys currently shown (for map pills / focus sync). */
   onVisibleOptionsChange?: (optionKeys: string[]) => void
+  /** Expand search radius when the active filter matches nothing nearby. */
+  onWidenRadius?: () => void
+  canWidenRadius?: boolean
 }) {
   const { t } = useI18n()
   const TABS = TAB_META.map((tab) => ({ id: tab.id, label: t(tab.labelKey) }))
@@ -171,9 +176,13 @@ export function NearestParkingPanel({
   const chip = dark ? 'bg-white/10' : 'bg-[#F2F2F7]'
   const ink = dark ? 'text-[#F5F5F7]' : 'text-[#1C1C1E]'
 
-  const filtered = useMemo(
+  const filteredAll = useMemo(
     () => applyPanelFilter(options, filter),
     [options, filter],
+  )
+  const filtered = useMemo(
+    () => filteredAll.slice(0, NEAREST_DISPLAY_LIMIT),
+    [filteredAll],
   )
 
   const displayNames = useMemo(
@@ -289,10 +298,22 @@ export function NearestParkingPanel({
             })}
           </div>
 
-          {filtered.length === 0 ? (
-            <p className={`py-4 text-center text-[13px] font-medium ${muted}`}>
-              {t("nearest.emptyFilter")}
-            </p>
+          {filteredAll.length === 0 ? (
+            <div className="flex flex-col items-center gap-3 py-4">
+              <p className={`text-center text-[13px] font-medium ${muted}`}>
+                {t('nearest.emptyFilter')}
+              </p>
+              {canWidenRadius && onWidenRadius ? (
+                <button
+                  type="button"
+                  data-testid="nearest-widen-radius"
+                  onClick={onWidenRadius}
+                  className="tap-scale rounded-xl bg-[#007AFF] px-3 py-2.5 text-[13px] font-bold text-white transition active:scale-[0.98]"
+                >
+                  {t('nearest.widenRadius')}
+                </button>
+              ) : null}
+            </div>
           ) : (
             <ul className="space-y-1.5" role="listbox" aria-label={t("nearest.listAria")}>
               {filtered.map(({ spot, distanceM, optionKey }) => {

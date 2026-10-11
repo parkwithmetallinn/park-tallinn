@@ -318,51 +318,31 @@ export function diversifyNearestParking(
   return picked.slice(0, limit)
 }
 
+/** Default search radius for “Lähimad parklad” (meters). */
+export const NEAREST_DEFAULT_RADIUS_M = 2000
+/** Max widen radius so one tap cannot pull the whole country. */
+export const NEAREST_MAX_RADIUS_M = 8000
+export const NEAREST_RADIUS_STEP_M = 2000
 /**
- * Build a proximity-sorted pool that still keeps category diversity so
- * Odavaim / Kellaga / Tasuline tabs are not starved by one dense cluster
- * (e.g. unlabeled municipal lots crowding out clock zones).
+ * Soft cap after radius filter + cluster — keeps UI work bounded.
+ * Filtering runs on this full radius pool; the panel then limits display rows.
  */
-function diversifyNearestPool(
-  clustered: NearestParkingOption[],
-  limit: number,
-): NearestParkingOption[] {
-  const byDist = sortByProximity(clustered)
-  const out: NearestParkingOption[] = []
-  const used = new Set<string>()
+const NEAREST_POOL_SOFT_CAP = 400
 
-  const take = (pred: (o: NearestParkingOption) => boolean, n: number) => {
-    let got = 0
-    for (const o of byDist) {
-      if (got >= n) break
-      if (used.has(o.optionKey)) continue
-      if (!pred(o)) continue
-      used.add(o.optionKey)
-      out.push(o)
-      got++
-    }
-  }
-
-  // Reserve slots for each filter category (closest first within category)
-  take((o) => isUnlimitedFreeParking(o.spot), 3)
-  take((o) => isKellagaParkingSpot(o.spot), 4)
-  take((o) => isPaidParkingSpot(o.spot), 4)
-  // Fill remaining with closest overall (any category)
-  take(() => true, Math.max(limit, 12) - out.length)
-
-  return sortByProximity(out).slice(0, Math.max(limit, 12))
-}
-
-/** Collect nearest roadside/lot options around a search destination. */
+/** Collect roadside/lot options within a radius of a search destination. */
 export function collectNearestAround(
   spots: ParkingSpot[],
   lat: number,
   lng: number,
-  opts?: { excludeIds?: Iterable<string>; limit?: number },
+  opts?: {
+    excludeIds?: Iterable<string>
+    /** @deprecated Display limit belongs in the panel after filtering. */
+    limit?: number
+    radiusM?: number
+  },
 ): NearestParkingOption[] {
   const exclude = new Set(opts?.excludeIds ?? [])
-  const limit = opts?.limit ?? 5
-  const maxRadius = 4000
+  const maxRadius = opts?.radiusM ?? NEAREST_DEFAULT_RADIUS_M
 
   const scored: Array<{ spot: ParkingSpot; distanceM: number }> = []
   for (const s of spots) {
@@ -373,34 +353,12 @@ export function collectNearestAround(
   }
   scored.sort((a, b) => a.distanceM - b.distanceM)
 
-  // Closest cluster candidates + category seeds so filters are never starved
-  // by a dense pack of unlabeled lots. Cap size for cluster performance.
-  const byId = new Map<string, { spot: ParkingSpot; distanceM: number }>()
-  const seed = (
-    pred: (s: ParkingSpot) => boolean,
-    n: number,
-  ) => {
-    let got = 0
-    for (const row of scored) {
-      if (got >= n) break
-      if (!pred(row.spot)) continue
-      if (byId.has(row.spot.id)) continue
-      byId.set(row.spot.id, row)
-      got++
-    }
-  }
-  // Spatial neighborhood first
-  for (const row of scored.slice(0, 60)) {
-    byId.set(row.spot.id, row)
-  }
-  seed((s) => isUnlimitedFreeParking(s), 6)
-  seed((s) => isKellagaParkingSpot(s), 8)
-  seed((s) => isPaidParkingSpot(s), 8)
-
-  const raw = [...byId.values()]
+  // Entire radius pool (not top-N) so chip filters can still find free/paid
+  // lots that sit slightly farther than a dense Kellaga cluster.
+  const raw = scored.slice(0, NEAREST_POOL_SOFT_CAP)
   const deduped = dedupeNearestParking(raw, lat, lng, 20)
   const clustered = clusterAdjacentStreetParking(deduped, 100)
-  return diversifyNearestPool(clustered, limit)
+  return sortByProximity(clustered)
 }
 
 /**
@@ -427,11 +385,19 @@ export function sortByProximity(
   return [...options].sort((a, b) => a.distanceM - b.distanceM)
 }
 
+/** €/h for Odavaim ranking — real price; unknown paid sorts last. */
+function odavaimRate(spot: ParkingSpot): number {
+  if (isUnlimitedFreeParking(spot)) return 0
+  if (spot.price_per_hour > 0) return spot.price_per_hour
+  if (isPaidParkingSpot(spot)) return 99
+  return Number.POSITIVE_INFINITY
+}
+
 /**
  * Odavaim / Tasuta:
- * - Completely free (unlimited) spots when any exist
- * - Else spots at the absolute lowest effective rate
- * Always sorted by walk proximity (closest first).
+ * - Completely free (unlimited) spots when any exist (closest first)
+ * - Else cheapest paid lots by €/h (closest first among that price)
+ * Never falls back to Kellaga-only when the filter is empty.
  */
 export function filterOdavaimTasuta(
   options: NearestParkingOption[],
@@ -439,27 +405,19 @@ export function filterOdavaimTasuta(
   const free = options.filter((o) => isUnlimitedFreeParking(o.spot))
   if (free.length > 0) return sortByProximity(free)
 
-  const priced = options.filter((o) => {
-    if (isUnclassifiedParking(o.spot)) return false
-    const r = effectiveHourlyRate(o.spot)
-    return Number.isFinite(r)
-  })
-  if (priced.length === 0) {
-    // Last resort: any clock window still beats empty list
-    const clock = options.filter((o) => isKellagaParkingSpot(o.spot))
-    return sortByProximity(clock)
-  }
+  const paid = options.filter(
+    (o) => isPaidParkingSpot(o.spot) && !isUnclassifiedParking(o.spot),
+  )
+  if (paid.length === 0) return []
 
   let minRate = Number.POSITIVE_INFINITY
-  for (const o of priced) {
-    const r = effectiveHourlyRate(o.spot)
+  for (const o of paid) {
+    const r = odavaimRate(o.spot)
     if (r < minRate) minRate = r
   }
-  if (!Number.isFinite(minRate)) return sortByProximity(priced)
+  if (!Number.isFinite(minRate)) return []
 
-  return sortByProximity(
-    priced.filter((o) => effectiveHourlyRate(o.spot) === minRate),
-  )
+  return sortByProximity(paid.filter((o) => odavaimRate(o.spot) === minRate))
 }
 
 /**

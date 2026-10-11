@@ -32,6 +32,9 @@ import {
 import {
   collectNearestAround,
   isPaidParkingSpot,
+  NEAREST_DEFAULT_RADIUS_M,
+  NEAREST_MAX_RADIUS_M,
+  NEAREST_RADIUS_STEP_M,
 } from './lib/nearestParking'
 import { FavoritesPanel } from './components/FavoritesPanel'
 import { ParkingDetailPanel } from './components/ParkingDetailPanel'
@@ -232,6 +235,8 @@ export default function App() {
   const [nearestOptions, setNearestOptions] = useState<NearestParkingOption[]>(
     [],
   )
+  /** Search radius for “Lähimad parklad” chips (filter runs on this pool). */
+  const [nearestRadiusM, setNearestRadiusM] = useState(NEAREST_DEFAULT_RADIUS_M)
   /** Tap/click preview in nearest picker — no hover (mobile has none). */
   const [selectedPreviewId, setSelectedPreviewId] = useState<string | null>(
     null,
@@ -952,16 +957,15 @@ export default function App() {
     setFlyKey((k) => k + 1)
   }, [gpsLocating, locateAndFollow, setToast, stopFollow])
 
-  /** Collect 3–5 nearest roadside/lot spots around the SEARCH destination. */
+  /** All roadside/lot spots within radius — panel filters, then limits display. */
   const collectNearestOptions = useCallback(
-    (lat: number, lng: number): NearestParkingOption[] => {
+    (lat: number, lng: number, radiusM = nearestRadiusM): NearestParkingOption[] => {
       return collectNearestAround(allSpots, lat, lng, {
         excludeIds: fullSpotIds,
-        // Larger pool so Odavaim / Kellaga / Tasuline filters have enough rows
-        limit: 15,
+        radiusM,
       })
     },
-    [allSpots, fullSpotIds],
+    [allSpots, fullSpotIds, nearestRadiusM],
   )
 
   /**
@@ -1192,7 +1196,9 @@ export default function App() {
       return
     }
 
-    const options = collectNearestOptions(loc.lat, loc.lng)
+    const radiusM = NEAREST_DEFAULT_RADIUS_M
+    setNearestRadiusM(radiusM)
+    const options = collectNearestOptions(loc.lat, loc.lng, radiusM)
     setNearestOptions(options)
     setFromNearestPicker(false)
     setNearestPickerOpen(true)
@@ -1345,18 +1351,34 @@ export default function App() {
     }
   }, [clearRoute, nearestOptions])
 
-  // Refresh nearest list when parking data finishes loading after a search.
+  // Refresh nearest list when parking data / radius changes after a search.
   // Always anchor distances to searchLocation — never keep stale Tallinn rows
   // after navigating to Tartu / another landmark.
   useEffect(() => {
     if (!nearestPickerOpen || !searchLocation) return
-    const next = collectNearestOptions(searchLocation.lat, searchLocation.lng)
+    const next = collectNearestOptions(
+      searchLocation.lat,
+      searchLocation.lng,
+      nearestRadiusM,
+    )
     setNearestOptions(next)
     setSelectedPreviewId((prev) => {
       if (prev && next.some((o) => o.optionKey === prev)) return prev
       return next[0]?.optionKey ?? null
     })
-  }, [allSpots, nearestPickerOpen, searchLocation, collectNearestOptions])
+  }, [
+    allSpots,
+    nearestPickerOpen,
+    searchLocation,
+    nearestRadiusM,
+    collectNearestOptions,
+  ])
+
+  const handleNearestWidenRadius = useCallback(() => {
+    setNearestRadiusM((r) =>
+      Math.min(r + NEAREST_RADIUS_STEP_M, NEAREST_MAX_RADIUS_M),
+    )
+  }, [])
 
   // Prefocus the closest option when the picker opens
   useEffect(() => {
@@ -2370,10 +2392,13 @@ export default function App() {
           onPreview={handleNearestPreview}
           onConfirm={handleNearestConfirm}
           onVisibleOptionsChange={setNearestVisibleKeys}
+          onWidenRadius={handleNearestWidenRadius}
+          canWidenRadius={nearestRadiusM < NEAREST_MAX_RADIUS_M}
           onClose={() => {
             setNearestPickerOpen(false)
             setSelectedPreviewId(null)
             setNearestVisibleKeys(null)
+            setNearestRadiusM(NEAREST_DEFAULT_RADIUS_M)
             setSearchSheetOpen(true)
           }}
         />
