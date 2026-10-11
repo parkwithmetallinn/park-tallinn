@@ -19,7 +19,7 @@ export const PRIVACY_POLICY_SECTIONS: PrivacySection[] = [
     id: 'controller',
     title: '1. Data Controller',
     paragraphs: [
-      'ParkVibe team, contact: info@parkvibe.ee. All questions and requests: info@parkvibe.ee.',
+      'ParkVibe team, contact: parkwithme.tallinn@gmail.com. All questions and requests: parkwithme.tallinn@gmail.com.',
     ],
   },
   {
@@ -27,7 +27,7 @@ export const PRIVACY_POLICY_SECTIONS: PrivacySection[] = [
     title: '2. What Data We Process and Why',
     paragraphs: [],
     bullets: [
-      'Vehicle registration number, parking zone, start and end time: for calculating the parking session and fee. We store session data for up to 90 days, then delete it.',
+      'Parking zone, start and end time: for calculating the parking session and fee. We store session data for up to 90 days, then delete it.',
       'Email address (optional): for sending a reminder 10 minutes before the parking expires. We delete the address when the session ends or at the latest within 2 hours thereafter.',
       'Push notification subscription (optional): for sending notifications to your device. We delete it when the session ends or at the latest within 2 hours thereafter.',
       'Parking lot status reports (“full” / “free spots”): displayed to other users. We store them for 24 hours. We store a hashed value generated from the IP address and a salt alongside the report to prevent spam. The original IP cannot be recovered from the hash.',
@@ -52,7 +52,7 @@ export const PRIVACY_POLICY_SECTIONS: PrivacySection[] = [
     id: 'rights',
     title: '5. Your Rights',
     paragraphs: [
-      'You have the right to access, rectify, erase, restrict processing of your data, and withdraw your consent. Contact info@parkvibe.ee, we will respond within 30 days. You can lodge a complaint with the Estonian Data Protection Inspectorate (aki.ee).',
+      'You have the right to access, rectify, erase, restrict processing of your data, and withdraw your consent. Contact parkwithme.tallinn@gmail.com, we will respond within 30 days. You can lodge a complaint with the Estonian Data Protection Inspectorate (aki.ee).',
     ],
   },
   {

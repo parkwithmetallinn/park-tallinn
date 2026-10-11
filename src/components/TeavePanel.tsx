@@ -62,19 +62,51 @@ export function TeavePanel({
 
         <section className="rounded-2xl bg-paper-2 p-3">
           <h4 className="mb-2 text-sm font-bold text-ink">{t('teave.mapData')}</h4>
-          <ul className="space-y-1.5">
+          <ul className="space-y-2 text-[13px] leading-snug text-ink">
             <li>
+              Andmed:{' '}
               <a
                 href="https://www.openstreetmap.org/copyright"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 font-semibold text-[#007AFF] underline-offset-2 hover:underline"
               >
-                © OpenStreetMap contributors
+                © OpenStreetMap contributors (ODbL)
                 <ExternalLink className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
               </a>
             </li>
-            <li className="font-medium text-ink">OpenFreeMap</li>
+            <li>
+              Kaart:{' '}
+              <a
+                href="https://openfreemap.org/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-[#007AFF] underline-offset-2 hover:underline"
+              >
+                OpenFreeMap
+              </a>
+              ,{' '}
+              <a
+                href="https://openmaptiles.org/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-semibold text-[#007AFF] underline-offset-2 hover:underline"
+              >
+                OpenMapTiles
+              </a>
+            </li>
+            <li>
+              Kaardimootor:{' '}
+              <a
+                href="https://maplibre.org/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 font-semibold text-[#007AFF] underline-offset-2 hover:underline"
+              >
+                MapLibre
+                <ExternalLink className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
+              </a>
+            </li>
           </ul>
         </section>
 
