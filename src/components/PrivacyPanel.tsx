@@ -1,7 +1,8 @@
 import { ModalShell } from './ModalShell'
 import {
+  PRIVACY_POLICY_INTRO_ET,
   PRIVACY_POLICY_SECTIONS,
-  PRIVACY_POLICY_TITLE,
+  PRIVACY_POLICY_TITLE_ET,
   PRIVACY_POLICY_UPDATED,
 } from '../data/privacyPolicy'
 import { useI18n } from '../i18n'
@@ -17,8 +18,17 @@ export function PrivacyPanel({ onClose }: { onClose: () => void }) {
         className="max-h-[60vh] space-y-3 overflow-y-auto text-xs leading-relaxed text-ink-soft"
       >
         <div className="rounded-2xl bg-paper-2 p-3">
-          <h4 className="mb-1 text-sm font-bold text-ink">{PRIVACY_POLICY_TITLE}</h4>
+          <h4 className="mb-1 text-sm font-bold text-ink">
+            {PRIVACY_POLICY_TITLE_ET}
+          </h4>
           <p className="text-[12px] opacity-80">{PRIVACY_POLICY_UPDATED}</p>
+          <p className="mt-2 text-[12px] leading-relaxed">{PRIVACY_POLICY_INTRO_ET}</p>
+          <a
+            href="/privacy"
+            className="mt-2 inline-block font-semibold text-[#007AFF] underline-offset-2 hover:underline"
+          >
+            {t('teave.openFullPrivacy')}
+          </a>
         </div>
 
         {PRIVACY_POLICY_SECTIONS.map((section) => (

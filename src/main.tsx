@@ -17,6 +17,12 @@ const AdminReviewView = lazy(() =>
     default: m.AdminReviewView,
   })),
 )
+const PrivacyPage = lazy(() =>
+  import('./pages/PrivacyPage.tsx').then((m) => ({ default: m.PrivacyPage })),
+)
+const SupportPage = lazy(() =>
+  import('./pages/SupportPage.tsx').then((m) => ({ default: m.SupportPage })),
+)
 
 const path = window.location.pathname.replace(/\/+$/, '') || '/'
 /** Admin UI is never linked from the app; only DEV or explicit env opt-in. */
@@ -24,22 +30,45 @@ const adminEnabled =
   import.meta.env.DEV || import.meta.env.VITE_ENABLE_ADMIN === 'true'
 const isAdminRoute =
   adminEnabled && (path === '/admin' || path.endsWith('/admin'))
+const isPrivacyRoute = path === '/privacy'
+const isSupportRoute = path === '/support'
 
-// Warm parking layer cache as soon as the shell boots
-prefetchParkingLayers()
+// Warm parking layer cache as soon as the shell boots (skip on legal pages)
+if (!isPrivacyRoute && !isSupportRoute) {
+  prefetchParkingLayers()
+}
 initAnalytics()
+
+function RootView() {
+  if (isAdminRoute) {
+    return (
+      <Suspense fallback={null}>
+        <AdminReviewView />
+      </Suspense>
+    )
+  }
+  if (isPrivacyRoute) {
+    return (
+      <Suspense fallback={null}>
+        <PrivacyPage />
+      </Suspense>
+    )
+  }
+  if (isSupportRoute) {
+    return (
+      <Suspense fallback={null}>
+        <SupportPage />
+      </Suspense>
+    )
+  }
+  return <App />
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
-        {isAdminRoute ? (
-          <Suspense fallback={null}>
-            <AdminReviewView />
-          </Suspense>
-        ) : (
-          <App />
-        )}
+        <RootView />
       </I18nProvider>
     </QueryClientProvider>
   </StrictMode>,

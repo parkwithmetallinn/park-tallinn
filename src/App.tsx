@@ -22,6 +22,11 @@ import { MapView, type MapViewHandle } from './components/MapView'
 import { ModalShell } from './components/ModalShell'
 import { TeavePanel } from './components/TeavePanel'
 import { PrivacyPanel } from './components/PrivacyPanel'
+import { OnboardingModal } from './components/OnboardingModal'
+import {
+  hasSeenOnboarding,
+  resetOnboardingSeen,
+} from './lib/onboarding'
 import { LocationInfoSheet } from './components/LocationInfoSheet'
 import {
   NearestParkingPanel,
@@ -248,6 +253,9 @@ export default function App() {
   const [infoOpen, setInfoOpen] = useState(false)
   const [teaveOpen, setTeaveOpen] = useState(false)
   const [privacyOpen, setPrivacyOpen] = useState(false)
+  const [onboardingOpen, setOnboardingOpen] = useState(
+    () => !hasSeenOnboarding(),
+  )
   const [favoritesOpen, setFavoritesOpen] = useState(false)
   const [reportContext, setReportContext] = useState<ReportModalContext | null>(null)
   const [approvedOverlays, setApprovedOverlays] = useState<ParkingSpot[]>([])
@@ -1743,14 +1751,14 @@ export default function App() {
     [routeToSpot],
   )
 
-  const openProposeNew = () => {
+  const openProposeNew = useCallback(() => {
     setReportContext({
       mode: 'PROPOSE_NEW',
       lat: userLocation[0],
       lng: userLocation[1],
       target: selected,
     })
-  }
+  }, [userLocation, selected])
 
   const openReportInvalid = (spot: ParkingSpot) => {
     setReportContext({
@@ -1764,6 +1772,21 @@ export default function App() {
   useEffect(() => {
     applyDocumentTheme(theme)
   }, [theme])
+
+  /** Deep-link from /support → “Saada tagasisidet”. */
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('feedback') !== '1') return
+      openProposeNew()
+      params.delete('feedback')
+      const next = params.toString()
+      const url = `${window.location.pathname}${next ? `?${next}` : ''}${window.location.hash}`
+      window.history.replaceState({}, '', url)
+    } catch {
+      /* ignore */
+    }
+  }, [openProposeNew])
 
   const panel = dark ? glassDark : glass
   const muted = dark ? 'text-[#98989D]' : 'text-[#8E8E93]'
@@ -2503,11 +2526,20 @@ export default function App() {
             setTeaveOpen(false)
             setPrivacyOpen(true)
           }}
+          onReplayOnboarding={() => {
+            resetOnboardingSeen()
+            setTeaveOpen(false)
+            setOnboardingOpen(true)
+          }}
         />
       ) : null}
 
       {privacyOpen ? (
         <PrivacyPanel onClose={() => setPrivacyOpen(false)} />
+      ) : null}
+
+      {onboardingOpen ? (
+        <OnboardingModal onClose={() => setOnboardingOpen(false)} />
       ) : null}
 
       {infoOpen ? (

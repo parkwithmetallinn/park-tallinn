@@ -172,7 +172,12 @@ export const et: MessageTree = {
     accuracyBody:
       'Parkimisandmed ja reeglid pärinevad kogukonna kaardiandmetest (OpenStreetMap) ning võivad olla aegunud. Kontrolli alati tingimusi kohapeal liiklusmärgilt.',
     privacy: 'Privaatsuspoliitika',
+    openFullPrivacy: 'Ava täielik privaatsuspoliitika',
+    support: 'Tugi ja KKK',
+    onboarding: 'Tutvustus',
+    replayOnboarding: 'Vaata tutvustust uuesti',
     contact: 'Kontakt',
+    responseSla: 'Vastame teadetele ja küsimustele 48 tunni jooksul.',
   },
   privacy: {
     agree: 'Nõustun',

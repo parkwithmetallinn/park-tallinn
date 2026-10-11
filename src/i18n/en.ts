@@ -171,7 +171,12 @@ export const en: MessageTree = {
     accuracyBody:
       'Parking data and rules come from community map data (OpenStreetMap) and may be outdated. Always check signs on site.',
     privacy: 'Privacy policy',
+    openFullPrivacy: 'Open full privacy policy',
+    support: 'Support & FAQ',
+    onboarding: 'Onboarding',
+    replayOnboarding: 'View onboarding again',
     contact: 'Contact',
+    responseSla: 'We respond to messages and questions within 48 hours.',
   },
   privacy: {
     agree: 'I agree',

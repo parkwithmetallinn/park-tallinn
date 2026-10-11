@@ -2,21 +2,19 @@ import { ExternalLink } from 'lucide-react'
 import { ModalShell } from './ModalShell'
 import { LOCALES, useI18n, type Locale } from '../i18n'
 
-/** Set when a public privacy policy URL is preferred over the in-app modal. */
-const PRIVACY_POLICY_URL = ''
-
 /**
- * About / Teave — map credits, accuracy disclaimer, privacy, language.
+ * About / Teave — map credits, accuracy disclaimer, privacy, language, onboarding.
  */
 export function TeavePanel({
   onClose,
   onOpenPrivacy,
+  onReplayOnboarding,
 }: {
   onClose: () => void
   onOpenPrivacy?: () => void
+  onReplayOnboarding?: () => void
 }) {
   const { t, locale, setLocale } = useI18n()
-  const privacyUrl = PRIVACY_POLICY_URL.trim()
 
   return (
     <ModalShell title={t('teave.title')} onClose={onClose}>
@@ -119,32 +117,49 @@ export function TeavePanel({
 
         <section className="rounded-2xl bg-paper-2 p-3">
           <h4 className="mb-2 text-sm font-bold text-ink">{t('teave.privacy')}</h4>
-          {privacyUrl ? (
+          <div className="flex flex-col gap-2">
+            {onOpenPrivacy ? (
+              <button
+                type="button"
+                data-testid="teave-open-privacy"
+                onClick={onOpenPrivacy}
+                className="text-left font-semibold text-[#007AFF] underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#007AFF]"
+              >
+                {t('teave.privacy')}
+              </button>
+            ) : null}
             <a
-              href={privacyUrl}
-              target="_blank"
-              rel="noopener noreferrer"
+              href="/privacy"
               className="inline-flex items-center gap-1 font-semibold text-[#007AFF] underline-offset-2 hover:underline"
             >
-              {t('teave.privacy')}
+              {t('teave.openFullPrivacy')}
               <ExternalLink className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
             </a>
-          ) : onOpenPrivacy ? (
+            <a
+              href="/support"
+              className="inline-flex items-center gap-1 font-semibold text-[#007AFF] underline-offset-2 hover:underline"
+            >
+              {t('teave.support')}
+              <ExternalLink className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
+            </a>
+          </div>
+        </section>
+
+        {onReplayOnboarding ? (
+          <section className="rounded-2xl bg-paper-2 p-3">
+            <h4 className="mb-2 text-sm font-bold text-ink">
+              {t('teave.onboarding')}
+            </h4>
             <button
               type="button"
-              data-testid="teave-open-privacy"
-              onClick={onOpenPrivacy}
+              data-testid="teave-replay-onboarding"
+              onClick={onReplayOnboarding}
               className="font-semibold text-[#007AFF] underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#007AFF]"
             >
-              {t('teave.privacy')}
+              {t('teave.replayOnboarding')}
             </button>
-          ) : (
-            <p className="font-medium text-ink">
-              {t('teave.privacy')}{' '}
-              <span className="font-normal opacity-70">{t('common.soon')}</span>
-            </p>
-          )}
-        </section>
+          </section>
+        ) : null}
 
         <section className="rounded-2xl bg-paper-2 p-3">
           <h4 className="mb-2 text-sm font-bold text-ink">{t('teave.contact')}</h4>
@@ -154,6 +169,7 @@ export function TeavePanel({
           >
             parkwithme.tallinn@gmail.com
           </a>
+          <p className="mt-1.5 text-[12px] opacity-80">{t('teave.responseSla')}</p>
         </section>
       </div>
     </ModalShell>

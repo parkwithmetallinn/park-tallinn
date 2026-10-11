@@ -72,6 +72,14 @@
     {
       "source": "/admin/(.*)",
       "destination": "/index.html"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/support",
+      "destination": "/index.html"
     }
   ]
 }

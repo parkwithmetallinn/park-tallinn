@@ -1,6 +1,6 @@
 /**
- * ParkVibe privacy policy — structured copy for the in-app Privacy modal.
- * Source language for this document: English.
+ * ParkVibe privacy policy — structured copy for /privacy and the in-app modal.
+ * Primary language: Estonian, with a clear English section.
  */
 
 export type PrivacySection = {
@@ -10,61 +10,136 @@ export type PrivacySection = {
   bullets?: string[]
 }
 
-export const PRIVACY_POLICY_TITLE = 'Privacy Policy — ParkVibe'
+export const PRIVACY_POLICY_TITLE_ET = 'Privaatsuspoliitika — ParkVibe'
+export const PRIVACY_POLICY_TITLE_EN = 'Privacy Policy — ParkVibe'
+export const PRIVACY_POLICY_UPDATED = 'Viimati uuendatud / Last updated: 11. oktoober 2026'
 
-export const PRIVACY_POLICY_UPDATED = 'Last updated: October 11, 2026'
+/** @deprecated Prefer PRIVACY_POLICY_TITLE_ET */
+export const PRIVACY_POLICY_TITLE = PRIVACY_POLICY_TITLE_ET
 
+export const PRIVACY_POLICY_INTRO_ET =
+  'ParkVibe on kontovaba parkimiskaart. Me ei kogu ega salvesta isikuandmeid, ei jälgi sind väljaspool rakendust ning ei seo sind kontoga.'
+
+export const PRIVACY_POLICY_INTRO_EN =
+  'ParkVibe is an account-less parking map. We do not collect or store personal data, do not track you outside the app, and do not tie you to an account.'
+
+export const PRIVACY_POLICY_SECTIONS_ET: PrivacySection[] = [
+  {
+    id: 'accountless',
+    title: '1. Kontovaba teenus',
+    paragraphs: [
+      'ParkVibe ei nõua registreerimist ega sisselogimist. Sul ei ole kasutajakontot ning me ei seo sinu tegevust nime, e-posti ega muu isikutunnusega.',
+    ],
+  },
+  {
+    id: 'no-personal',
+    title: '2. Isikuandmed',
+    paragraphs: [
+      'Me ei salvesta isikuandmeid (nt nime, aadressi ega telefoninumbrit). Valikulised meeldetuletused (e-post või push) on ajutised ja seotud vaid aktiivse parkimissessiooniga; need kustutatakse sessiooni lõppedes või hiljemalt paari tunni jooksul.',
+    ],
+  },
+  {
+    id: 'local',
+    title: '3. Andmed sinu seadmes',
+    paragraphs: [
+      'Lemmikud, kodu/töö kohad, keele- ja teema seaded, tutvustus ning anonüümne installi tunnus salvestatakse ainult sinu seadme localStorage’is. Need andmed ei lähe meie serverisse ega ole seotud kontoga.',
+    ],
+  },
+  {
+    id: 'location',
+    title: '4. Asukoht',
+    paragraphs: [
+      'Asukohta kasutatakse ainult sinu seadmes kaardi, marsruudi ja täis-teate läheduskontrolli jaoks. Me ei saada ega salvesta asukohaajalugu meie serveritesse.',
+    ],
+  },
+  {
+    id: 'reports',
+    title: '5. Kogukonna teated',
+    paragraphs: [
+      'Parkla „täis“ / „vabu kohti“ teated ja tagasiside töödeldakse anonüümsete räsiväärtustega (installi ja võrguaadressi põhjal, koos soolaga), et piirata kuritarvitamist. Algset IP-d ega asukohta räsist taastada ei saa. Teated on lühiajalised; asukohaajalugu ei säilitata.',
+    ],
+  },
+  {
+    id: 'tracking',
+    title: '6. Jälgimine ja reklaam',
+    paragraphs: [
+      'Me ei jälgi sind väljaspool rakendust. Reklaami- ega jälgimisküpsiseid ei kasutata. Analüütika (kui aktiivne) on koondatud ja ei tuvasta sind isikuna.',
+    ],
+  },
+  {
+    id: 'contact-et',
+    title: '7. Kontakt',
+    paragraphs: [
+      'Küsimused privaatsuse kohta: parkwithme.tallinn@gmail.com. Vastame mõistliku aja jooksul. Kaebuse saad esitada Andmekaitse Inspektsioonile (aki.ee).',
+    ],
+  },
+]
+
+export const PRIVACY_POLICY_SECTIONS_EN: PrivacySection[] = [
+  {
+    id: 'accountless-en',
+    title: '1. Account-less service',
+    paragraphs: [
+      'ParkVibe does not require registration or sign-in. You have no user account, and we do not link your activity to a name, email, or other personal identifier.',
+    ],
+  },
+  {
+    id: 'no-personal-en',
+    title: '2. Personal data',
+    paragraphs: [
+      'We do not store personal data such as your name, address, or phone number. Optional reminders (email or push) are temporary and tied only to an active parking session; they are deleted when the session ends or within a few hours at the latest.',
+    ],
+  },
+  {
+    id: 'local-en',
+    title: '3. Data on your device',
+    paragraphs: [
+      'Favorites, Home/Work places, language and theme settings, onboarding, and an anonymous install id stay in your device’s local storage. They are not uploaded to our servers and are not linked to an account.',
+    ],
+  },
+  {
+    id: 'location-en',
+    title: '4. Location',
+    paragraphs: [
+      'Location is used only on your device for the map, routing, and the proximity check for FULL community reports. We do not send or store location history on our servers.',
+    ],
+  },
+  {
+    id: 'reports-en',
+    title: '5. Community reports',
+    paragraphs: [
+      '“Full” / “free spots” reports and feedback are processed with anonymous hashes (derived from an install id and network address with a salt) to limit abuse. The original IP or location cannot be recovered from the hash. Reports are short-lived; we do not keep a location history.',
+    ],
+  },
+  {
+    id: 'tracking-en',
+    title: '6. Tracking and ads',
+    paragraphs: [
+      'We do not track you outside the app. We do not use advertising or tracking cookies. Any analytics (if enabled) is aggregated and does not identify you personally.',
+    ],
+  },
+  {
+    id: 'contact-en',
+    title: '7. Contact',
+    paragraphs: [
+      'Privacy questions: parkwithme.tallinn@gmail.com. You may also contact the Estonian Data Protection Inspectorate (aki.ee).',
+    ],
+  },
+]
+
+/** Combined sections for the compact in-app Privacy modal (ET first, then EN summary). */
 export const PRIVACY_POLICY_SECTIONS: PrivacySection[] = [
+  ...PRIVACY_POLICY_SECTIONS_ET,
   {
-    id: 'controller',
-    title: '1. Data Controller',
-    paragraphs: [
-      'ParkVibe team, contact: parkwithme.tallinn@gmail.com. All questions and requests: parkwithme.tallinn@gmail.com.',
-    ],
-  },
-  {
-    id: 'data',
-    title: '2. What Data We Process and Why',
-    paragraphs: [],
+    id: 'en-summary',
+    title: 'English summary',
+    paragraphs: [PRIVACY_POLICY_INTRO_EN],
     bullets: [
-      'Parking zone, start and end time: for calculating the parking session and fee. We store session data for up to 90 days, then delete it.',
-      'Email address (optional): for sending a reminder 10 minutes before the parking expires. We delete the address when the session ends or at the latest within 2 hours thereafter.',
-      'Push notification subscription (optional): for sending notifications to your device. We delete it when the session ends or at the latest within 2 hours thereafter.',
-      'Parking lot status reports (“full” / “free spots”): displayed to other users. We store them for 24 hours. We store a hashed value generated from the IP address and a salt alongside the report to prevent spam. The original IP cannot be recovered from the hash.',
-      'Location data is used only on your device to display the map; we do not store location data on our servers.',
+      'Account-less — no sign-in, no personal profile.',
+      'Favorites and settings stay on your device (local storage).',
+      'Location is not stored as history on our servers.',
+      'Community reports use anonymous hashes only.',
+      'No tracking outside the app; no ad cookies.',
     ],
-  },
-  {
-    id: 'legal',
-    title: '3. Legal Basis',
-    paragraphs: [
-      'Provision of service (parking session), consent (email and push, can be withdrawn at any time), and legitimate interest (anti-spam, security).',
-    ],
-  },
-  {
-    id: 'recipients',
-    title: '4. Data Recipients (Processors)',
-    paragraphs: [
-      'Supabase (database, Frankfurt/Stockholm), Vercel (hosting), n8n Cloud (automated reminders), Google Gmail (email dispatch). We do not sell data.',
-    ],
-  },
-  {
-    id: 'rights',
-    title: '5. Your Rights',
-    paragraphs: [
-      'You have the right to access, rectify, erase, restrict processing of your data, and withdraw your consent. Contact parkwithme.tallinn@gmail.com, we will respond within 30 days. You can lodge a complaint with the Estonian Data Protection Inspectorate (aki.ee).',
-    ],
-  },
-  {
-    id: 'cookies',
-    title: '6. Cookies and Local Storage',
-    paragraphs: [
-      'We store session states and preferences locally on your device. No advertising or tracking cookies are used.',
-    ],
-  },
-  {
-    id: 'changes',
-    title: '7. Changes',
-    paragraphs: ['If we update this policy, we will revise the date.'],
   },
 ]

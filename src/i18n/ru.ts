@@ -171,7 +171,12 @@ export const ru: MessageTree = {
     accuracyBody:
       'Данные и правила парковки взяты из OpenStreetMap и могут устареть. Всегда сверяйтесь с дорожными знаками на месте.',
     privacy: 'Политика конфиденциальности',
+    openFullPrivacy: 'Открыть полную политику конфиденциальности',
+    support: 'Поддержка и FAQ',
+    onboarding: 'Знакомство',
+    replayOnboarding: 'Показать знакомство снова',
     contact: 'Контакт',
+    responseSla: 'Отвечаем на сообщения и вопросы в течение 48 часов.',
   },
   privacy: {
     agree: 'Согласен',

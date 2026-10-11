@@ -176,7 +176,12 @@ export type MessageTree = {
     accuracyTitle: string
     accuracyBody: string
     privacy: string
+    openFullPrivacy: string
+    support: string
+    onboarding: string
+    replayOnboarding: string
     contact: string
+    responseSla: string
   }
   privacy: {
     agree: string
