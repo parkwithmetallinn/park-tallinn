@@ -14,7 +14,6 @@ import {
   NavigationControl,
   setWorkerUrl,
 } from 'maplibre-gl'
-import maplibreWorker from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import {
   approveParkingRequest,
   listParkingRequests,
@@ -37,7 +36,7 @@ import { AdminRequestListSkeleton } from './ui/Skeleton'
 import { Pressable } from './ui/Pressable'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-setWorkerUrl(maplibreWorker)
+setWorkerUrl(`${import.meta.env.BASE_URL}maplibre/maplibre-gl-worker.mjs`)
 
 const SATELLITE_STYLE = {
   version: 8 as const,

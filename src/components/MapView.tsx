@@ -7,7 +7,6 @@ import {
   type Map as MapLibreMapType,
   type MapLayerMouseEvent,
 } from 'maplibre-gl'
-import maplibreWorker from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import {
   forwardRef,
   memo,
@@ -141,7 +140,7 @@ import {
 } from '../lib/fullIndicatorDom'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-setWorkerUrl(maplibreWorker)
+setWorkerUrl(`${import.meta.env.BASE_URL}maplibre/maplibre-gl-worker.mjs`)
 
 const SELECT_SOURCES = [
   PARKING_LINES_SOURCE,
