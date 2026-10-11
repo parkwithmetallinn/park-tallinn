@@ -247,47 +247,76 @@ export function clusterAdjacentStreetParking(
   return clustered.sort((a, b) => a.distanceM - b.distanceM)
 }
 
+type MixCategory = 'free' | 'timed' | 'paid' | 'other'
+
 /**
- * Default top-N list with categorical diversity:
- * 1) nearest 100% FREE lot/spot
- * 2) nearest KELLAGA
- * 3) nearest TASULINE
- * then remaining closest by distance.
+ * “Kõik” display mix: round-robin nearest free → timed → paid so a dense
+ * Kellaga cluster cannot fill all 15 rows. Remaining slots take “other”
+ * then leftovers, still nearest-first within each category.
  */
-export function diversifyNearestParking(
+export function balanceNearestParkingMix(
   options: NearestParkingOption[],
-  limit = 5,
+  limit = 15,
 ): NearestParkingOption[] {
   if (options.length <= 1) return options.slice(0, limit)
-  const byDist = [...options].sort((a, b) => a.distanceM - b.distanceM)
+
+  const buckets: Record<MixCategory, NearestParkingOption[]> = {
+    free: [],
+    timed: [],
+    paid: [],
+    other: [],
+  }
+  for (const o of sortByProximity(options)) {
+    buckets[getParkingFilterCategory(o.spot)].push(o)
+  }
+
+  const primary: MixCategory[] = ['free', 'timed', 'paid']
+  const idx: Record<MixCategory, number> = {
+    free: 0,
+    timed: 0,
+    paid: 0,
+    other: 0,
+  }
   const picked: NearestParkingOption[] = []
   const used = new Set<string>()
 
-  const takeFirst = (pred: (spot: ParkingSpot) => boolean) => {
-    const hit = byDist.find((o) => !used.has(o.optionKey) && pred(o.spot))
-    if (!hit) return
-    used.add(hit.optionKey)
-    picked.push(hit)
+  const takeNext = (cat: MixCategory): boolean => {
+    while (idx[cat] < buckets[cat].length) {
+      const o = buckets[cat][idx[cat]++]!
+      if (used.has(o.optionKey)) continue
+      used.add(o.optionKey)
+      picked.push(o)
+      return true
+    }
+    return false
   }
 
-  // Slot 1: nearest 100% FREE lot when available, else any FREE spot
-  takeFirst((s) => isUnlimitedFreeParking(s) && isLotParkingSpot(s))
-  if (picked.length === 0) {
-    takeFirst((s) => isUnlimitedFreeParking(s))
+  // Interleave free / timed / paid while any of those buckets still has unused rows
+  let progressed = true
+  while (picked.length < limit && progressed) {
+    progressed = false
+    for (const cat of primary) {
+      if (picked.length >= limit) break
+      if (takeNext(cat)) progressed = true
+    }
   }
 
-  // Slot 2: nearest KELLAGA
-  takeFirst((s) => isClockLimitedParking(s))
-  // Slot 3: nearest TASULINE
-  takeFirst((s) => isPaidParkingSpot(s))
-
-  for (const o of byDist) {
-    if (picked.length >= limit) break
-    if (used.has(o.optionKey)) continue
-    used.add(o.optionKey)
-    picked.push(o)
+  // Fill remainder: other, then any leftover primary
+  for (const cat of ['other', ...primary] as MixCategory[]) {
+    while (picked.length < limit && takeNext(cat)) {
+      /* continue */
+    }
   }
-  return picked.slice(0, limit)
+
+  return picked
+}
+
+/** @deprecated Prefer {@link balanceNearestParkingMix}. */
+export function diversifyNearestParking(
+  options: NearestParkingOption[],
+  limit = 15,
+): NearestParkingOption[] {
+  return balanceNearestParkingMix(options, limit)
 }
 
 /** Default search radius for “Lähimad parklad” (meters). */
@@ -300,6 +329,9 @@ export const NEAREST_RADIUS_STEP_M = 2000
  * Filtering runs on this full radius pool; the panel then limits display rows.
  */
 const NEAREST_POOL_SOFT_CAP = 400
+
+/** Per-category quota so dense Kellaga streets cannot starve free/paid in the pool. */
+const NEAREST_POOL_PER_CATEGORY = 100
 
 /** Collect roadside/lot options within a radius of a search destination. */
 export function collectNearestAround(
@@ -325,9 +357,27 @@ export function collectNearestAround(
   }
   scored.sort((a, b) => a.distanceM - b.distanceM)
 
-  // Entire radius pool (not top-N) so chip filters can still find free/paid
-  // lots that sit slightly farther than a dense Kellaga cluster.
-  const raw = scored.slice(0, NEAREST_POOL_SOFT_CAP)
+  // Keep nearest of each exclusive category from the full radius, then fill
+  // with overall closest — avoids a Kellaga wall eating the soft cap.
+  const byCat: Record<MixCategory, Array<{ spot: ParkingSpot; distanceM: number }>> =
+    { free: [], timed: [], paid: [], other: [] }
+  for (const item of scored) {
+    byCat[getParkingFilterCategory(item.spot)].push(item)
+  }
+  const merged = new Map<string, { spot: ParkingSpot; distanceM: number }>()
+  const itemKey = (s: ParkingSpot) => s.id || `${s.lat}_${s.lng}`
+  for (const cat of ['free', 'timed', 'paid', 'other'] as MixCategory[]) {
+    for (const item of byCat[cat].slice(0, NEAREST_POOL_PER_CATEGORY)) {
+      merged.set(itemKey(item.spot), item)
+    }
+  }
+  for (const item of scored) {
+    if (merged.size >= NEAREST_POOL_SOFT_CAP) break
+    const k = itemKey(item.spot)
+    if (!merged.has(k)) merged.set(k, item)
+  }
+  const raw = [...merged.values()].sort((a, b) => a.distanceM - b.distanceM)
+
   const deduped = dedupeNearestParking(raw, lat, lng, 20)
   const clustered = clusterAdjacentStreetParking(deduped, 100)
   return sortByProximity(clustered)

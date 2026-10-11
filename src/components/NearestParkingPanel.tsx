@@ -14,6 +14,7 @@ import {
 } from '../lib/parkingDisplayName'
 import type { NearestParkingOption } from '../lib/nearestParking'
 import {
+  balanceNearestParkingMix,
   filterOdavaimTasuta,
   sortByProximity,
 } from '../lib/nearestParking'
@@ -42,20 +43,23 @@ function walkMinutes(distanceM: number): number {
 
 export function parkingPriceBadge(spot: ParkingSpot): string {
   const locale = getLocale()
-  if (isUnlimitedFreeParking(spot)) return tKey('badge.free', undefined, locale)
-  if (isClockLimitedParking(spot)) {
+  const category = getParkingFilterCategory(spot)
+  if (category === 'free') return tKey('badge.free', undefined, locale)
+  if (category === 'timed') {
     const mins = Math.max(1, Math.round(spot.free_minutes || 15))
     return `${mins} ${tKey('badge.min', undefined, locale)}`
   }
+  if (category === 'paid') {
+    if (spot.price_per_hour > 0) {
+      return (
+        formatHourlyRate(spot.price_per_hour, locale) ||
+        `${spot.price_per_hour.toFixed(2)} €/h`
+      )
+    }
+    if (spot.zone_code && spot.zone_code !== 'ZONE') return spot.zone_code
+    return tKey('badge.paid', undefined, locale)
+  }
   if (isUnclassifiedParking(spot)) return tKey('badge.unknown', undefined, locale)
-  if (spot.price_per_hour > 0) {
-    return formatHourlyRate(spot.price_per_hour, locale) || `${spot.price_per_hour.toFixed(2)} €/h`
-  }
-  if (spot.badge === 'PAID' || spot.zone_code) {
-    return spot.zone_code && spot.zone_code !== 'ZONE'
-      ? spot.zone_code
-      : tKey('badge.paid', undefined, locale)
-  }
   return '—'
 }
 
@@ -100,17 +104,18 @@ export function parkingMapPillTone(
 }
 
 function badgeTone(spot: ParkingSpot, dark?: boolean): string {
-  if (isUnlimitedFreeParking(spot)) {
+  const category = getParkingFilterCategory(spot)
+  if (category === 'free') {
     return dark
       ? 'bg-[#00FF00]/25 text-[#86EFAC]'
       : 'bg-[#00FF00]/15 text-[#15803D]'
   }
-  if (isClockLimitedParking(spot)) {
+  if (category === 'timed') {
     return dark
       ? 'bg-[#FFCC00]/20 text-[#FFCC00]'
       : 'bg-[#FFCC00]/25 text-[#8A6D00]'
   }
-  if (spot.price_per_hour > 0 || spot.badge === 'PAID') {
+  if (category === 'paid') {
     return dark
       ? 'bg-[#FF0000]/25 text-[#FCA5A5]'
       : 'bg-[#FF0000]/12 text-[#D70015]'
@@ -138,7 +143,9 @@ function applyPanelFilter(
       options.filter((o) => getParkingFilterCategory(o.spot) === 'paid'),
     )
   }
-  return sortByProximity(options)
+  // Kõik — do NOT pure-distance sort then slice: dense Kellaga would fill all 15.
+  // Interleave nearest free / timed / paid (then other) for a mixed list.
+  return balanceNearestParkingMix(options, NEAREST_DISPLAY_LIMIT)
 }
 
 export function NearestParkingPanel({
