@@ -46,8 +46,7 @@ type ApiRes = {
 
 type PushSubscriptionLike = {
   endpoint: string
-  keys?: Record<string, string>
-  [key: string]: unknown
+  keys: { p256dh: string; auth: string }
 }
 
 function secretsMatch(
@@ -68,12 +67,13 @@ function secretsMatch(
 }
 
 function isSubscription(v: unknown): v is PushSubscriptionLike {
-  return (
-    !!v &&
-    typeof v === 'object' &&
-    typeof (v as PushSubscriptionLike).endpoint === 'string' &&
-    (v as PushSubscriptionLike).endpoint.length > 0
-  )
+  if (!v || typeof v !== 'object') return false
+  const o = v as Record<string, unknown>
+  if (typeof o.endpoint !== 'string' || o.endpoint.length === 0) return false
+  const keys = o.keys
+  if (!keys || typeof keys !== 'object') return false
+  const k = keys as Record<string, unknown>
+  return typeof k.p256dh === 'string' && typeof k.auth === 'string'
 }
 
 function isAllowedPushEndpoint(endpoint: string): boolean {

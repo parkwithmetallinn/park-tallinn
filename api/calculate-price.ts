@@ -72,7 +72,7 @@ export default function handler(req: ApiReq, res: ApiRes): void {
     startMarked: body.startMarked,
   })
 
-  if (!result.ok) {
+  if (result.ok === false) {
     res.status(result.code === 'TOO_LONG' ? 422 : 400).json({
       ok: false,
       error: result.code,

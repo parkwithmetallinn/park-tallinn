@@ -332,7 +332,7 @@ export default async function handler(req: ApiReq, res: ApiRes): Promise<void> {
       clientHash: hash,
       createdAt: now,
     })
-    if (!inserted.ok) {
+    if (inserted.ok === false) {
       res.status(502).json({
         success: false,
         message: inserted.message,
