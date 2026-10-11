@@ -4,6 +4,7 @@
  */
 
 import { apiUrl } from './apiBase'
+import { installIdHeaders } from './installId'
 import {
   categoryPaintColor,
   PARKING_COLOR_FREE,
@@ -97,6 +98,7 @@ export async function postTypeVote(input: {
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
+        ...installIdHeaders(),
       },
       body: JSON.stringify({
         parkingId: input.parkingId,

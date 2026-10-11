@@ -2,11 +2,14 @@
  * One-tap "Täis" community report helper.
  * Wraps /api/reports with a hard 10s timeout.
  *
+ * FULL reports require location permission + ≤200 m proximity (client-only).
  * Cooldown is applied on success OR timeout so a late server response + retry
  * cannot count as two separate crowd votes within 5 minutes.
  */
 
 import { apiUrl } from './apiBase'
+import { assertNearParkingForFullReport } from './fullReportProximity'
+import { installIdHeaders } from './installId'
 import {
   canSubmitReport,
   markReportSubmitted,
@@ -14,7 +17,10 @@ import {
 
 const FETCH_TIMEOUT_MS = 10_000
 
-export async function submitFullReport(parkingId: string): Promise<{
+export async function submitFullReport(
+  parkingId: string,
+  spot: { lat: number; lng: number },
+): Promise<{
   ok: boolean
   message: string
   cooldown: boolean
@@ -31,6 +37,11 @@ export async function submitFullReport(parkingId: string): Promise<{
     }
   }
 
+  const near = await assertNearParkingForFullReport(spot.lat, spot.lng)
+  if (!near.ok) {
+    return { ok: false, message: near.message, cooldown: false }
+  }
+
   const ac = new AbortController()
   const timer = window.setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS)
 
@@ -40,6 +51,7 @@ export async function submitFullReport(parkingId: string): Promise<{
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
+        ...installIdHeaders(),
       },
       body: JSON.stringify({
         parkingId: id,

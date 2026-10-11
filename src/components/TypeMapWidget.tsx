@@ -1,7 +1,7 @@
 /**
  * Crowdsource widget for unknown-price lots:
  * "Aita kaardistada: mis parkla see on?"
- * Uses local submitTypeVote (in-memory / localStorage) — swap for Supabase later.
+ * POSTs to /api/type-votes with X-Install-Id; local vote marks duplicate UX.
  */
 
 import { HelpCircle } from 'lucide-react'
@@ -11,6 +11,7 @@ import {
   submitTypeVote,
   type TypeVoteKind,
 } from '../lib/submitTypeVote'
+import { postTypeVote } from '../lib/typeVotes'
 
 const OPTIONS: {
   id: TypeVoteKind
@@ -44,6 +45,7 @@ export function TypeMapWidget({
   const [hidden, setHidden] = useState(() => hasLocalTypeVote(parkingId))
   const [thanks, setThanks] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
   const ink = dark ? 'text-[#F5F5F7]' : 'text-[#1C1C1E]'
   const muted = dark ? 'text-[#98989D]' : 'text-[#8E8E93]'
@@ -54,15 +56,30 @@ export function TypeMapWidget({
   if (hidden && !thanks) return null
 
   const onVote = (type: TypeVoteKind) => {
-    const res = submitTypeVote(parkingId, type)
-    if (!res.ok) {
-      setErr(res.message)
-      if (res.duplicate) setHidden(true)
+    if (busy) return
+    if (hasLocalTypeVote(parkingId)) {
+      setErr('Oled selle parkla juba kaardistanud')
+      setHidden(true)
       return
     }
-    setThanks(true)
+    setBusy(true)
     setErr(null)
-    window.setTimeout(() => setHidden(true), 1200)
+    void (async () => {
+      const api = await postTypeVote({
+        parkingId,
+        proposedType: type,
+      })
+      if (!api.ok) {
+        setErr(api.message)
+        setBusy(false)
+        return
+      }
+      // Mirror locally so the widget stays hidden across reloads.
+      submitTypeVote(parkingId, type)
+      setThanks(true)
+      setBusy(false)
+      window.setTimeout(() => setHidden(true), 1200)
+    })()
   }
 
   if (thanks) {
@@ -101,7 +118,8 @@ export function TypeMapWidget({
             type="button"
             data-testid={`type-vote-${opt.id.toLowerCase()}`}
             onClick={() => onVote(opt.id)}
-            className={`tap-scale inline-flex min-h-11 items-center justify-center rounded-xl border px-2 text-[13px] font-bold transition active:scale-[0.98] ${opt.className}`}
+            disabled={busy}
+            className={`tap-scale inline-flex min-h-11 items-center justify-center rounded-xl border px-2 text-[13px] font-bold transition active:scale-[0.98] disabled:opacity-55 ${opt.className}`}
           >
             {opt.label}
           </button>

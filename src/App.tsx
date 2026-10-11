@@ -1670,6 +1670,8 @@ export default function App() {
   const handleMarkFull = useCallback(() => {
     if (!selected) return
     const parkingId = selected.id
+    const spotLat = selected.lat
+    const spotLng = selected.lng
     if (!canSubmitReport(parkingId)) {
       setToast({
         kind: 'info',
@@ -1679,7 +1681,10 @@ export default function App() {
     }
     setToast({ kind: 'loading', title: t('toasts.sending') })
     void (async () => {
-      const result = await submitFullReport(parkingId)
+      const result = await submitFullReport(parkingId, {
+        lat: spotLat,
+        lng: spotLng,
+      })
       if (!result.ok) {
         setToast({
           kind: result.cooldown ? 'info' : 'error',

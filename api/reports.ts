@@ -4,13 +4,26 @@
  * POST { parkingId, statusType, comment? }
  * GET  → [{ parkingId, isFull, status, lastReportedMinutesAgo }]
  *
+ * Identity: client_hash = sha256(X-Install-Id + REPORT_SALT),
+ *           ip_hash     = sha256(ip + REPORT_SALT).
+ * Two votes count as separate only if BOTH hashes differ.
+ * A later FREE from a different install cancels earlier FULL votes.
+ *
  * Server-only: SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (+ REPORT_SALT).
  * Browser talks only to /api/reports — never the anon key.
  * Mem fallback is DEV ONLY — production returns 503 when DB is unavailable.
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { clientHash, reportSaltOk } from './_lib/clientHash.js'
+import {
+  installClientHash,
+  ipHash,
+  reportSaltOk,
+} from './_lib/clientHash.js'
+import {
+  effectiveIpHash,
+  filterIndependentVotes,
+} from './_lib/voteIndependence.js'
 
 const MIN_FULL_VOTES = 2
 const WINDOW_MS = 45 * 60 * 1000
@@ -21,6 +34,7 @@ const DUP_WINDOW_MS = 5 * 60 * 1000
 const COMMENT_MAX = 200
 const GET_LIMIT = 2000
 const TABLE = 'parking_reports'
+const BLOCKED_TABLE = 'blocked_hashes'
 // Slash allowed so OSM-style ids (w/123, way/…) match map spot.id without map changes.
 const PARKING_ID_RE = /^[A-Za-z0-9_/-]{1,64}$/
 
@@ -31,6 +45,7 @@ type ReportRow = {
   parking_id: string
   status_type: string
   client_hash: string
+  ip_hash?: string | null
   created_at: string
 }
 
@@ -38,6 +53,7 @@ type MemRow = {
   parkingId: string
   statusType: string
   clientHash: string
+  ipHash: string
   createdAt: number
 }
 
@@ -73,7 +89,7 @@ class DbUnavailableError extends Error {
 }
 
 const memStore: Map<string, MemRow> =
-  ((globalThis as { __parkReportsMemV2?: Map<string, MemRow> }).__parkReportsMemV2 ??=
+  ((globalThis as { __parkReportsMemV3?: Map<string, MemRow> }).__parkReportsMemV3 ??=
     new Map())
 
 function isProduction(): boolean {
@@ -133,17 +149,20 @@ export function reportInsertRow(input: {
   parkingId: string
   statusType: string
   clientHash: string
+  ipHash: string
 }): {
   parking_id: string
   status_type: string
   comment: null
   client_hash: string
+  ip_hash: string
 } {
   return {
     parking_id: input.parkingId,
     status_type: input.statusType,
     comment: null,
     client_hash: input.clientHash,
+    ip_hash: input.ipHash,
   }
 }
 
@@ -160,11 +179,33 @@ function serviceUnavailable(res: ApiRes) {
   })
 }
 
+/** Neutral rejection for blocked install hashes — do not reveal the blocklist. */
+function blockedNeutral(res: ApiRes) {
+  res.setHeader('Cache-Control', 'no-store')
+  res.status(403).json({
+    success: false,
+    message: 'Teavitust ei õnnestunud salvestada',
+  })
+}
+
 function pruneMem(now = Date.now()) {
   const cutoff = now - WINDOW_MS
   for (const [k, v] of memStore) {
     if (v.createdAt < cutoff) memStore.delete(k)
   }
+}
+
+async function isBlockedHash(
+  sb: SupabaseClient | null,
+  hash: string,
+): Promise<boolean> {
+  if (!sb) return false
+  const { count, error } = await sb
+    .from(BLOCKED_TABLE)
+    .select('client_hash', { count: 'exact', head: true })
+    .eq('client_hash', hash)
+  if (error) return false
+  return (count ?? 0) > 0
 }
 
 async function countRecentByHash(
@@ -237,6 +278,7 @@ async function insertReport(
     parkingId: string
     statusType: string
     clientHash: string
+    ipHash: string
     createdAt: number
   },
 ): Promise<{ ok: true } | { ok: false; message: string }> {
@@ -247,6 +289,7 @@ async function insertReport(
       parkingId: row.parkingId,
       statusType: row.statusType,
       clientHash: row.clientHash,
+      ipHash: row.ipHash,
       createdAt: row.createdAt,
     })
     pruneMem(row.createdAt)
@@ -257,6 +300,7 @@ async function insertReport(
     parkingId: row.parkingId,
     statusType: row.statusType,
     clientHash: row.clientHash,
+    ipHash: row.ipHash,
   })
   const { error } = await sb.from(TABLE).insert(payload)
   if (error) {
@@ -282,6 +326,7 @@ async function fetchRecentRows(
           parking_id: v.parkingId,
           status_type: v.statusType,
           client_hash: v.clientHash,
+          ip_hash: v.ipHash,
           created_at: new Date(v.createdAt).toISOString(),
         })
       }
@@ -294,7 +339,7 @@ async function fetchRecentRows(
 
   const { data, error } = await sb
     .from(TABLE)
-    .select('parking_id,status_type,client_hash,created_at')
+    .select('parking_id,status_type,client_hash,ip_hash,created_at')
     .gt('created_at', sinceIso)
     .order('created_at', { ascending: false })
     .limit(GET_LIMIT)
@@ -306,9 +351,41 @@ async function fetchRecentRows(
   return data as ReportRow[]
 }
 
+type NormalizedVote = {
+  client_hash: string
+  ip_hash: string
+  status_type: string
+  created_at: string
+}
+
+/**
+ * FREE from a different install after a FULL cancels that earlier FULL vote.
+ */
+export function applyFreeCancelsFull(votes: NormalizedVote[]): NormalizedVote[] {
+  const sorted = [...votes].sort(
+    (a, b) => Date.parse(a.created_at) - Date.parse(b.created_at),
+  )
+  const cancelled = new Set<NormalizedVote>()
+  for (let i = 0; i < sorted.length; i += 1) {
+    const v = sorted[i]!
+    if (String(v.status_type).toUpperCase() !== 'FREE') continue
+    for (let j = 0; j < i; j += 1) {
+      const earlier = sorted[j]!
+      if (
+        String(earlier.status_type).toUpperCase() === 'FULL' &&
+        earlier.client_hash !== v.client_hash
+      ) {
+        cancelled.add(earlier)
+      }
+    }
+  }
+  return sorted.filter((v) => !cancelled.has(v))
+}
+
 /**
  * Per parking_id keep only the LATEST report of each voter (client_hash),
- * then tally FULL vs FREE votes.
+ * cancel FULL votes superseded by a later FREE from another device,
+ * then tally independent FULL vs FREE votes (both hashes must differ).
  */
 export function groupReports(rows: ReportRow[], now: number): GroupedReport[] {
   /** parkingId → (clientHash → latest row) */
@@ -334,16 +411,29 @@ export function groupReports(rows: ReportRow[], now: number): GroupedReport[] {
 
   const out: GroupedReport[] = []
   for (const [parkingId, voters] of perLot) {
-    let fullVotes = 0
-    let freeVotes = 0
+    const normalized: NormalizedVote[] = [...voters.values()].map((vote) => ({
+      client_hash: String(vote.client_hash).trim(),
+      ip_hash: effectiveIpHash(vote),
+      status_type: String(vote.status_type ?? '').toUpperCase(),
+      created_at: vote.created_at,
+    }))
+
+    const active = applyFreeCancelsFull(normalized)
     let latestMs = 0
-    for (const vote of voters.values()) {
-      const status = String(vote.status_type ?? '').toUpperCase()
+    for (const vote of active) {
       const ms = Date.parse(vote.created_at)
       if (Number.isFinite(ms) && ms > latestMs) latestMs = ms
-      if (status === 'FULL') fullVotes += 1
-      else if (status === 'FREE') freeVotes += 1
     }
+
+    const fullIndependent = filterIndependentVotes(
+      active.filter((v) => v.status_type === 'FULL'),
+    )
+    const freeIndependent = filterIndependentVotes(
+      active.filter((v) => v.status_type === 'FREE'),
+    )
+    const fullVotes = fullIndependent.length
+    const freeVotes = freeIndependent.length
+
     const isFull =
       fullVotes >= MIN_FULL_VOTES && fullVotes > freeVotes
     let lotStatus: ReportLotStatus = 'UNKNOWN'
@@ -440,7 +530,17 @@ export default async function handler(req: ApiReq, res: ApiRes): Promise<void> {
       return
     }
 
-    const hash = clientHash(req)
+    const hash = installClientHash(req)
+    if (!hash) {
+      badRequest(res, 'Vigane päring')
+      return
+    }
+    const ip = ipHash(req)
+
+    if (await isBlockedHash(sb, hash)) {
+      blockedNeutral(res)
+      return
+    }
 
     const recentCount = await countRecentByHash(sb, hash, RATE_WINDOW_MS, now)
     if (recentCount >= RATE_MAX) {
@@ -463,6 +563,7 @@ export default async function handler(req: ApiReq, res: ApiRes): Promise<void> {
       parkingId,
       statusType,
       clientHash: hash,
+      ipHash: ip,
       createdAt: now,
     })
     if (!inserted.ok) {

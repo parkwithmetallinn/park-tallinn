@@ -4,15 +4,26 @@
  * POST { parkingId, proposedType: 'FREE' | 'TIMED' | 'PAID' }
  * GET  → [{ parkingId, verifiedType, voteCount, lastVotedMinutesAgo }]
  *
- * Trust: when ≥2 independent client_hash votes match the same type,
- * upsert parking_type_verified so the map can show the verified color.
+ * Trust: when ≥2 independent votes match the same type (both install hash
+ * and IP hash must differ), upsert parking_type_verified for map color.
+ *
+ * Identity: client_hash = sha256(X-Install-Id + REPORT_SALT),
+ *           ip_hash     = sha256(ip + REPORT_SALT).
  *
  * Server-only: SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (+ REPORT_SALT).
  * Mem fallback is DEV ONLY — production returns 503 when DB is unavailable.
  */
 
-import { createHash } from 'node:crypto'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import {
+  installClientHash,
+  ipHash,
+  reportSaltOk,
+} from './_lib/clientHash.js'
+import {
+  effectiveIpHash,
+  filterIndependentVotes,
+} from './_lib/voteIndependence.js'
 
 const MIN_MATCHING_VOTES = 2
 const WINDOW_MS = 30 * 24 * 60 * 60 * 1000 // 30 days for type votes
@@ -22,6 +33,7 @@ const DUP_WINDOW_MS = 24 * 60 * 60 * 1000
 const GET_LIMIT = 5000
 const VOTES_TABLE = 'parking_type_votes'
 const VERIFIED_TABLE = 'parking_type_verified'
+const BLOCKED_TABLE = 'blocked_hashes'
 const PARKING_ID_RE = /^[A-Za-z0-9_/-]{1,64}$/
 
 export const ALLOWED_TYPES = new Set(['FREE', 'TIMED', 'PAID'] as const)
@@ -31,6 +43,7 @@ type VoteRow = {
   parking_id: string
   proposed_type: string
   client_hash: string
+  ip_hash?: string | null
   created_at: string
 }
 
@@ -45,6 +58,7 @@ type MemVote = {
   parkingId: string
   proposedType: ProposedParkingType
   clientHash: string
+  ipHash: string
   createdAt: number
 }
 
@@ -108,30 +122,6 @@ function getServiceClient(): SupabaseClient | null {
   })
 }
 
-function headerValue(
-  headers: ApiReq['headers'],
-  name: string,
-): string | undefined {
-  if (!headers) return undefined
-  const raw = headers[name] ?? headers[name.toLowerCase()]
-  if (Array.isArray(raw)) return raw[0]
-  return typeof raw === 'string' ? raw : undefined
-}
-
-function firstForwardedIp(req: ApiReq): string {
-  const xf = headerValue(req.headers, 'x-forwarded-for')
-  if (xf && xf.trim()) return xf.split(',')[0]!.trim()
-  const real = headerValue(req.headers, 'x-real-ip')
-  if (real && real.trim()) return real.trim()
-  return req.socket?.remoteAddress?.trim() || 'unknown'
-}
-
-function clientHash(req: ApiReq): string {
-  const salt = String(process.env.REPORT_SALT ?? '').trim()
-  const ip = firstForwardedIp(req)
-  return createHash('sha256').update(`${ip}${salt}`, 'utf8').digest('hex')
-}
-
 function parseBody(req: ApiReq): Record<string, unknown> | null {
   let body = req.body
   if (body == null || body === '') return null
@@ -169,9 +159,26 @@ function serviceUnavailable(res: ApiRes) {
   })
 }
 
-function reportSaltOk(): boolean {
-  const salt = String(process.env.REPORT_SALT ?? '').trim()
-  return salt.length >= 16
+/** Neutral rejection for blocked install hashes — do not reveal the blocklist. */
+function blockedNeutral(res: ApiRes) {
+  res.setHeader('Cache-Control', 'no-store')
+  res.status(403).json({
+    success: false,
+    message: 'Häält ei õnnestunud salvestada',
+  })
+}
+
+async function isBlockedHash(
+  sb: SupabaseClient | null,
+  hash: string,
+): Promise<boolean> {
+  if (!sb) return false
+  const { count, error } = await sb
+    .from(BLOCKED_TABLE)
+    .select('client_hash', { count: 'exact', head: true })
+    .eq('client_hash', hash)
+  if (error) return false
+  return (count ?? 0) > 0
 }
 
 function pruneMem(now = Date.now()) {
@@ -183,7 +190,8 @@ function pruneMem(now = Date.now()) {
 
 /**
  * Per parking_id keep latest vote per client_hash, then verify when
- * ≥ MIN_MATCHING_VOTES independent votes agree on the same type.
+ * ≥ MIN_MATCHING_VOTES independent votes agree on the same type
+ * (independence requires both install hash and IP hash to differ).
  */
 export function groupTypeVotes(
   rows: VoteRow[],
@@ -211,17 +219,29 @@ export function groupTypeVotes(
 
   const out: TypeVoteResult[] = []
   for (const [parkingId, voters] of perLot) {
+    const normalized = [...voters.values()].map((vote) => ({
+      client_hash: String(vote.client_hash).trim(),
+      ip_hash: effectiveIpHash(vote),
+      proposed_type: String(vote.proposed_type ?? ''),
+      created_at: vote.created_at,
+    }))
+
+    let latestMs = 0
+    for (const vote of normalized) {
+      const ms = Date.parse(vote.created_at)
+      if (Number.isFinite(ms) && ms > latestMs) latestMs = ms
+    }
+
     const tallies: Record<ProposedParkingType, number> = {
       FREE: 0,
       TIMED: 0,
       PAID: 0,
     }
-    let latestMs = 0
-    for (const vote of voters.values()) {
-      const t = normalizeType(vote.proposed_type)
-      const ms = Date.parse(vote.created_at)
-      if (Number.isFinite(ms) && ms > latestMs) latestMs = ms
-      if (t) tallies[t] += 1
+    for (const t of ['FREE', 'TIMED', 'PAID'] as const) {
+      const matching = normalized.filter(
+        (v) => normalizeType(v.proposed_type) === t,
+      )
+      tallies[t] = filterIndependentVotes(matching).length
     }
 
     let best: ProposedParkingType | null = null
@@ -319,6 +339,7 @@ async function insertVote(
     parkingId: string
     proposedType: ProposedParkingType
     clientHash: string
+    ipHash: string
     createdAt: number
   },
 ): Promise<{ ok: true } | { ok: false; message: string }> {
@@ -329,6 +350,7 @@ async function insertVote(
       parkingId: row.parkingId,
       proposedType: row.proposedType,
       clientHash: row.clientHash,
+      ipHash: row.ipHash,
       createdAt: row.createdAt,
     })
     pruneMem(row.createdAt)
@@ -339,6 +361,7 @@ async function insertVote(
     parking_id: row.parkingId,
     proposed_type: row.proposedType,
     client_hash: row.clientHash,
+    ip_hash: row.ipHash,
   })
   if (error) {
     if (isProduction()) throw new DbUnavailableError()
@@ -362,6 +385,7 @@ async function fetchRecentVotes(
           parking_id: v.parkingId,
           proposed_type: v.proposedType,
           client_hash: v.clientHash,
+          ip_hash: v.ipHash,
           created_at: new Date(v.createdAt).toISOString(),
         })
       }
@@ -372,7 +396,7 @@ async function fetchRecentVotes(
 
   const { data, error } = await sb
     .from(VOTES_TABLE)
-    .select('parking_id,proposed_type,client_hash,created_at')
+    .select('parking_id,proposed_type,client_hash,ip_hash,created_at')
     .gt('created_at', sinceIso)
     .order('created_at', { ascending: false })
     .limit(GET_LIMIT)
@@ -544,7 +568,17 @@ export default async function handler(req: ApiReq, res: ApiRes): Promise<void> {
       return
     }
 
-    const hash = clientHash(req)
+    const hash = installClientHash(req)
+    if (!hash) {
+      badRequest(res, 'Vigane päring')
+      return
+    }
+    const ip = ipHash(req)
+
+    if (await isBlockedHash(sb, hash)) {
+      blockedNeutral(res)
+      return
+    }
 
     const recentCount = await countRecentByHash(sb, hash, RATE_WINDOW_MS, now)
     if (recentCount >= RATE_MAX) {
@@ -567,6 +601,7 @@ export default async function handler(req: ApiReq, res: ApiRes): Promise<void> {
       parkingId,
       proposedType,
       clientHash: hash,
+      ipHash: ip,
       createdAt: now,
     })
     if (!inserted.ok) {

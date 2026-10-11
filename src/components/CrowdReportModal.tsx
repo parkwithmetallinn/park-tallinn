@@ -1,6 +1,8 @@
 import { AlertTriangle, CheckCircle2, Loader2, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { apiUrl } from '../lib/apiBase'
+import { assertNearParkingForFullReport } from '../lib/fullReportProximity'
+import { installIdHeaders } from '../lib/installId'
 import {
   canSubmitReport,
   markReportSubmitted,
@@ -80,19 +82,29 @@ export function CrowdReportModal({
     }
     setError(null)
     setSubmitting(true)
+    const opt = STATUS_OPTIONS.find((o) => o.id === statusType)
+    const apiStatus = opt?.apiStatus ?? 'FULL'
+    if (apiStatus === 'FULL') {
+      const near = await assertNearParkingForFullReport(spot.lat, spot.lng)
+      if (!near.ok) {
+        setError(near.message)
+        setSubmitting(false)
+        return
+      }
+    }
     const ac = new AbortController()
     const timer = window.setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS)
     try {
-      const opt = STATUS_OPTIONS.find((o) => o.id === statusType)
       const res = await fetch(apiUrl('/api/reports'), {
         method: 'POST',
         headers: {
           Accept: 'application/json',
           'Content-Type': 'application/json',
+          ...installIdHeaders(),
         },
         body: JSON.stringify({
           parkingId: spot.id,
-          statusType: opt?.apiStatus ?? 'FULL',
+          statusType: apiStatus,
           comment: '',
         }),
         signal: ac.signal,

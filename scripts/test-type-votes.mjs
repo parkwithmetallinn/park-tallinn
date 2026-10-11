@@ -14,12 +14,14 @@ describe('groupTypeVotes', () => {
         parking_id: 'lot-a',
         proposed_type: 'FREE',
         client_hash: 'h1',
+        ip_hash: 'ip1',
         created_at: '2026-10-10T11:50:00.000Z',
       },
       {
         parking_id: 'lot-a',
         proposed_type: 'FREE',
         client_hash: 'h2',
+        ip_hash: 'ip2',
         created_at: '2026-10-10T11:55:00.000Z',
       },
     ]
@@ -28,6 +30,26 @@ describe('groupTypeVotes', () => {
     assert.equal(out[0].parkingId, 'lot-a')
     assert.equal(out[0].verifiedType, 'FREE')
     assert.equal(out[0].voteCount, 2)
+  })
+
+  it('same IP hash does not count as two independent votes', () => {
+    const rows = [
+      {
+        parking_id: 'lot-a',
+        proposed_type: 'FREE',
+        client_hash: 'h1',
+        ip_hash: 'ip-shared',
+        created_at: '2026-10-10T11:50:00.000Z',
+      },
+      {
+        parking_id: 'lot-a',
+        proposed_type: 'FREE',
+        client_hash: 'h2',
+        ip_hash: 'ip-shared',
+        created_at: '2026-10-10T11:55:00.000Z',
+      },
+    ]
+    assert.deepEqual(groupTypeVotes(rows, now), [])
   })
 
   it('ignores a single vote', () => {

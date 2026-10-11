@@ -4,6 +4,8 @@
  */
 
 import { apiUrl } from './apiBase'
+import { assertNearParkingForFullReport } from './fullReportProximity'
+import { installIdHeaders } from './installId'
 import {
   canSubmitReport,
   markReportSubmitted,
@@ -85,6 +87,20 @@ export async function postCommunityFullReport(input: {
   if (!id) return []
   if (!canSubmitReport(id)) return []
 
+  const statusType = input.isFull === false ? 'FREE' : 'FULL'
+  if (statusType === 'FULL') {
+    if (
+      typeof input.lat !== 'number' ||
+      typeof input.lng !== 'number' ||
+      !Number.isFinite(input.lat) ||
+      !Number.isFinite(input.lng)
+    ) {
+      return []
+    }
+    const near = await assertNearParkingForFullReport(input.lat, input.lng)
+    if (!near.ok) return []
+  }
+
   const ac = new AbortController()
   const timer = window.setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS)
   try {
@@ -93,10 +109,11 @@ export async function postCommunityFullReport(input: {
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
+        ...installIdHeaders(),
       },
       body: JSON.stringify({
         parkingId: id,
-        statusType: input.isFull === false ? 'FREE' : 'FULL',
+        statusType,
         comment: '',
       }),
       signal: ac.signal,
