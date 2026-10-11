@@ -209,6 +209,8 @@ export type MessageTree = {
     reportCooldown: string
     sending: string
     submittedReview: string
+    feedbackThanks: string
+    feedbackFail: string
     routeFail: string
     walkRouteMissing: string
     walkRouteFallback: string

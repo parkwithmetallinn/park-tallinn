@@ -1,7 +1,8 @@
 /**
- * Crowdsourced parking moderation queue.
- * Frontend NEVER mutates production GeoJSON — only writes pending requests
- * and (on admin approve) a separate local active overlay / suppress list.
+ * DEV / admin-only local moderation helpers.
+ * Production proposals go to POST /api/feedback (central inbox) — this
+ * localStorage queue is not written from ReportModal anymore.
+ * AdminReviewView may still use these helpers when VITE_ENABLE_ADMIN / DEV.
  */
 
 import { normalizeSpot } from './geojson'

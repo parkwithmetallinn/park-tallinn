@@ -44,6 +44,10 @@ function localApiPlugin(env: Record<string, string>): Plugin {
   const routes: Record<string, () => Promise<{ default: (req: any, res: any) => unknown }>> =
     {
       '/api/reports': () => import('./api/reports.ts') as Promise<{ default: (req: any, res: any) => unknown }>,
+      '/api/feedback': () =>
+        import('./api/feedback.ts') as Promise<{
+          default: (req: any, res: any) => unknown
+        }>,
       '/api/type-votes': () =>
         import('./api/type-votes.ts') as Promise<{
           default: (req: any, res: any) => unknown

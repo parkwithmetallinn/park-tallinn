@@ -9,8 +9,8 @@
  * Mem fallback is DEV ONLY — production returns 503 when DB is unavailable.
  */
 
-import { createHash } from 'node:crypto'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { clientHash, reportSaltOk } from './_lib/clientHash.js'
 
 const MIN_FULL_VOTES = 2
 const WINDOW_MS = 45 * 60 * 1000
@@ -90,30 +90,6 @@ function getServiceClient(): SupabaseClient | null {
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
-}
-
-function headerValue(
-  headers: ApiReq['headers'],
-  name: string,
-): string | undefined {
-  if (!headers) return undefined
-  const raw = headers[name] ?? headers[name.toLowerCase()]
-  if (Array.isArray(raw)) return raw[0]
-  return typeof raw === 'string' ? raw : undefined
-}
-
-function firstForwardedIp(req: ApiReq): string {
-  const xf = headerValue(req.headers, 'x-forwarded-for')
-  if (xf && xf.trim()) return xf.split(',')[0]!.trim()
-  const real = headerValue(req.headers, 'x-real-ip')
-  if (real && real.trim()) return real.trim()
-  return req.socket?.remoteAddress?.trim() || 'unknown'
-}
-
-function clientHash(req: ApiReq): string {
-  const salt = String(process.env.REPORT_SALT ?? '').trim()
-  const ip = firstForwardedIp(req)
-  return createHash('sha256').update(`${ip}${salt}`, 'utf8').digest('hex')
 }
 
 function parseBody(req: ApiReq): Record<string, unknown> | null {
@@ -386,11 +362,6 @@ export function groupReports(rows: ReportRow[], now: number): GroupedReport[] {
 
   out.sort((a, b) => a.lastReportedMinutesAgo - b.lastReportedMinutesAgo)
   return out
-}
-
-function reportSaltOk(): boolean {
-  const salt = String(process.env.REPORT_SALT ?? '').trim()
-  return salt.length >= 16
 }
 
 export default async function handler(req: ApiReq, res: ApiRes): Promise<void> {

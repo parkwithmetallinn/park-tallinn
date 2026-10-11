@@ -14,6 +14,7 @@ import {
   ParkingBottomSheet,
   type PanelRouteSummary,
 } from './ParkingBottomSheet'
+import { submitFeedback } from '../lib/submitFeedback'
 import type { AlternativeParking } from '../lib/alternatives'
 import type { ActiveParkingSession } from '../lib/parkingSession'
 import type { ParkingSpot } from '../types'
@@ -27,8 +28,9 @@ type CrowdOpen = {
 export function ParkingDetailPanel({
   spot,
   onMarkFull,
-  onReportInvalid: _onReportInvalid,
+  onReportInvalid,
   onCrowdReportSuccess,
+  onAbuseReportResult,
   ...rest
 }: {
   spot: ParkingSpot
@@ -65,11 +67,31 @@ export function ParkingDetailPanel({
     comment: string
     message: string
   }) => void
+  /** Toast after ABUSE_REPORT feedback POST. */
+  onAbuseReportResult?: (ok: boolean, message: string) => void
 }) {
-  void _onReportInvalid
   const [crowdOpen, setCrowdOpen] = useState<CrowdOpen>(null)
+  const [abuseBusy, setAbuseBusy] = useState(false)
   const { isFavorite, toggleFavorite } = useFavorites()
   const favorited = isFavorite(spot.id)
+
+  const sendAbuseReport = async () => {
+    if (abuseBusy) return
+    setAbuseBusy(true)
+    try {
+      const result = await submitFeedback({
+        type: 'ABUSE_REPORT',
+        parkingId: spot.id,
+        lat: spot.lat,
+        lng: spot.lng,
+        note: 'Sobimatu sisu / vale teade',
+        company_website: '',
+      })
+      onAbuseReportResult?.(result.ok, result.message)
+    } finally {
+      setAbuseBusy(false)
+    }
+  }
 
   return (
     <div data-testid="parking-detail-panel" className="contents">
@@ -80,7 +102,9 @@ export function ParkingDetailPanel({
         onToggleFavorite={() => toggleFavorite(spot.id)}
         onMarkFull={onMarkFull}
         onReportOther={() => setCrowdOpen({ initialStatus: 'free' })}
-        onReportInvalid={() => setCrowdOpen({ initialStatus: 'free' })}
+        onReportInvalid={onReportInvalid}
+        onReportAbuse={() => void sendAbuseReport()}
+        abuseReportBusy={abuseBusy}
       />
 
       {crowdOpen ? (

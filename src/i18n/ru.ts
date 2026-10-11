@@ -205,6 +205,8 @@ export const ru: MessageTree = {
     reportCooldown: 'Для этой парковки подождите 5 минут',
     sending: 'Отправка…',
     submittedReview: 'Отправлено на проверку',
+    feedbackThanks: 'Спасибо! Мы проверим сообщение.',
+    feedbackFail: 'Не удалось отправить сообщение',
     routeFail: 'Маршрут не найден',
     walkRouteMissing: 'Пеший маршрут не найден',
     walkRouteFallback: 'Показываю приблизительный путь',

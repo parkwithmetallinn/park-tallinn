@@ -205,6 +205,8 @@ export const en: MessageTree = {
     reportCooldown: 'Wait 5 minutes for the same lot',
     sending: 'Sending…',
     submittedReview: 'Submitted for review',
+    feedbackThanks: 'Thanks! We will review your report.',
+    feedbackFail: 'Could not send the report',
     routeFail: 'Could not find a route',
     walkRouteMissing: 'Walking route not found',
     walkRouteFallback: 'Showing an approximate path',

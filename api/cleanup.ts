@@ -30,8 +30,11 @@ type ApiRes = {
 
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET || ''
 const REPORTS_TABLE = 'parking_reports'
+const FEEDBACK_TABLE = 'parking_feedback'
 const SESSIONS_TABLE = 'parking_sessions'
 const REPORT_MAX_AGE_MS = 24 * 60 * 60 * 1000
+/** Feedback inbox retention — matches supabase/feedback.sql cleanup rule. */
+const FEEDBACK_MAX_AGE_MS = 180 * 24 * 60 * 60 * 1000
 
 function secretsMatch(
   provided: string | string[] | undefined,
@@ -72,14 +75,19 @@ function getServiceClient(): SupabaseClient | null {
 async function runDirectCleanup(sb: SupabaseClient): Promise<{
   sessionsCleared: boolean
   reportsDeleted: boolean
+  feedbackDeleted: boolean
   details: string[]
 }> {
   const details: string[] = []
   const nowIso = new Date().toISOString()
   const reportsCutoff = new Date(Date.now() - REPORT_MAX_AGE_MS).toISOString()
+  const feedbackCutoff = new Date(
+    Date.now() - FEEDBACK_MAX_AGE_MS,
+  ).toISOString()
 
   let sessionsCleared = false
   let reportsDeleted = false
+  let feedbackDeleted = false
 
   // Wipe PII from inactive / expired sessions
   const sessionUpdate = await sb
@@ -118,7 +126,27 @@ async function runDirectCleanup(sb: SupabaseClient): Promise<{
     details.push('reports: deleted rows older than 24h')
   }
 
-  return { sessionsCleared, reportsDeleted, details }
+  // Prefer SQL function; fall back to direct delete
+  const feedbackRpc = await sb.rpc('cleanup_old_parking_feedback')
+  if (!feedbackRpc.error) {
+    feedbackDeleted = true
+    details.push(
+      `feedback: cleanup_old_parking_feedback → ${String(feedbackRpc.data ?? 0)}`,
+    )
+  } else {
+    const feedbackDelete = await sb
+      .from(FEEDBACK_TABLE)
+      .delete()
+      .lt('created_at', feedbackCutoff)
+    if (feedbackDelete.error) {
+      details.push(`feedback: ${feedbackDelete.error.message}`)
+    } else {
+      feedbackDeleted = true
+      details.push('feedback: deleted rows older than 180d')
+    }
+  }
+
+  return { sessionsCleared, reportsDeleted, feedbackDeleted, details }
 }
 
 export default async function handler(req: ApiReq, res: ApiRes): Promise<void> {
@@ -178,7 +206,10 @@ export default async function handler(req: ApiReq, res: ApiRes): Promise<void> {
 
   try {
     const fallback = await runDirectCleanup(sb)
-    const ok = fallback.sessionsCleared || fallback.reportsDeleted
+    const ok =
+      fallback.sessionsCleared ||
+      fallback.reportsDeleted ||
+      fallback.feedbackDeleted
     res.status(ok ? 200 : 500).json({
       ok,
       mode: 'fallback',

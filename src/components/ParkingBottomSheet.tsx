@@ -122,6 +122,8 @@ export function ParkingBottomSheet({
   onCheckStatus,
   onExtendMinutes,
   onReportInvalid,
+  onReportAbuse,
+  abuseReportBusy = false,
   alternatives = [],
   noAlternatives = false,
   isFull = false,
@@ -154,8 +156,11 @@ export function ParkingBottomSheet({
   onStopSession: () => void
   onCheckStatus: () => void
   onExtendMinutes?: (minutes: number) => void
-  /** Crowdsource: queue REPORT_INVALID (does not mutate GeoJSON). */
+  /** Crowdsource: WRONG_DATA via central feedback inbox. */
   onReportInvalid?: () => void
+  /** Flag abusive / wrong community FULL/FREE or type colour. */
+  onReportAbuse?: () => void
+  abuseReportBusy?: boolean
   alternatives?: AlternativeParking[]
   noAlternatives?: boolean
   isFull?: boolean
@@ -169,7 +174,7 @@ export function ParkingBottomSheet({
   onReportOther?: () => void
   onWidenRadius?: () => void
   onSelectAlternative?: (spot: ParkingSpot) => void
-  /** Lemmikparkla — filled yellow star when saved. */
+  /** Lemmikparkla — filled heart when saved. */
   isFavorite?: boolean
   onToggleFavorite?: () => void
 }) {
@@ -383,18 +388,34 @@ export function ParkingBottomSheet({
               {isFull ? <FullIndicator variant="chip" /> : null}
             </div>
             {communityReportLabel ? (
-              <p
-                data-testid="community-report-status"
-                className={`mb-2 text-[12px] font-semibold leading-snug ${
-                  isFull
-                    ? 'text-[#C62828]'
-                    : communityReportLabel.includes('Vabu')
-                      ? 'text-[#1B7A36]'
-                      : muted
-                }`}
-              >
-                {communityReportLabel}
-              </p>
+              <div className="mb-2">
+                <p
+                  data-testid="community-report-status"
+                  className={`text-[12px] font-semibold leading-snug ${
+                    isFull
+                      ? 'text-[#C62828]'
+                      : communityReportLabel.includes('Vabu')
+                        ? 'text-[#1B7A36]'
+                        : muted
+                  }`}
+                >
+                  {communityReportLabel}
+                </p>
+                {onReportAbuse ? (
+                  <button
+                    type="button"
+                    data-testid="report-abuse-link"
+                    disabled={abuseReportBusy}
+                    onClick={(e) => {
+                      blockNav(e)
+                      onReportAbuse()
+                    }}
+                    className={`mt-1 text-left text-[12px] font-semibold underline-offset-2 transition hover:underline disabled:opacity-50 ${muted}`}
+                  >
+                    {abuseReportBusy ? 'Saadan…' : 'Teata sobimatust'}
+                  </button>
+                ) : null}
+              </div>
             ) : null}
             <div className="flex min-w-0 items-start gap-1.5">
               <h3
@@ -512,6 +533,20 @@ export function ParkingBottomSheet({
               Hind teadmata — kontrolli silti kohapeal või aita kaardistada.
             </div>
             <TypeMapWidget parkingId={spot.id} dark={dark} />
+            {onReportAbuse ? (
+              <button
+                type="button"
+                data-testid="report-abuse-type-link"
+                disabled={abuseReportBusy}
+                onClick={(e) => {
+                  blockNav(e)
+                  onReportAbuse()
+                }}
+                className={`mb-2.5 text-left text-[12px] font-semibold underline-offset-2 transition hover:underline disabled:opacity-50 ${muted}`}
+              >
+                {abuseReportBusy ? 'Saadan…' : 'Teata sobimatust'}
+              </button>
+            ) : null}
           </>
         ) : null}
 

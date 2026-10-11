@@ -2400,6 +2400,13 @@ export default function App() {
           onCrowdReportSuccess={handleCrowdReportSuccess}
           onWidenRadius={handleWidenRadius}
           onSelectAlternative={handleSelectAlternative}
+          onAbuseReportResult={(ok, message) => {
+            setToast({
+              kind: ok ? 'info' : 'error',
+              title: ok ? t('toasts.feedbackThanks') : t('toasts.feedbackFail'),
+              detail: message,
+            })
+          }}
         />
       ) : null}
 
@@ -2582,14 +2589,15 @@ export default function App() {
         <ReportModal
           context={reportContext}
           onClose={() => setReportContext(null)}
-          onSubmitted={(message) => {
-            setToast({ kind: 'info', title: t('toasts.submittedReview'), detail: message })
-            if (reportContext?.mode === 'PROPOSE_NEW') {
+          onSubmitted={(message, ok = true) => {
+            setToast({
+              kind: ok ? 'info' : 'error',
+              title: ok ? t('toasts.feedbackThanks') : t('toasts.feedbackFail'),
+              detail: message,
+            })
+            if (ok && reportContext?.mode === 'PROPOSE_NEW') {
               track('spot_added', { mode: 'PROPOSE_NEW' })
             }
-            // Refresh moderation layer if admin approved in another tab later
-            setApprovedOverlays(loadApprovedOverlays())
-            setSuppressedIds(loadSuppressedFeatureIds())
           }}
         />
       ) : null}

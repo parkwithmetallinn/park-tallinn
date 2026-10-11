@@ -1,11 +1,16 @@
 import { Flag, MapPinPlus, X } from 'lucide-react'
 import { useRef, useState, type FormEvent } from 'react'
-import { enqueueParkingRequest, type ParkingRequestType } from '../lib/parkingRequests'
-import type { ParkingSpot, SpotType } from '../types'
+import type { ParkingRequestType } from '../lib/parkingRequests'
+import type { ParkingSpot } from '../types'
 import {
   reportInvalidSchema,
   reportProposeSchema,
 } from '../lib/validation'
+import {
+  composeProposeNote,
+  composeWrongDataNote,
+  submitFeedback,
+} from '../lib/submitFeedback'
 import { useI18n } from '../i18n'
 
 export type ReportModalContext = {
@@ -25,6 +30,8 @@ const TYPE_OPTIONS = [
   { value: 'other', label: 'Muud / Era' },
 ] as const
 
+const SUCCESS_ET = 'Aitäh! Vaatame teate üle.'
+
 const fieldClass =
   'w-full rounded-xl border-0 bg-slate-100/80 px-3 py-2.5 text-[15px] font-medium text-[#1C1C1E] outline-none transition focus:ring-2 focus:ring-[#007AFF]/35'
 
@@ -33,12 +40,6 @@ const selectClass =
   'w-full cursor-pointer appearance-none rounded-xl border-0 bg-slate-100/80 bg-[length:14px_14px] bg-[right_12px_center] bg-no-repeat py-2.5 pr-10 pl-3 text-[15px] font-medium text-[#1C1C1E] outline-none transition focus:ring-2 focus:ring-[#007AFF]/35 ' +
   "bg-[url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2214%22 height=%2214%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%238E8E93%22 stroke-width=%222.4%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpolyline points=%226 9 12 15 18 9%22/%3E%3C/svg%3E')]"
 
-function mapProposedType(raw: string): SpotType {
-  if (raw === 'timed') return 'timed'
-  if (raw === 'paid' || raw === 'other') return 'paid'
-  return 'free'
-}
-
 export function ReportModal({
   context,
   onClose,
@@ -46,36 +47,33 @@ export function ReportModal({
 }: {
   context: ReportModalContext
   onClose: () => void
-  onSubmitted?: (message: string) => void
+  onSubmitted?: (message: string, ok?: boolean) => void
 }) {
   const { t } = useI18n()
   const [mode, setMode] = useState<ParkingRequestType>(context.mode)
   const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const openedAtRef = useRef(Date.now())
 
-  const submit = (e: FormEvent<HTMLFormElement>) => {
+  const fakeSuccessClose = () => {
+    onSubmitted?.(SUCCESS_ET, true)
+    onClose()
+  }
+
+  const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (submitting) return
     const fd = new FormData(e.currentTarget)
+    setError(null)
 
-    // Invisible spam checks — same success path, no new UI
+    // Invisible spam checks — same success path, no new UI (do not hit API)
     const honeypot = String(fd.get('company_website') || '')
     if (honeypot) {
-      onSubmitted?.(
-        mode === 'PROPOSE_NEW'
-          ? 'Ettepanek saadetud ülevaatusse — tootmise GeoJSON-i ei muudeta otseselt.'
-          : 'Vea teade saadetud ülevaatusse — kaart muutub alles pärast kinnitust.',
-      )
-      onClose()
+      fakeSuccessClose()
       return
     }
     if (Date.now() - openedAtRef.current < 1200) {
-      onSubmitted?.(
-        mode === 'PROPOSE_NEW'
-          ? 'Ettepanek saadetud ülevaatusse — tootmise GeoJSON-i ei muudeta otseselt.'
-          : 'Vea teade saadetud ülevaatusse — kaart muutub alles pärast kinnitust.',
-      )
-      onClose()
+      fakeSuccessClose()
       return
     }
 
@@ -93,7 +91,10 @@ export function ReportModal({
           note,
           company_website: honeypot,
         })
-        if (!parsed.success) return
+        if (!parsed.success) {
+          setError('Palun täida kohustuslikud väljad õigesti.')
+          return
+        }
         const name = parsed.data.name
         const address = parsed.data.address?.trim() || ''
         note = parsed.data.note?.trim() || ''
@@ -101,44 +102,62 @@ export function ReportModal({
         if (rawType === 'other' && !note.toLowerCase().includes('muud')) {
           note = note ? `Muud / Era. ${note}` : 'Muud / Era'
         }
-        enqueueParkingRequest({
-          type: 'PROPOSE_NEW',
+        const composed = composeProposeNote({
+          name,
+          type: rawType,
+          kind: parsed.data.kind,
+          limit: parsed.data.limit?.trim() || '',
+          address,
+          note,
+        })
+        const result = await submitFeedback({
+          type: 'NEW_PARKING',
+          parkingId: null,
           lat: context.lat,
           lng: context.lng,
-          note,
-          name,
-          address: address || undefined,
-          proposedKind: parsed.data.kind,
-          proposedType: mapProposedType(rawType),
-          timeLimit: parsed.data.limit?.trim() || undefined,
+          note: composed,
+          company_website: '',
         })
-        onSubmitted?.(
-          'Ettepanek saadetud ülevaatusse — tootmise GeoJSON-i ei muudeta otseselt.',
-        )
+        if (!result.ok) {
+          setError(result.message)
+          return
+        }
+        onSubmitted?.(result.message, true)
+        onClose()
       } else {
         const target = context.target
-        if (!target) return
+        if (!target) {
+          setError('Parkla puudub — vali koht kaardilt.')
+          return
+        }
         const parsed = reportInvalidSchema.safeParse({
           reason: String(fd.get('reason') || 'nonexistent'),
           note,
           company_website: honeypot,
         })
-        if (!parsed.success) return
-        enqueueParkingRequest({
-          type: 'REPORT_INVALID',
+        if (!parsed.success) {
+          setError('Palun täida kohustuslikud väljad õigesti.')
+          return
+        }
+        const composed = composeWrongDataNote({
+          reason: parsed.data.reason,
+          note: parsed.data.note?.trim() || '',
+        })
+        const result = await submitFeedback({
+          type: 'WRONG_DATA',
+          parkingId: target.id,
           lat: target.lat,
           lng: target.lng,
-          note: parsed.data.note?.trim() || '',
-          targetFeatureId: target.id,
-          targetName: target.name,
-          targetLayer: target.layer,
-          reason: parsed.data.reason,
+          note: composed,
+          company_website: '',
         })
-        onSubmitted?.(
-          'Vea teade saadetud ülevaatusse — kaart muutub alles pärast kinnitust.',
-        )
+        if (!result.ok) {
+          setError(result.message)
+          return
+        }
+        onSubmitted?.(result.message, true)
+        onClose()
       }
-      onClose()
     } finally {
       setSubmitting(false)
     }
@@ -184,7 +203,10 @@ export function ReportModal({
             type="button"
             role="tab"
             aria-selected={mode === 'PROPOSE_NEW'}
-            onClick={() => setMode('PROPOSE_NEW')}
+            onClick={() => {
+              setMode('PROPOSE_NEW')
+              setError(null)
+            }}
             className={`tap-scale flex min-h-11 cursor-pointer items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-[13px] font-bold transition active:scale-[0.98] ${
               mode === 'PROPOSE_NEW'
                 ? 'bg-white text-[#1C1C1E] shadow-sm'
@@ -198,7 +220,10 @@ export function ReportModal({
             type="button"
             role="tab"
             aria-selected={mode === 'REPORT_INVALID'}
-            onClick={() => setMode('REPORT_INVALID')}
+            onClick={() => {
+              setMode('REPORT_INVALID')
+              setError(null)
+            }}
             disabled={!context.target}
             className={`tap-scale flex min-h-11 cursor-pointer items-center justify-center gap-1.5 rounded-xl px-2 py-2.5 text-[13px] font-bold transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 ${
               mode === 'REPORT_INVALID'
@@ -212,11 +237,10 @@ export function ReportModal({
         </div>
 
         <p className="mb-4 rounded-xl bg-[#007AFF]/10 px-3 py-2.5 text-[12px] font-medium leading-snug text-[#007AFF]">
-          Muudatused lähevad ootel järjekorda. Tootmise GeoJSON faile brauser ei
-          muuda.
+          Teade läheb meeskonnale ülevaatuseks. Ära lisa e-posti ega telefoni.
         </p>
 
-        <form onSubmit={submit} className="space-y-3">
+        <form onSubmit={(e) => void submit(e)} className="space-y-3">
           {/* Invisible honeypot — off-screen, ignored by assistive tech */}
           <div
             aria-hidden="true"
@@ -343,10 +367,21 @@ export function ReportModal({
             <textarea
               name="note"
               rows={2}
-              placeholder="Tingimused, märgid, foto kirjeldus…"
+              maxLength={200}
+              placeholder="Tingimused, märgid… (max 200 märki, ilma e-posti/telefonita)"
               className={`${fieldClass} resize-none`}
             />
           </div>
+
+          {error ? (
+            <p
+              data-testid="feedback-error"
+              className="rounded-xl bg-[#FF3B30]/10 px-3 py-2.5 text-[13px] font-semibold text-[#D70015]"
+              role="alert"
+            >
+              {error}
+            </p>
+          ) : null}
 
           <button
             type="submit"
@@ -355,7 +390,11 @@ export function ReportModal({
               mode === 'PROPOSE_NEW' ? 'bg-[#34C759]' : 'bg-[#007AFF]'
             }`}
           >
-            {mode === 'PROPOSE_NEW' ? 'Saada ettepanek' : 'Saada veateade'}
+            {submitting
+              ? t('common.loading')
+              : mode === 'PROPOSE_NEW'
+                ? 'Saada ettepanek'
+                : 'Saada veateade'}
           </button>
         </form>
       </div>

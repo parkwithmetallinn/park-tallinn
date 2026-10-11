@@ -206,6 +206,8 @@ export const et: MessageTree = {
     reportCooldown: 'Sama parkla jaoks oota 5 minutit',
     sending: 'Saadan…',
     submittedReview: 'Saadetud ülevaatusse',
+    feedbackThanks: 'Aitäh! Vaatame teate üle.',
+    feedbackFail: 'Teadet ei õnnestunud saata',
     routeFail: 'Marsruuti ei õnnestunud leida',
     walkRouteMissing: 'Jalgsi marsruuti ei leitud',
     walkRouteFallback: 'Näitan ligikaudset teekonda',
