@@ -1,10 +1,10 @@
 import {
   Flag,
+  Heart,
   MapPin,
   Navigation,
   RefreshCw,
   Square,
-  Star,
   X,
 } from 'lucide-react'
 import { FullIndicator } from './FullIndicator'
@@ -417,10 +417,10 @@ export function ParkingBottomSheet({
                     isFavorite ? 'Eemalda lemmikutest' : 'Lisa lemmikutesse'
                   }
                 >
-                  <Star
+                  <Heart
                     className={`h-5 w-5 ${
                       isFavorite
-                        ? 'fill-[#FFCC00] text-[#FFCC00]'
+                        ? 'fill-[#FF2D55] text-[#FF2D55]'
                         : muted
                     }`}
                     strokeWidth={isFavorite ? 0 : 1.75}

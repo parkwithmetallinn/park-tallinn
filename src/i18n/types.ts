@@ -69,6 +69,30 @@ export type MessageTree = {
     outsideEstonia: string
     locationMissing: string
   }
+  places: {
+    title: string
+    eyebrow: string
+    locations: string
+    favorites: string
+    home: string
+    work: string
+    setHome: string
+    setWork: string
+    clearHome: string
+    clearWork: string
+    homeEmpty: string
+    workEmpty: string
+    setFromSearch: string
+    needSearch: string
+    emptyFavorites: string
+    noneYet: string
+    countOne: string
+    countMany: string
+    clearAll: string
+    addFavorite: string
+    removeFavorite: string
+    go: string
+  }
   nearest: {
     title: string
     subtitle: string

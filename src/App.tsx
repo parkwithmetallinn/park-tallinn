@@ -4,6 +4,7 @@ import {
   CircleHelp,
   Clock3,
   Footprints,
+  Heart,
   Info,
   Loader2,
   LocateFixed,
@@ -12,7 +13,6 @@ import {
   Plus,
   Search,
   Shield,
-  Star,
   Sun,
   X,
 } from 'lucide-react'
@@ -1963,7 +1963,7 @@ export default function App() {
                   aria-label={t("chrome.favorites")}
                   aria-pressed={favoritesOpen}
                 >
-                  <Star className="h-5 w-5" />
+                  <Heart className="h-5 w-5" />
                 </button>
                 <button
                   type="button"
@@ -2305,6 +2305,17 @@ export default function App() {
         <FavoritesPanel
           spots={allSpots}
           dark={dark}
+          draftLocation={
+            searchLocation
+              ? {
+                  lat: searchLocation.lat,
+                  lng: searchLocation.lng,
+                  name: searchLocation.name,
+                  address: searchLocation.label,
+                  label: searchLocation.label,
+                }
+              : null
+          }
           onClose={() => setFavoritesOpen(false)}
           onSelect={(spot) => {
             setFavoritesOpen(false)
@@ -2314,6 +2325,18 @@ export default function App() {
             setFlyTarget([spot.lat, spot.lng])
             setFlyZoom(16)
             setFlyKey((k) => k + 1)
+          }}
+          onSelectPlace={(place) => {
+            setFavoritesOpen(false)
+            setSelectedEvCharger(null)
+            flyToDestination({
+              id: `saved-${place.kind}`,
+              name: place.name,
+              label: place.address || place.name,
+              lat: place.lat,
+              lng: place.lng,
+              kind: place.kind,
+            })
           }}
         />
       ) : null}

@@ -5,7 +5,7 @@ import {
   FAVORITES_STORAGE_KEY,
   getFavorites,
   toggleFavorite as toggleFavoriteStorage,
-} from '../lib/favorites'
+} from '../utils/favorites'
 
 function subscribe(onStoreChange: () => void): () => void {
   const onFav = () => onStoreChange()

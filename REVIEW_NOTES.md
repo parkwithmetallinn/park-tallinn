@@ -1,0 +1,1 @@
+Our app uses account-less community reporting for parking space availability (Free/Full). Users cannot post free text, images, or personal profiles. Reports are restricted to binary status taps only, and are secured with strict IP-based rate limiting to prevent abuse. All user preferences (favorites, home/work) are stored strictly locally on the user's device.
