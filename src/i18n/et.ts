@@ -60,7 +60,7 @@ export const et: MessageTree = {
     activeSession: 'Aktiivne sessioon',
     proposeSpot: 'Paku uut kohta',
     proposeSpotTitle: 'Paku uut kohta (ülevaatusse)',
-    outsideTallinn: 'Oled väljaspool Tallinna',
+    outsideEstonia: 'Oled väljaspool Eestit',
     locationMissing: 'Asukoht puudub',
   },
   nearest: {

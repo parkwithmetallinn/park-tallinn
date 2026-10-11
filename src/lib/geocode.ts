@@ -29,7 +29,7 @@ export type SearchLocation = {
 }
 
 /** Estonia-wide Nominatim bias (west,south,east,north) — not hard-bounded. */
-export const ESTONIA_VIEWBOX = '21.5,57.5,28.3,59.75'
+export const ESTONIA_VIEWBOX = '21.7,57.4,28.2,59.8'
 
 /** Soft bias box around a point so nearby places rank first (still Estonia-wide). */
 export function viewboxAround(

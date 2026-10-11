@@ -60,7 +60,7 @@ import {
   CITIES,
   cityFromCoords,
   getInitialCity,
-  isInsideTallinnMapBounds,
+  isInsideEstoniaMapBounds,
   persistCity,
   type CityId,
 } from './data/cities'
@@ -940,11 +940,11 @@ export default function App() {
       return
     }
     const { lat, lng } = result.position
-    if (!isInsideTallinnMapBounds(lat, lng)) {
+    if (!isInsideEstoniaMapBounds(lat, lng)) {
       stopFollow()
       setToast({
         kind: 'info',
-        title: t('chrome.outsideTallinn'),
+        title: t('chrome.outsideEstonia'),
       })
       return
     }

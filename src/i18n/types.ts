@@ -66,7 +66,7 @@ export type MessageTree = {
     activeSession: string
     proposeSpot: string
     proposeSpotTitle: string
-    outsideTallinn: string
+    outsideEstonia: string
     locationMissing: string
   }
   nearest: {

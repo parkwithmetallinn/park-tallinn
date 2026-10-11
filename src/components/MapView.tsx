@@ -65,8 +65,8 @@ import {
   type MyPinColor,
 } from '../lib/myPins'
 import {
-  TALLINN_MAP_MAX_BOUNDS,
-  TALLINN_MAP_MIN_ZOOM,
+  ESTONIA_MAP_MAX_BOUNDS,
+  ESTONIA_MAP_MIN_ZOOM,
 } from '../data/cities'
 import { createBasemapStyle } from '../map/createBasemapStyle'
 import {
@@ -1174,11 +1174,11 @@ export const MapView = memo(forwardRef<
     const map = new MapLibreMap({
       container: containerRef.current,
       style: createBasemapStyle(themeRef.current),
-      // Tallinn center — inside TALLINN_MAP_MAX_BOUNDS
+      // Default Tallinn center — camera may pan anywhere in Estonia
       center: [24.7535, 59.437],
       zoom: 14.2,
-      minZoom: TALLINN_MAP_MIN_ZOOM,
-      maxBounds: TALLINN_MAP_MAX_BOUNDS,
+      minZoom: ESTONIA_MAP_MIN_ZOOM,
+      maxBounds: ESTONIA_MAP_MAX_BOUNDS,
       pitch: pitch3dRef.current ? NAV_PITCH : 0,
       bearing: pitch3dRef.current ? -22 : 0,
       maxPitch: 70,

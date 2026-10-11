@@ -59,7 +59,7 @@ export const en: MessageTree = {
     activeSession: 'Active session',
     proposeSpot: 'Suggest a spot',
     proposeSpotTitle: 'Suggest a spot (for review)',
-    outsideTallinn: 'You are outside Tallinn',
+    outsideEstonia: 'You are outside Estonia',
     locationMissing: 'Location unavailable',
   },
   nearest: {

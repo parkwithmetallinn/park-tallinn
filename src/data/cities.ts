@@ -26,7 +26,8 @@ export const CITIES: Record<CityId, CityConfig> = {
     label: 'Tallinn',
     center: [59.437, 24.7535],
     zoom: 12.2,
-    viewbox: '24.55,59.35,25.00,59.55',
+    /** Soft Nominatim bias — same as national coverage (not a hard clamp). */
+    viewbox: '21.7,57.4,28.2,59.8',
     parkingUrl: '/data/ee_parking_max.geojson',
     showTallinnDistricts: true,
   },
@@ -46,20 +47,32 @@ export const CITY_LIST: CityConfig[] = [CITIES.tallinn, CITIES.parnu]
 export const CITY_STORAGE_KEY = 'parktallinn:city:v1'
 
 /**
- * MapLibre maxBounds for Tallinn navigation — [[west, south], [east, north]].
- * Camera cannot pan/zoom outside this box.
+ * MapLibre maxBounds for all-Estonia navigation — [[west, south], [east, north]].
+ * Camera cannot pan/zoom outside this box (covers mainland + islands).
  */
-export const TALLINN_MAP_MAX_BOUNDS: [[number, number], [number, number]] = [
-  [24.4, 59.25],
-  [25.1, 59.6],
+export const ESTONIA_MAP_MAX_BOUNDS: [[number, number], [number, number]] = [
+  [21.7, 57.4],
+  [28.2, 59.8],
 ]
 
-export const TALLINN_MAP_MIN_ZOOM = 10
+/** Min zoom so the whole country can fit in view. */
+export const ESTONIA_MAP_MIN_ZOOM = 6
 
-/** True when [lat, lng] is inside {@link TALLINN_MAP_MAX_BOUNDS}. */
-export function isInsideTallinnMapBounds(lat: number, lng: number): boolean {
-  const [[west, south], [east, north]] = TALLINN_MAP_MAX_BOUNDS
+/** @deprecated Use {@link ESTONIA_MAP_MAX_BOUNDS}. */
+export const TALLINN_MAP_MAX_BOUNDS = ESTONIA_MAP_MAX_BOUNDS
+
+/** @deprecated Use {@link ESTONIA_MAP_MIN_ZOOM}. */
+export const TALLINN_MAP_MIN_ZOOM = ESTONIA_MAP_MIN_ZOOM
+
+/** True when [lat, lng] is inside {@link ESTONIA_MAP_MAX_BOUNDS}. */
+export function isInsideEstoniaMapBounds(lat: number, lng: number): boolean {
+  const [[west, south], [east, north]] = ESTONIA_MAP_MAX_BOUNDS
   return lng >= west && lng <= east && lat >= south && lat <= north
+}
+
+/** @deprecated Use {@link isInsideEstoniaMapBounds}. */
+export function isInsideTallinnMapBounds(lat: number, lng: number): boolean {
+  return isInsideEstoniaMapBounds(lat, lng)
 }
 
 export function getInitialCity(): CityId {
