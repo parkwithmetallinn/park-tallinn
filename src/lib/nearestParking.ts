@@ -4,9 +4,8 @@
 
 import { distanceMeters } from './geo'
 import {
-  hasExplicitPaidZoneCode,
+  getParkingFilterCategory,
   isClockLimitedParking,
-  isTallinnClockZone,
   isUnclassifiedParking,
   isUnlimitedFreeParking,
 } from './parkingClassification'
@@ -72,49 +71,22 @@ export function parkingRulesKey(spot: ParkingSpot): string {
 }
 
 /**
- * Tasuline — spots with a real paid signal.
- * Tallinn zones (Kesklinn, Vanalinn, Südalinn, Pirita) stay included even
- * when they also offer a free clock window (those also appear under Kellaga).
- *
- * Bare `municipal` / AVALIK lots with no €/h and no paid zone code are NOT
- * paid — they are unclassified and must not crowd out Kellaga / Odavaim.
+ * Tasuline — exclusive paid filter bucket.
+ * Uses getParkingFilterCategory so timed (Kellaga) lots are never “paid”,
+ * even Tallinn zones with 15 min free + hourly rate after.
  */
 export function isPaidParkingSpot(spot: ParkingSpot): boolean {
-  if (isUnlimitedFreeParking(spot)) return false
-  if (isUnclassifiedParking(spot)) return false
-
-  // Explicit payment / Tallinn municipal paid+clock zones
-  if (
-    Number(spot.price_per_hour) > 0 ||
-    spot.badge === 'PAID' ||
-    isTallinnClockZone(spot.zone_code) ||
-    isTallinnClockZone(spot.badge) ||
-    isTallinnClockZone(spot.name) ||
-    hasExplicitPaidZoneCode(spot.zone_code)
-  ) {
-    return true
-  }
-
-  // Pure clock-only (no price, not a Tallinn paid zone) → Kellaga only
-  if (isClockLimitedParking(spot) && Number(spot.price_per_hour) <= 0) {
-    return false
-  }
-
-  // Commercial / brand operators are paid even when OSM omits charge
-  return [
-    'europark',
-    'snabb',
-    'citypark',
-    'uhisteenused',
-    'parkit',
-    'park_ride',
-    'loading',
-  ].includes(spot.layer)
+  return getParkingFilterCategory(spot) === 'paid'
 }
 
-/** Kellaga — any free-clock window (incl. Tallinn 15 min + paid after). */
+/** Kellaga — exclusive timed filter bucket. */
 export function isKellagaParkingSpot(spot: ParkingSpot): boolean {
-  return isClockLimitedParking(spot)
+  return getParkingFilterCategory(spot) === 'timed'
+}
+
+/** Unlimited free — exclusive Tasuta filter bucket. */
+export function isFreeParkingSpot(spot: ParkingSpot): boolean {
+  return getParkingFilterCategory(spot) === 'free'
 }
 
 /** Street label for aggregated cards, e.g. "Odra tn". */

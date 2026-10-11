@@ -3,6 +3,7 @@ import { MapPin, X } from 'lucide-react'
 import { formatDistance } from '../lib/geo'
 import {
   categoryPaintColor,
+  getParkingFilterCategory,
   isClockLimitedParking,
   isUnclassifiedParking,
   isUnlimitedFreeParking,
@@ -14,8 +15,6 @@ import {
 import type { NearestParkingOption } from '../lib/nearestParking'
 import {
   filterOdavaimTasuta,
-  isKellagaParkingSpot,
-  isPaidParkingSpot,
   sortByProximity,
 } from '../lib/nearestParking'
 
@@ -124,16 +123,20 @@ function applyPanelFilter(
   filter: PanelFilter,
 ): NearestParkingOption[] {
   // Filter the full radius pool first, then sort — display cap is applied later.
+  // free / clock / paid use the same exclusive getParkingFilterCategory buckets
+  // as the map chips (Odavaim/Tasuta may still fall back to cheapest paid).
   if (filter === 'free') {
     return filterOdavaimTasuta(options)
   }
   if (filter === 'clock') {
     return sortByProximity(
-      options.filter((o) => isKellagaParkingSpot(o.spot)),
+      options.filter((o) => getParkingFilterCategory(o.spot) === 'timed'),
     )
   }
   if (filter === 'paid') {
-    return sortByProximity(options.filter((o) => isPaidParkingSpot(o.spot)))
+    return sortByProximity(
+      options.filter((o) => getParkingFilterCategory(o.spot) === 'paid'),
+    )
   }
   return sortByProximity(options)
 }
@@ -180,6 +183,7 @@ export function NearestParkingPanel({
     () => applyPanelFilter(options, filter),
     [options, filter],
   )
+
   const filtered = useMemo(
     () => filteredAll.slice(0, NEAREST_DISPLAY_LIMIT),
     [filteredAll],

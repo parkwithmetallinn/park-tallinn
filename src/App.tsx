@@ -31,7 +31,6 @@ import {
 } from './components/NearestParkingPanel'
 import {
   collectNearestAround,
-  isPaidParkingSpot,
   NEAREST_DEFAULT_RADIUS_M,
   NEAREST_MAX_RADIUS_M,
   NEAREST_RADIUS_STEP_M,
@@ -90,9 +89,8 @@ import {
   markReportSubmitted,
 } from './lib/reportCooldown'
 import {
-  isClockLimitedParking,
+  getParkingFilterCategory,
   isUnclassifiedParking,
-  isUnlimitedFreeParking,
   PARKING_COLOR_FREE,
   PARKING_COLOR_PAID,
   PARKING_COLOR_TIMED,
@@ -472,18 +470,17 @@ export default function App() {
       return typedSpots.filter((s) => fullSpotIds.has(s.id))
     }
     if (filter === 'free_street') {
-      // Tasuta: unlimited free only — no clock / free_minutes window
-      return typedSpots.filter((s) => isUnlimitedFreeParking(s))
+      // Tasuta: exclusive unlimited-free bucket
+      return typedSpots.filter((s) => getParkingFilterCategory(s) === 'free')
     }
     if (filter === 'timed') {
-      // Kellaga: every spot with a free-clock window (incl. Tallinn
-      // Kesklinn / Südalinn / Vanalinn 15 min + paid after)
-      return typedSpots.filter((s) => isClockLimitedParking(s))
+      // Kellaga: exclusive timed bucket (incl. Tallinn 15 min + paid after)
+      return typedSpots.filter((s) => getParkingFilterCategory(s) === 'timed')
     }
     if (filter === 'paid') {
-      // Tasuline — priced lots + Tallinn paid zones (overlap with Kellaga OK)
+      // Tasuline — exclusive paid; never includes Kellaga/timed lots
       return typedSpots.filter(
-        (s) => s.layer !== 'ev' && isPaidParkingSpot(s),
+        (s) => s.layer !== 'ev' && getParkingFilterCategory(s) === 'paid',
       )
     }
     if (filter === 'other') {

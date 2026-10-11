@@ -114,11 +114,9 @@ import {
 } from '../map/parkingFade'
 import { ZOOM } from '../map/zoom'
 import {
-  isClockLimitedParking,
+  getParkingFilterCategory,
   isUnclassifiedParking,
-  isUnlimitedFreeParking,
 } from '../lib/parkingClassification'
-import { isPaidParkingSpot } from '../lib/nearestParking'
 import { tKey } from '../i18n'
 import {
   ensureEvChargerLayers,
@@ -1461,9 +1459,13 @@ export const MapView = memo(forwardRef<
             : layers === 'all'
               ? result.spots
               : layers === 'verified_free'
-                ? result.spots.filter((s) => isUnlimitedFreeParking(s))
+                ? result.spots.filter(
+                    (s) => getParkingFilterCategory(s) === 'free',
+                  )
                 : layers === 'clock'
-                  ? result.spots.filter((s) => isClockLimitedParking(s))
+                  ? result.spots.filter(
+                      (s) => getParkingFilterCategory(s) === 'timed',
+                    )
                   : layers === 'unclassified'
                     ? result.spots.filter((s) =>
                         isUnclassifiedParking({
@@ -1482,7 +1484,9 @@ export const MapView = memo(forwardRef<
                       )
                     : layers === 'paid'
                       ? result.spots.filter(
-                          (s) => s.layer !== 'ev' && isPaidParkingSpot(s),
+                          (s) =>
+                            s.layer !== 'ev' &&
+                            getParkingFilterCategory(s) === 'paid',
                         )
                       : Array.isArray(layers)
                         ? result.spots.filter((s) => layers.includes(s.layer))
@@ -2115,7 +2119,7 @@ export const MapView = memo(forwardRef<
     } else if (layers === 'clock') {
       // Kellaga: keep ALL pin layers visible — Tallinn municipal zones
       // (Kesklinn / Vanalinn / …) live under municipal/europark, not only
-      // layer=timed. GeoJSON is filtered with isClockLimitedParking.
+      // layer=timed. GeoJSON is filtered with getParkingFilterCategory.
       setParkingLayerVisibility(
         map,
         Object.fromEntries(

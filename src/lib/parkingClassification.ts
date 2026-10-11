@@ -230,6 +230,40 @@ export function isClockLimitedParking(p: FreeClockFields): boolean {
   return false
 }
 
+/**
+ * Mutually exclusive filter bucket for map chips + “Lähimad parklad”.
+ * Priority: free → timed → paid → other.
+ * Timed lots (incl. Tallinn 15 min free + hourly after) are NEVER “paid”
+ * for chip filters — they belong only under Kellaga.
+ */
+export type ParkingFilterCategory = 'free' | 'timed' | 'paid' | 'other'
+
+export function getParkingFilterCategory(
+  p: FreeClockFields,
+): ParkingFilterCategory {
+  if (isUnlimitedFreeParking(p)) return 'free'
+  if (isClockLimitedParking(p)) return 'timed'
+
+  const layer = String(p.layer || '')
+  const price = Number(p.price_per_hour ?? 0)
+  if (price > 0 || String(p.badge || '').toUpperCase() === 'PAID') {
+    return 'paid'
+  }
+  if (hasExplicitPaidZoneCode(p.zone_code)) return 'paid'
+  if (
+    layer === 'europark' ||
+    layer === 'snabb' ||
+    layer === 'citypark' ||
+    layer === 'uhisteenused' ||
+    layer === 'parkit' ||
+    layer === 'park_ride' ||
+    layer === 'loading'
+  ) {
+    return 'paid'
+  }
+  return 'other'
+}
+
 /** Detail-sheet headline for clock-limited free parking. */
 export function clockFreeHeadline(freeMinutes: number): string {
   const mins = Math.max(0, Math.round(freeMinutes))
@@ -296,51 +330,22 @@ export function categoryBadgeLabel(
   return 'Hind teadmata'
 }
 
-const PAID_LAYERS = new Set([
-  'europark',
-  'snabb',
-  'citypark',
-  'uhisteenused',
-  'parkit',
-  'park_ride',
-  'loading',
-  'municipal',
-])
-
 /**
  * Strict category paint for map geometry (Kõik / filters):
- * Green = unlimited free · Yellow = clock-limited free · Red = paid · Gray = other.
+ * Green = unlimited free · Yellow = clock-limited · Red = paid · Gray = other.
+ * Uses the same exclusive buckets as map chips + “Lähimad parklad”.
  */
 export function categoryPaintColor(p: FreeClockFields): string {
-  if (isUnlimitedFreeParking(p)) return PARKING_COLOR_FREE
-  if (isClockLimitedParking(p)) return PARKING_COLOR_TIMED
-  const layer = String(p.layer || '')
-  const price = Number(p.price_per_hour ?? 0)
-  if (price > 0) return PARKING_COLOR_PAID
-  if (hasExplicitPaidZoneCode(p.zone_code)) return PARKING_COLOR_PAID
-  if (PAID_LAYERS.has(layer)) {
-    // Municipal with no price and no free/clock signal → unclassified gray
-    if (
-      layer === 'municipal' &&
-      isUnclassifiedParking({
-        layer,
-        price_per_hour: price,
-        free_minutes: p.free_minutes,
-        zone_code: p.zone_code,
-        verified_free: p.verified_free,
-        type: p.type,
-        timeLimit: p.timeLimit,
-        name: p.name,
-        desc: p.desc,
-        badge: p.badge,
-      })
-    ) {
+  switch (getParkingFilterCategory(p)) {
+    case 'free':
+      return PARKING_COLOR_FREE
+    case 'timed':
+      return PARKING_COLOR_TIMED
+    case 'paid':
+      return PARKING_COLOR_PAID
+    default:
       return PARKING_COLOR_UNKNOWN
-    }
-    if (layer === 'municipal' && price <= 0) return PARKING_COLOR_UNKNOWN
-    return PARKING_COLOR_PAID
   }
-  return PARKING_COLOR_UNKNOWN
 }
 
 const KNOWN_OPERATOR_LAYERS = new Set([

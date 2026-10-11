@@ -6,13 +6,10 @@ import {
   emptyPurgeStats,
   extractClockMinutes,
   getParkingExclusionReason,
+  getParkingFilterCategory,
   hasClockKeyword,
-  hasExplicitPaidZoneCode,
-  isClockLimitedParking,
   isPaidFeeTag,
-  isTallinnClockZone,
   isUnclassifiedParking,
-  isUnlimitedFreeParking,
   isVerifiedFreeParking,
   PARKING_COLOR_FREE,
   PARKING_COLOR_PAID,
@@ -551,53 +548,18 @@ export function streetCollectionToSpots(fc: StreetParkingCollection): ParkingSpo
   return fc.features.map(streetFeatureToSpot)
 }
 
-/** Filter a street FeatureCollection by app layer keys (top filters). */
-const PAID_STREET_LAYERS = new Set<ParkingLayerKey>([
-  'europark',
-  'snabb',
-  'citypark',
-  'uhisteenused',
-  'parkit',
-  'park_ride',
-  'loading',
-])
-
-function isPaidStreetFeature(p: StreetParkingProps): boolean {
-  if (p.verified_free || p.layer === 'free_street') return false
-  if (isUnlimitedFreeParking(p)) return false
-  if (
-    isUnclassifiedParking({
-      layer: p.layer,
-      verified_free: p.verified_free,
-      price_per_hour: p.price_per_hour,
-      free_minutes: p.free_minutes,
-      zone_code: p.zone_code,
-      operator: p.operator,
-      color: p.color,
-      name: p.name,
-      desc: p.desc,
-      badge: p.badge,
-    })
-  ) {
-    return false
-  }
-  // Tallinn paid+clock zones appear under both Tasuline and Kellaga
-  if (p.price_per_hour > 0 || p.badge === 'PAID') return true
-  if (hasExplicitPaidZoneCode(p.zone_code)) return true
-  if (
-    isTallinnClockZone(p.zone_code) ||
-    isTallinnClockZone(p.badge) ||
-    isTallinnClockZone(p.name)
-  ) {
-    return true
-  }
-  // Pure clock curb without rate → Kellaga only
-  if (p.layer === 'timed' && p.price_per_hour <= 0) return false
-  if (isClockLimitedParking(p) && p.price_per_hour <= 0) return false
-  if (PAID_STREET_LAYERS.has(p.layer)) return true
-  if (p.layer === 'municipal' && p.price_per_hour > 0) return true
-  if (p.rules === 'paid') return true
-  return false
+/** Filter street lines by exclusive free / timed / paid buckets. */
+function streetFilterCategory(p: StreetParkingProps) {
+  return getParkingFilterCategory({
+    layer: p.layer,
+    free_minutes: p.free_minutes,
+    price_per_hour: p.price_per_hour,
+    verified_free: p.verified_free,
+    zone_code: p.zone_code,
+    badge: p.badge,
+    name: p.name,
+    desc: p.desc,
+  })
 }
 
 export function filterStreetCollection(
@@ -614,29 +576,16 @@ export function filterStreetCollection(
   if (layers === 'verified_free') {
     return {
       type: 'FeatureCollection',
-      features: fc.features.filter((f) =>
-        isUnlimitedFreeParking({
-          layer: f.properties.layer,
-          free_minutes: f.properties.free_minutes,
-          price_per_hour: f.properties.price_per_hour,
-          verified_free: f.properties.verified_free,
-        }),
+      features: fc.features.filter(
+        (f) => streetFilterCategory(f.properties) === 'free',
       ),
     }
   }
   if (layers === 'clock') {
     return {
       type: 'FeatureCollection',
-      features: fc.features.filter((f) =>
-        isClockLimitedParking({
-          layer: f.properties.layer,
-          free_minutes: f.properties.free_minutes,
-          price_per_hour: f.properties.price_per_hour,
-          zone_code: f.properties.zone_code,
-          badge: f.properties.badge,
-          name: f.properties.name,
-          desc: f.properties.desc,
-        }),
+      features: fc.features.filter(
+        (f) => streetFilterCategory(f.properties) === 'timed',
       ),
     }
   }
@@ -662,7 +611,9 @@ export function filterStreetCollection(
   if (layers === 'paid') {
     return {
       type: 'FeatureCollection',
-      features: fc.features.filter((f) => isPaidStreetFeature(f.properties)),
+      features: fc.features.filter(
+        (f) => streetFilterCategory(f.properties) === 'paid',
+      ),
     }
   }
   return {

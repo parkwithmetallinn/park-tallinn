@@ -15,13 +15,11 @@ import {
   emptyPurgeStats,
   extractClockMinutes,
   getParkingExclusionReason,
+  getParkingFilterCategory,
   hasClockKeyword,
   hasExplicitPaidZoneCode,
-  isClockLimitedParking,
   isPaidFeeTag,
-  isTallinnClockZone,
   isUnclassifiedParking,
-  isUnlimitedFreeParking,
   isVerifiedFreeParking,
   parseMaxstayMinutes,
   type ParkingPrepPurgeStats,
@@ -642,53 +640,19 @@ export function preciseCollectionToSpots(fc: PreciseParkingCollection): ParkingS
   return fc.features.map(preciseFeatureToSpot)
 }
 
-/** Filter lot polygons by app layer keys (top filters). */
-const PAID_LAYERS = new Set<ParkingLayerKey>([
-  'europark',
-  'snabb',
-  'citypark',
-  'uhisteenused',
-  'parkit',
-  'park_ride',
-  'loading',
-])
-
-function isPaidParkingFeature(p: {
-  layer: ParkingLayerKey
-  verified_free?: boolean
-  price_per_hour?: number
-  free_minutes?: number
-  zone_code?: string
-  operator?: string
-  color?: string
-  name?: string
-  desc?: string
-  badge?: string
-  type?: string
-}): boolean {
-  if (p.verified_free || p.layer === 'free_street') return false
-  if (isUnlimitedFreeParking(p)) return false
-  if (isUnclassifiedParking(p)) return false
-  // Tallinn paid zones stay under Tasuline even with a free clock window
-  if ((p.price_per_hour ?? 0) > 0) return true
-  if (p.badge === 'PAID') return true
-  if (hasExplicitPaidZoneCode(p.zone_code)) return true
-  if (isTallinnClockZone(p.zone_code) || isTallinnClockZone(p.badge)) {
-    return true
-  }
-  if (isTallinnClockZone(p.name)) return true
-  // Pure clock-only (no rate) → Kellaga only
-  if (
-    isClockLimitedParking(p) &&
-    (p.price_per_hour ?? 0) <= 0 &&
-    !isTallinnClockZone(p.zone_code)
-  ) {
-    return false
-  }
-  if (p.layer === 'timed' && (p.price_per_hour ?? 0) <= 0) return false
-  // Brand operators — not bare municipal without a paid signal
-  if (PAID_LAYERS.has(p.layer)) return true
-  return false
+/** Filter lot polygons by exclusive free / timed / paid buckets. */
+function filterPropsCategory(f: PreciseParkingCollection['features'][number]) {
+  return getParkingFilterCategory({
+    layer: f.properties.layer,
+    type: f.properties.type,
+    free_minutes: f.properties.free_minutes,
+    price_per_hour: f.properties.price_per_hour,
+    verified_free: f.properties.verified_free,
+    zone_code: f.properties.zone_code,
+    badge: f.properties.badge,
+    name: f.properties.name,
+    desc: f.properties.desc,
+  })
 }
 
 export function filterPreciseCollection(
@@ -705,31 +669,13 @@ export function filterPreciseCollection(
   if (layers === 'verified_free') {
     return {
       type: 'FeatureCollection',
-      features: fc.features.filter((f) =>
-        isUnlimitedFreeParking({
-          layer: f.properties.layer,
-          free_minutes: f.properties.free_minutes,
-          price_per_hour: f.properties.price_per_hour,
-          verified_free: f.properties.verified_free,
-        }),
-      ),
+      features: fc.features.filter((f) => filterPropsCategory(f) === 'free'),
     }
   }
   if (layers === 'clock') {
     return {
       type: 'FeatureCollection',
-      features: fc.features.filter((f) =>
-        isClockLimitedParking({
-          layer: f.properties.layer,
-          type: f.properties.type,
-          free_minutes: f.properties.free_minutes,
-          price_per_hour: f.properties.price_per_hour,
-          zone_code: f.properties.zone_code,
-          badge: f.properties.badge,
-          name: f.properties.name,
-          desc: f.properties.desc,
-        }),
-      ),
+      features: fc.features.filter((f) => filterPropsCategory(f) === 'timed'),
     }
   }
   if (layers === 'unclassified') {
@@ -754,20 +700,7 @@ export function filterPreciseCollection(
   if (layers === 'paid') {
     return {
       type: 'FeatureCollection',
-      features: fc.features.filter((f) =>
-        isPaidParkingFeature({
-          layer: f.properties.layer,
-          verified_free: f.properties.verified_free,
-          price_per_hour: f.properties.price_per_hour,
-          free_minutes: f.properties.free_minutes,
-          zone_code: f.properties.zone_code,
-          operator: f.properties.operator,
-          color: f.properties.color,
-          name: f.properties.name,
-          desc: f.properties.desc,
-          badge: f.properties.badge,
-        }),
-      ),
+      features: fc.features.filter((f) => filterPropsCategory(f) === 'paid'),
     }
   }
   return {
