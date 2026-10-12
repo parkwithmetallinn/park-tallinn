@@ -1,0 +1,12 @@
+---
+description: ParkVibe working rules
+alwaysApply: true
+---
+- AUDIT FIRST: before changing anything, search the repo for what already exists for the task and report it in 3-6 lines. Implement only what is missing or broken. Never duplicate existing code, files, components or routes.
+- Minimal diffs. Keep existing behavior, design and Estonian UI texts unless the task says otherwise. Do not touch unrelated files (for example iOS project files).
+- Never print, log or commit secrets. Never put secrets in VITE_ variables. Car numbers, push subscriptions, emails and IP addresses are personal data: never log them and never send them to analytics or error tracking.
+- Serverless functions live in api/; shared helpers live in api/_lib (the leading underscore keeps them private). Every new env var must be added to .env.example with an empty value and a comment.
+- No new dependency without a one-line justification; prefer small, maintained packages.
+- After every task run: npx tsc --noEmit -p api/tsconfig.json, npx tsc -b, npm run build, and all existing tests (the test:* scripts). Fix what breaks. Add or update tests for new logic.
+- Commit with a clear message and push to main with a normal push (never force-push).
+- Final reply format: (1) what already existed, (2) files changed, (3) command results, (4) anything I must do manually (env vars, Supabase SQL, n8n).
