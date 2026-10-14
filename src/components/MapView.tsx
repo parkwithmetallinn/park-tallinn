@@ -564,10 +564,13 @@ type CommunityStatusMarker = {
 }
 
 function prefersReducedMotion() {
-  return (
-    typeof window !== 'undefined' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  )
+  if (typeof window === 'undefined') return false
+  try {
+    if (document.documentElement.dataset.animations === 'off') return true
+  } catch {
+    /* ignore */
+  }
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
 function waitMoveEnd(map: MapLibreMapType, timeoutMs: number): Promise<void> {

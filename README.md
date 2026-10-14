@@ -116,7 +116,8 @@ Lotid: täide klassifikatsiooni värviga, 2px ääris; klõps avab bottom sheet�
 - **Bottom sheet** — Waze, Google Maps, Apple Maps navigeerimine
 - **Floating UI** — ümarad paneelid solid ~95% taustaga (ilma backdrop-blur’ita, et MapLibre püsiks 60 FPS)
 - **Mobiili bottom sheet** — detail + lähimad parklad max-h-[45dvh], swipe-dismiss, safe-area inset
-- **Mitmekeelsus (et / en / ru)** — kerge kontekst + sõnastikud `src/i18n/{et,en,ru}.ts`. Seadme keel (`navigator.language`) → käsitsi Teave paneelis → `localStorage` (`parkvibe_locale_v1`). Kuupäev/raha: `Intl` + `Europe/Tallinn`. Serveri eestikeelne `message` ainult kui UI keel on `et`; muidu tõlge `code` järgi. Võtmete pariteet: `npm run test:i18n`.
+- **Menüü (☰)** — vasakul otsingu kõrval: Profiil (kohalik localStorage), Seaded (`parking-app:settings`), Abi ja tagasiside (FAQ + `POST /api/feedback` tüüp `APP_FEEDBACK`). Autentimist pole.
+- **Mitmekeelsus (et / en / ru)** — kerge kontekst + sõnastikud `src/i18n/{et,en,ru}.ts`. Seadme keel (`navigator.language`) → käsitsi Teave / Seaded paneelis → `localStorage` (`parkvibe_locale_v1` + `parking-app:settings`). Kuupäev/raha: `Intl` + `Europe/Tallinn`. Serveri eestikeelne `message` ainult kui UI keel on `et`; muidu tõlge `code` järgi. Võtmete pariteet: `npm run test:i18n`.
 
 ## Parkimissessioon (n8n)
 

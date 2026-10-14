@@ -240,6 +240,14 @@ export function removeMyPin(id: string): { pins: MyPin[]; removed: boolean } {
   return { pins: next, removed: next.length !== pins.length }
 }
 
+/** Clear every personal pin on this device. */
+export function clearAllMyPins(): { pins: MyPin[]; cleared: number } {
+  const pins = loadMyPins()
+  const cleared = pins.length
+  saveMyPins([])
+  return { pins: [], cleared }
+}
+
 export function loadHintSeen(): boolean {
   try {
     return localStorage.getItem(MY_PINS_HINT_KEY) === '1'

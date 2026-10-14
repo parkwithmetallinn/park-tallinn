@@ -115,6 +115,7 @@ import {
 } from './lib/geocode'
 import {
   addMyPin,
+  clearAllMyPins,
   loadHintSeen,
   loadMyPins,
   markHintSeen,
@@ -136,13 +137,11 @@ import { useI18n } from './i18n'
 
 import { parkingIndex } from './lib/spatialIndex'
 import { loadCustomSpots } from './lib/storage'
-import {
-  applyDocumentTheme,
-  getInitialTheme,
-  persistTheme,
-  toggleTheme,
-  type ThemeMode,
-} from './lib/theme'
+import { toggleTheme } from './lib/theme'
+import { useSettings } from './hooks/useSettings'
+import { useWakeLock } from './hooks/useWakeLock'
+import { MenuButton } from './components/menu/MenuButton'
+import { MenuPanel } from './components/menu/MenuPanel'
 import { EV_COLOR_CYAN, type EvChargerFeature } from './lib/evChargers'
 import { EvChargerSheet } from './components/EvChargerSheet'
 import type { FilterId, ParkingSpot } from './types'
@@ -168,9 +167,10 @@ const glassDark =
   'rounded-2xl border border-white/10 bg-[#1C1C1E]/95 shadow-[0_8px_28px_rgba(0,0,0,0.4)]'
 
 export default function App() {
-  const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme())
+  const { settings, theme, updateSettings, setMapStyle } = useSettings()
   const dark = theme === 'dark'
   const { t, formatMoney, zoneName } = useI18n()
+  const [menuOpen, setMenuOpen] = useState(false)
   const FILTERS = useMemo(
     () =>
       FILTER_META.map((f) => ({
@@ -1769,9 +1769,7 @@ export default function App() {
     })
   }
 
-  useEffect(() => {
-    applyDocumentTheme(theme)
-  }, [theme])
+  useWakeLock(Boolean(settings.keepAwakeOnNav && routePlan))
 
   /** Deep-link from /support → “Saada tagasisidet”. */
   useEffect(() => {
@@ -1903,14 +1901,22 @@ export default function App() {
 
       {/* Top search + filter chips — z-20 (below detail drawer z-30) */}
       <div
-        className={`pointer-events-none absolute inset-x-0 top-0 z-20 px-3 pt-[max(0.65rem,env(safe-area-inset-top))] transition-opacity duration-200 sm:px-4 ${
+        className={`pointer-events-none absolute inset-x-0 top-0 z-20 pl-[max(0.75rem,env(safe-area-inset-left))] pr-3 pt-[max(0.65rem,env(safe-area-inset-top))] transition-opacity duration-200 sm:pr-4 ${
           detailChromeOpen
             ? 'max-sm:pointer-events-none max-sm:opacity-0 max-sm:invisible'
             : ''
         }`}
         aria-hidden={detailChromeOpen ? true : undefined}
       >
-        <div className="pointer-events-auto mx-auto w-full max-w-xl space-y-2">
+        <div className="pointer-events-auto mx-auto flex w-full max-w-3xl items-start gap-2">
+          <MenuButton
+            open={menuOpen}
+            onClick={() => setMenuOpen(true)}
+            dark={dark}
+            hiddenOnMobile={detailChromeOpen}
+            className="mt-0.5"
+          />
+          <div className="min-w-0 flex-1 space-y-2 sm:max-w-xl sm:mx-auto">
           <div className="relative min-w-0">
             <div className={`${panel} overflow-hidden`}>
               <div className="flex min-w-0 items-center gap-1 px-2 py-1.5">
@@ -2027,11 +2033,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    setTheme((t) => {
-                      const next = toggleTheme(t)
-                      persistTheme(next)
-                      return next
-                    })
+                    setMapStyle(toggleTheme(theme))
                   }}
                   className={`cursor-pointer rounded-full p-2.5 ${chip}`}
                   title={dark ? t('chrome.themeLight') : t('chrome.themeDark')}
@@ -2199,6 +2201,7 @@ export default function App() {
               </div>
             </div>
           ) : null}
+          </div>
         </div>
       </div>
 
@@ -2638,6 +2641,32 @@ export default function App() {
           }}
         />
       ) : null}
+
+      <MenuPanel
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        dark={dark}
+        settings={settings}
+        onSettingsChange={updateSettings}
+        pinCount={myPins.length}
+        hasActiveSession={Boolean(activeSession)}
+        activeSessionLabel={activeSession?.zone ?? null}
+        wakeLockSupported={
+          typeof navigator !== 'undefined' && 'wakeLock' in navigator
+        }
+        onClearPins={() => {
+          const { cleared } = clearAllMyPins()
+          setMyPins([])
+          setMenuOpen(false)
+          setToast({
+            kind: 'info',
+            title:
+              cleared > 0
+                ? `Kustutatud ${cleared} pinni`
+                : 'Isiklikke pinne polnud',
+          })
+        }}
+      />
 
     </div>
   )

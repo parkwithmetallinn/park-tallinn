@@ -2,7 +2,7 @@
  * Central feedback inbox — proposals, wrong-data, abuse reports.
  *
  * POST { type, parkingId?, lat?, lng?, note?, company_website? }
- * Types: NEW_PARKING | WRONG_DATA | ABUSE_REPORT
+ * Types: NEW_PARKING | WRONG_DATA | ABUSE_REPORT | APP_FEEDBACK
  *
  * Server-only: SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (+ REPORT_SALT).
  * Rate limit: max 5 posts / 10 min per hashed IP (same salt as /api/reports).
@@ -28,9 +28,14 @@ const ALLOWED_TYPES = new Set([
   'NEW_PARKING',
   'WRONG_DATA',
   'ABUSE_REPORT',
+  'APP_FEEDBACK',
 ])
 
-type FeedbackType = 'NEW_PARKING' | 'WRONG_DATA' | 'ABUSE_REPORT'
+type FeedbackType =
+  | 'NEW_PARKING'
+  | 'WRONG_DATA'
+  | 'ABUSE_REPORT'
+  | 'APP_FEEDBACK'
 
 type MemRow = {
   type: FeedbackType
@@ -303,6 +308,10 @@ export default async function handler(req: ApiReq, res: ApiRes): Promise<void> {
     const note = sanitizeNote(body.note)
     if (note == null) {
       badRequest(res, 'Tekst on liiga pikk või vigane (max 200 märki)')
+      return
+    }
+    if (type === 'APP_FEEDBACK' && note.length < 10) {
+      badRequest(res, 'Sõnum peab olema vähemalt 10 märki')
       return
     }
     if (noteContainsContactInfo(note)) {

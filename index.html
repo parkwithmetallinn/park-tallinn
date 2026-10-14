@@ -44,10 +44,23 @@
     <meta name="twitter:image" content="__SEO_OG_IMAGE__" />
 
     <script>
-      /* Must match THEME_STORAGE_KEY / LEGACY in src/lib/theme.ts */
+      /* Must match THEME_STORAGE_KEY / parking-app:settings in src/lib */
       try {
         localStorage.removeItem('parkvibe_theme')
         var t = localStorage.getItem('parktallinn:theme:v2')
+        try {
+          var s = JSON.parse(localStorage.getItem('parking-app:settings') || 'null')
+          if (s && s.mapStyle === 'auto') {
+            t = window.matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'dark'
+              : 'light'
+          } else if (s && (s.mapStyle === 'light' || s.mapStyle === 'dark')) {
+            t = s.mapStyle
+          }
+          if (s && s.animations === false) {
+            document.documentElement.dataset.animations = 'off'
+          }
+        } catch (e2) {}
         if (t !== 'light' && t !== 'dark') t = 'light'
         document.documentElement.classList.toggle('map-dark', t === 'dark')
         document.documentElement.dataset.theme = t

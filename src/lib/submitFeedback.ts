@@ -5,7 +5,12 @@
 
 import { apiUrl } from './apiBase'
 
-export type FeedbackType = 'NEW_PARKING' | 'WRONG_DATA' | 'ABUSE_REPORT'
+export type FeedbackType =
+  | 'NEW_PARKING'
+  | 'WRONG_DATA'
+  | 'ABUSE_REPORT'
+  /** General in-app help form (no parking id required). */
+  | 'APP_FEEDBACK'
 
 export type FeedbackPayload = {
   type: FeedbackType

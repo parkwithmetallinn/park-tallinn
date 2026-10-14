@@ -1,6 +1,7 @@
 import { ExternalLink } from 'lucide-react'
 import { ModalShell } from './ModalShell'
 import { LOCALES, useI18n, type Locale } from '../i18n'
+import { useSettings } from '../hooks/useSettings'
 
 /**
  * About / Teave — map credits, accuracy disclaimer, privacy, language, onboarding.
@@ -14,7 +15,8 @@ export function TeavePanel({
   onOpenPrivacy?: () => void
   onReplayOnboarding?: () => void
 }) {
-  const { t, locale, setLocale } = useI18n()
+  const { t, locale } = useI18n()
+  const { setLanguage } = useSettings()
 
   return (
     <ModalShell title={t('teave.title')} onClose={onClose}>
@@ -44,7 +46,7 @@ export function TeavePanel({
                   role="radio"
                   aria-checked={active}
                   data-testid={`lang-${code}`}
-                  onClick={() => setLocale(code as Locale)}
+                  onClick={() => setLanguage(code as Locale)}
                   className={`tap-scale min-h-11 rounded-xl px-3 py-2 text-[13px] font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#007AFF] ${
                     active
                       ? 'bg-[#007AFF] text-white'

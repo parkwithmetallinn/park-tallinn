@@ -8,6 +8,7 @@ import { prefetchParkingLayers } from './lib/parkingDataCache'
 import { initAnalytics } from './lib/analytics'
 import { clearLegacyPlateStorage } from './lib/storage'
 import { I18nProvider } from './i18n'
+import { SettingsProvider } from './hooks/useSettings'
 
 // Drop stale license-plate values left from older builds
 clearLegacyPlateStorage()
@@ -68,7 +69,9 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
-        <RootView />
+        <SettingsProvider>
+          <RootView />
+        </SettingsProvider>
       </I18nProvider>
     </QueryClientProvider>
   </StrictMode>,

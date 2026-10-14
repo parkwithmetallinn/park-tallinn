@@ -69,6 +69,17 @@ a.tap-scale {
   }
 }
 
+/* Settings → Animatsioonid off (mirrors prefers-reduced-motion) */
+html[data-animations='off'] .user-pulse,
+html[data-animations='off'] .animate-spin,
+html[data-animations='off'] .animate-fade-in,
+html[data-animations='off'] .animate-slide-up {
+  animation: none !important;
+}
+html[data-animations='off'] .user-pulse {
+  opacity: 0.45;
+}
+
 /* MapLibre controls — clear of bottom FABs / safe area */
 .maplibre-root .maplibregl-ctrl-bottom-right {
   bottom: max(5.75rem, calc(env(safe-area-inset-bottom) + 4.5rem));
@@ -829,6 +840,15 @@ a.tap-scale {
     opacity: 0.35;
     transform: scale(1.35);
   }
+}
+
+html[data-animations='off'] .parking-full-indicator__ring,
+html[data-animations='off'] .parking-full-indicator__core {
+  animation: none;
+}
+html[data-animations='off'] .parking-full-indicator__ring {
+  opacity: 0.35;
+  transform: scale(1.35);
 }
 
 /* Nearest-parking glass price pills (Apple/Waze style — never numbered) */
