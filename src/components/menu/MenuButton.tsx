@@ -6,6 +6,8 @@ type MenuButtonProps = {
   dark?: boolean
   /** Hide on small screens when a left info sheet would collide. */
   hiddenOnMobile?: boolean
+  /** Small status dot (e.g. active parking session). */
+  showBadge?: boolean
   className?: string
 }
 
@@ -17,6 +19,7 @@ export function MenuButton({
   onClick,
   dark = false,
   hiddenOnMobile = false,
+  showBadge = false,
   className = '',
 }: MenuButtonProps) {
   return (
@@ -24,10 +27,12 @@ export function MenuButton({
       type="button"
       data-testid="menu-button"
       onClick={onClick}
-      aria-label="Menüü"
+      aria-label={
+        showBadge ? 'Menüü (aktiivne parkimissessioon)' : 'Menüü'
+      }
       aria-expanded={open}
       aria-haspopup="dialog"
-      className={`tap-scale flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full border shadow-[0_4px_16px_rgba(15,23,42,0.18)] transition-opacity focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#007AFF] ${
+      className={`tap-scale relative flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full border shadow-[0_4px_16px_rgba(15,23,42,0.18)] transition-opacity focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#007AFF] ${
         dark
           ? 'border-white/15 bg-[#1C1C1E] text-[#F5F5F7] shadow-[0_4px_16px_rgba(0,0,0,0.45)]'
           : 'border-black/8 bg-white text-[#1C1C1E]'
@@ -36,6 +41,12 @@ export function MenuButton({
       } ${className}`.trim()}
     >
       <Menu className="h-5 w-5" strokeWidth={2.4} aria-hidden />
+      {showBadge ? (
+        <span
+          className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-[#34C759] ring-2 ring-white"
+          aria-hidden
+        />
+      ) : null}
     </button>
   )
 }

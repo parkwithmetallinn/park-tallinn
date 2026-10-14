@@ -1,19 +1,14 @@
 import {
   Box,
   Car,
-  CircleHelp,
   Clock3,
   Footprints,
   Heart,
-  Info,
   Loader2,
   LocateFixed,
   Map as MapIcon,
-  Moon,
   Plus,
   Search,
-  Shield,
-  Sun,
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
@@ -1792,7 +1787,6 @@ export default function App() {
   const chip = dark
     ? 'bg-white/10 text-[#EBEBF5] hover:bg-white/16'
     : 'bg-white/70 text-[#3A3A3C] hover:bg-white'
-  const chipActive = dark ? 'bg-white text-[#1C1C1E]' : 'bg-[#1C1C1E] text-white'
 
   const selectedDist = selected
     ? formatDistance(
@@ -1914,12 +1908,13 @@ export default function App() {
             onClick={() => setMenuOpen(true)}
             dark={dark}
             hiddenOnMobile={detailChromeOpen}
+            showBadge={Boolean(activeSession)}
             className="mt-0.5"
           />
           <div className="min-w-0 flex-1 space-y-2 sm:max-w-xl sm:mx-auto">
           <div className="relative min-w-0">
             <div className={`${panel} overflow-hidden`}>
-              <div className="flex min-w-0 items-center gap-1 px-2 py-1.5">
+              <div className="flex min-w-0 items-center gap-1.5 px-2 py-1.5">
                 <div className="relative min-w-0 flex-1 overflow-hidden">
                   {(geoLoading || pendingEnterSelect) &&
                   clampSearchQuery(query).length >= 3 ? (
@@ -1992,54 +1987,12 @@ export default function App() {
                   type="button"
                   data-testid="open-favorites"
                   onClick={() => setFavoritesOpen(true)}
-                  className={`cursor-pointer rounded-full p-2.5 ${chip}`}
+                  className={`tap-scale flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full ${chip}`}
                   title={t("chrome.favorites")}
                   aria-label={t("chrome.favorites")}
                   aria-pressed={favoritesOpen}
                 >
                   <Heart className="h-5 w-5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setInfoOpen(true)}
-                  className={`cursor-pointer rounded-full p-2.5 ${chip}`}
-                  title={t("chrome.rules")}
-                  aria-label={t("chrome.rules")}
-                >
-                  <CircleHelp className="h-5 w-5" />
-                </button>
-                <button
-                  type="button"
-                  data-testid="open-privacy"
-                  onClick={() => setPrivacyOpen(true)}
-                  className={`cursor-pointer rounded-full p-2.5 ${chip}`}
-                  title={t('chrome.privacy')}
-                  aria-label={t('chrome.privacy')}
-                  aria-pressed={privacyOpen}
-                >
-                  <Shield className="h-5 w-5" />
-                </button>
-                <button
-                  type="button"
-                  data-testid="open-teave"
-                  onClick={() => setTeaveOpen(true)}
-                  className={`cursor-pointer rounded-full p-2.5 ${chip}`}
-                  title={t("chrome.teave")}
-                  aria-label={t("chrome.teave")}
-                  aria-pressed={teaveOpen}
-                >
-                  <Info className="h-5 w-5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMapStyle(toggleTheme(theme))
-                  }}
-                  className={`cursor-pointer rounded-full p-2.5 ${chip}`}
-                  title={dark ? t('chrome.themeLight') : t('chrome.themeDark')}
-                  aria-label={dark ? t('chrome.themeToLight') : t('chrome.themeToDark')}
-                >
-                  {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
                 </button>
               </div>
             </div>
@@ -2071,52 +2024,6 @@ export default function App() {
             ) : null}
           </div>
 
-          {!isDropdownOpen ? (
-            <div
-              data-testid="filter-chips-wrap"
-              className={`filter-chips-fade relative transition-opacity duration-200 ${
-                detailChromeOpen
-                  ? 'max-sm:pointer-events-none max-sm:h-0 max-sm:overflow-hidden max-sm:opacity-0'
-                  : ''
-              }`}
-            >
-              <div
-                data-testid="filter-chips"
-                className="no-scrollbar flex gap-2 overflow-x-auto px-0.5 py-0.5"
-              >
-                {FILTERS.map((f) => {
-                  const active = filter === f.id
-                  return (
-                    <button
-                      key={f.id}
-                      type="button"
-                      data-filter={f.id}
-                      onClick={() => {
-                        setFilter(f.id)
-                        track('filter_used', { filter: f.id })
-                        if (f.id === 'free_street') {
-                          track('free_now_toggled', { filter: f.id })
-                        }
-                      }}
-                      className={`tap-scale shrink-0 cursor-pointer rounded-full px-3.5 py-2 text-[13px] font-semibold shadow-sm sm:px-4 ${
-                        active ? chipActive : `${panel} ${chip}`
-                      }`}
-                    >
-                      {f.color && !active ? (
-                        <span
-                          className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle"
-                          style={{ backgroundColor: f.color }}
-                        />
-                      ) : null}
-                      {f.label}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          ) : null}
-
-          {/* Below filters only when detail panel is closed — never overlays pills */}
           {routeSummaryReady && routePlan && !selected ? (
             <div
               data-testid="route-summary"
@@ -2654,6 +2561,19 @@ export default function App() {
         wakeLockSupported={
           typeof navigator !== 'undefined' && 'wakeLock' in navigator
         }
+        filter={filter}
+        filterOptions={FILTERS}
+        onFilterChange={(id) => {
+          setFilter(id)
+          track('filter_used', { filter: id })
+          if (id === 'free_street') {
+            track('free_now_toggled', { filter: id })
+          }
+        }}
+        onToggleTheme={() => setMapStyle(toggleTheme(theme))}
+        onOpenRules={() => setInfoOpen(true)}
+        onOpenTeave={() => setTeaveOpen(true)}
+        onOpenPrivacy={() => setPrivacyOpen(true)}
         onClearPins={() => {
           const { cleared } = clearAllMyPins()
           setMyPins([])
