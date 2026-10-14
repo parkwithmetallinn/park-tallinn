@@ -1809,6 +1809,12 @@ export default function App() {
 
   return (
     <div className={`relative h-full overflow-hidden ${dark ? 'bg-[#0f1714]' : 'bg-transparent'}`}>
+      {/* Map + chrome — inert while full-screen menu is open (map stays mounted). */}
+      <div
+        className="absolute inset-0"
+        inert={menuOpen ? true : undefined}
+        aria-hidden={menuOpen ? true : undefined}
+      >
       {/* Full-bleed map — z-0 base layer */}
       <div className="absolute inset-0 z-0">
         <MapErrorBoundary>
@@ -2448,10 +2454,6 @@ export default function App() {
         <PrivacyPanel onClose={() => setPrivacyOpen(false)} />
       ) : null}
 
-      {onboardingOpen ? (
-        <OnboardingModal onClose={() => setOnboardingOpen(false)} />
-      ) : null}
-
       {infoOpen ? (
         <ModalShell
           onClose={() => setInfoOpen(false)}
@@ -2548,6 +2550,7 @@ export default function App() {
           }}
         />
       ) : null}
+      </div>
 
       <MenuPanel
         open={menuOpen}
@@ -2577,7 +2580,6 @@ export default function App() {
         onClearPins={() => {
           const { cleared } = clearAllMyPins()
           setMyPins([])
-          setMenuOpen(false)
           setToast({
             kind: 'info',
             title:
@@ -2587,6 +2589,10 @@ export default function App() {
           })
         }}
       />
+
+      {onboardingOpen ? (
+        <OnboardingModal onClose={() => setOnboardingOpen(false)} />
+      ) : null}
 
     </div>
   )

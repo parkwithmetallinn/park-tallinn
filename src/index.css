@@ -166,6 +166,27 @@ html[data-animations='off'] .user-pulse {
   scrollbar-width: none;
 }
 
+@keyframes menu-slide-in {
+  from {
+    transform: translateX(16px);
+    opacity: 0.6;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-\[menu-slide-in_250ms_ease-out\] {
+    animation: none !important;
+  }
+}
+
+html[data-animations='off'] .animate-\[menu-slide-in_250ms_ease-out\] {
+  animation: none !important;
+}
+
 @keyframes pulse-ring {
   0% {
     transform: scale(0.35);
